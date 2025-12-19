@@ -177,6 +177,23 @@ export default function ScanMealsScreen() {
             onBarcodeScanned={onScan}
           />
 
+          {/* Back button */}
+          <View style={{ position: 'absolute', top: 50, left: 16, zIndex: 10 }}>
+            <Pressable
+              onPress={() => router.back()}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </Pressable>
+          </View>
+
           {/* Torch + Flip */}
           <View style={styles.topRight}>
             <TouchableOpacity onPress={() => setTorch((t) => !t)} style={styles.pillBtn}>

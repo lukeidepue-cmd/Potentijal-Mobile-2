@@ -6,8 +6,8 @@ export default function MealsLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ title: 'Search Foods' }} />
-      {/* NEW: scanner lives inside Meals */}
       <Stack.Screen name="scan" options={{ headerShown: false }} />
+      <Stack.Screen name="edit-goals" options={{ headerShown: false }} />
     </Stack>
   );
 }

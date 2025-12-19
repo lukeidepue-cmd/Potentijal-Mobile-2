@@ -4,12 +4,17 @@ import { SafeAreaView, View, Text, Pressable, Modal, ScrollView } from "react-na
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useMode } from "../../../providers/ModeContext";
 import { theme } from "../../../constants/theme";
 import AppHeader from "../../../components/AppHeader";
 import PrimaryButton from "../../../components/Button";
 import ProgressBar from "../../../components/ProgressBar";
+import AITrainerChat from "../../../components/AITrainerChat";
+import { useFeatures } from "../../../hooks/useFeatures";
+import UpgradeModal from "../../../components/UpgradeModal";
+import { useAuth } from "../../../providers/AuthProvider";
 
 /* ======== Dedicated sport home screens ======== */
 import LiftingHomeScreen from "./lifting";
@@ -88,7 +93,12 @@ const ALL_MODES: { key: ModeKey; label: string; icon: React.ReactNode }[] = [
 
 export default function HomeIndex() {
   const { mode, setMode } = useMode();
+  const { canUseAITrainer } = useFeatures();
+  const { user } = useAuth();
   const [showChooser, setShowChooser] = useState(false);
+  const [showAITrainer, setShowAITrainer] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const m = (mode || "lifting").toLowerCase() as ModeKey;
   const isDedicated = DEDICATED.includes(m);
@@ -175,6 +185,29 @@ export default function HomeIndex() {
             gap: theme.layout.lg,
           }}
         >
+          {/* Login/Logout Button */}
+          <Pressable
+            onPress={() => router.push("/(tabs)/test-auth")}
+            style={({ pressed }) => ({
+              width: 48,
+              height: 48,
+              borderRadius: theme.radii.lg,
+              backgroundColor: pressed ? theme.colors.surface2 : theme.colors.surface1,
+              borderWidth: 1,
+              borderColor: theme.colors.strokeSoft,
+              alignItems: "center",
+              justifyContent: "center",
+              ...theme.shadow.soft,
+              transform: [{ scale: pressed ? 0.98 : 1 }],
+            })}
+          >
+            <Ionicons 
+              name={user ? "log-out-outline" : "log-in-outline"} 
+              size={22} 
+              color={theme.colors.textHi} 
+            />
+          </Pressable>
+          {/* Sport Mode Button */}
           <Pressable
             onPress={() => setShowChooser(true)}
             style={({ pressed }) => ({
@@ -192,8 +225,9 @@ export default function HomeIndex() {
           >
             <MaterialCommunityIcons name="dumbbell" size={24} color={theme.colors.textHi} />
           </Pressable>
+          {/* Settings Button */}
           <Pressable
-            onPress={() => {}}
+            onPress={() => router.push("/(tabs)/settings")}
             style={({ pressed }) => ({
               width: 48,
               height: 48,
@@ -211,6 +245,55 @@ export default function HomeIndex() {
           </Pressable>
         </View>
       )}
+
+      {/* AI Trainer Button - Sticky bottom left */}
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          if (canUseAITrainer) {
+            setShowAITrainer(true);
+          } else {
+            setShowUpgradeModal(true);
+          }
+        }}
+        style={({ pressed }) => ({
+          position: "absolute",
+          left: 16,
+          bottom: insets.bottom + 16,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: canUseAITrainer
+            ? pressed
+              ? theme.colors.primary700
+              : theme.colors.primary600
+            : pressed
+            ? "#4A4A4A"
+            : "#2A2A2A",
+          alignItems: "center",
+          justifyContent: "center",
+          shadowColor: "#000",
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 8,
+          zIndex: 100,
+          opacity: canUseAITrainer ? 1 : 0.6,
+        })}
+      >
+        {canUseAITrainer ? (
+          <Ionicons name="sparkles" size={28} color="#fff" />
+        ) : (
+          <Ionicons name="lock-closed" size={24} color="#fff" />
+        )}
+      </Pressable>
+
+      {/* Upgrade Modal for AI Trainer */}
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        featureName="AI Trainer"
+      />
 
       {/* Mode chooser */}
       <Modal visible={showChooser} transparent animationType="fade" onRequestClose={() => setShowChooser(false)}>
@@ -245,6 +328,16 @@ export default function HomeIndex() {
             />
           ))}
         </View>
+      </Modal>
+
+      {/* AI Trainer Chat Modal */}
+      <Modal
+        visible={showAITrainer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowAITrainer(false)}
+      >
+        <AITrainerChat onClose={() => setShowAITrainer(false)} />
       </Modal>
     </SafeAreaView>
   );

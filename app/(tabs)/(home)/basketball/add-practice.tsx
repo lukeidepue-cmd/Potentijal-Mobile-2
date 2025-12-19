@@ -1,9 +1,11 @@
 import React, { useState } from "react";
-import { SafeAreaView, View, Text, Pressable, TextInput, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
+import { SafeAreaView, View, Text, Pressable, TextInput, ScrollView, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { theme } from "../../../../constants/theme";
+import { createPractice } from "../../../../lib/api/practices";
+import { useMode } from "../../../../providers/ModeContext";
 
 /* --- Font 2 (Geist) for heading --- */
 import {
@@ -14,14 +16,81 @@ import {
 
 export default function AddPracticeScreen() {
   const [geistLoaded] = useGeist({ Geist_700Bold, Geist_800ExtraBold });
+  const { mode } = useMode();
+  const m = (mode || "basketball").toLowerCase();
 
   const [when, setWhen] = useState("");
   const [drills, setDrills] = useState("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const save = () => {
+  const save = async () => {
+    if (!when.trim()) {
+      Alert.alert("Error", "Please enter a date.");
+      return;
+    }
+
+    if (!drills.trim()) {
+      Alert.alert("Error", "Please enter drills.");
+      return;
+    }
+
+    // Parse date (accept various formats, default to today)
+    let practicedAt = when.trim();
+    if (!practicedAt) {
+      practicedAt = new Date().toISOString().split('T')[0];
+    } else {
+      // Try to parse date string - handle MM/DD/YYYY format
+      let date: Date;
+      if (practicedAt.includes('/')) {
+        // Format: MM/DD/YYYY or M/D/YYYY
+        const parts = practicedAt.split('/');
+        if (parts.length === 3) {
+          const month = parseInt(parts[0], 10) - 1; // Month is 0-indexed
+          const day = parseInt(parts[1], 10);
+          const year = parseInt(parts[2], 10);
+          date = new Date(year, month, day);
+        } else {
+          date = new Date(practicedAt);
+        }
+      } else {
+        date = new Date(practicedAt);
+      }
+      
+      if (isNaN(date.getTime())) {
+        Alert.alert("Error", "Please enter a valid date (e.g., 2025-11-22 or 11/22/2025).");
+        return;
+      }
+      // Format as YYYY-MM-DD using local date
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      practicedAt = `${year}-${month}-${day}`;
+    }
+
+    setSaving(true);
     Haptics.selectionAsync();
-    router.back();
+
+    const { data, error } = await createPractice({
+      mode: m,
+      practicedAt,
+      drill: drills.trim(),
+      notes: notes.trim() || undefined,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      Alert.alert("Error", error.message || "Failed to save practice. Please try again.");
+      return;
+    }
+
+    Alert.alert("Success", "Practice saved!", [
+      {
+        text: "OK",
+        onPress: () => router.back(),
+      },
+    ]);
   };
 
   if (!geistLoaded) {
@@ -82,9 +151,17 @@ export default function AddPracticeScreen() {
         </View>
 
         {/* Save (8px under last box) */}
-        <Pressable onPress={save} style={{ marginTop: 20, alignSelf: "flex-start" }}>
-          <View style={styles.saveBtn}>
-            <Text style={styles.saveText}>Save</Text>
+        <Pressable 
+          onPress={save} 
+          disabled={saving}
+          style={{ marginTop: 20, alignSelf: "flex-start" }}
+        >
+          <View style={[styles.saveBtn, saving && { opacity: 0.6 }]}>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.saveText}>Save</Text>
+            )}
           </View>
         </Pressable>
       </ScrollView>

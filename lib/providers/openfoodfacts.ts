@@ -67,6 +67,85 @@ export function mapOFF(p: OFFProduct): Food | null {
   const name = (p.product_name_en || p.product_name || p.generic_name_en || "Food").trim();
   if (!name || calories == null) return null;
 
+  // Extract sugar and sodium
+  const sugarServing = firstNumber(n["sugars_serving"], n["sugar_serving"]);
+  const sugar100 = firstNumber(n["sugars_100g"], n["sugar_100g"]);
+  let sugar: number | null = null;
+  if (sugarServing != null) {
+    sugar = Math.round(sugarServing);
+  } else if (sugar100 != null) {
+    const g = gramsFromServing(serving);
+    sugar = Math.round(g ? (sugar100 * g) / 100 : sugar100);
+  }
+
+  // Sodium: can be in mg or g, with salt fallback (salt/2.5 = sodium)
+  const sodiumServingRaw = firstNumber(n["sodium_serving"]);
+  const sodium100Raw = firstNumber(n["sodium_100g"], n["sodium_100ml"]);
+  const saltServing = firstNumber(n["salt_serving"]);
+  const salt100 = firstNumber(n["salt_100g"], n["salt_100ml"]);
+  
+  console.log('🧂 [Sodium Extraction]', {
+    name: (p.product_name_en || p.product_name || 'Unknown').substring(0, 30),
+    sodiumServingRaw,
+    sodium100Raw,
+    saltServing,
+    salt100,
+    serving,
+    nutrimentsKeys: Object.keys(n).filter(k => k.toLowerCase().includes('sod') || k.toLowerCase().includes('salt')),
+  });
+  
+  let sodium: number | null = null;
+  
+  // Try sodium_serving first (usually in mg)
+  if (sodiumServingRaw != null) {
+    // If value is > 100, assume it's in mg, otherwise assume grams
+    // DON'T round small values - keep them as decimals (e.g., 0.14g should stay 0.14, not become 0)
+    if (sodiumServingRaw > 100) {
+      // It's in mg, convert to grams and keep 3 decimal places
+      sodium = Math.round((sodiumServingRaw / 1000) * 1000) / 1000;
+    } else {
+      // It's already in grams, keep as is (don't round to 0!)
+      sodium = sodiumServingRaw;
+    }
+    console.log('✅ [Sodium] Using sodium_serving:', { sodiumServingRaw, sodium, assumedUnit: sodiumServingRaw > 100 ? 'mg' : 'g' });
+  }
+  // Try salt_serving as fallback
+  else if (saltServing != null) {
+    // Salt is usually in g, convert to sodium (salt/2.5 = sodium)
+    // Keep decimal precision
+    sodium = saltServing / 2.5;
+    console.log('✅ [Sodium] Using salt_serving:', { saltServing, sodium, conversion: 'salt/2.5' });
+  }
+  // Try sodium_100g (usually in mg)
+  else if (sodium100Raw != null) {
+    const g = gramsFromServing(serving);
+    if (g) {
+      // If value is > 100, assume it's in mg per 100g
+      const sodiumPer100g = sodium100Raw > 100 ? sodium100Raw / 1000 : sodium100Raw;
+      // Calculate for serving size and keep precision
+      sodium = (sodiumPer100g * g) / 100;
+      console.log('✅ [Sodium] Using sodium_100g with serving size:', { sodium100Raw, g, sodiumPer100g, sodium, assumedUnit: sodium100Raw > 100 ? 'mg' : 'g' });
+    } else {
+      // No serving size, use per 100g value directly
+      sodium = sodium100Raw > 100 ? sodium100Raw / 1000 : sodium100Raw;
+      console.log('✅ [Sodium] Using sodium_100g (no serving size):', { sodium100Raw, sodium, assumedUnit: sodium100Raw > 100 ? 'mg' : 'g' });
+    }
+  }
+  // Try salt_100g as last fallback
+  else if (salt100 != null) {
+    const g = gramsFromServing(serving);
+    if (g) {
+      // Salt is usually in g per 100g, convert to sodium
+      sodium = (salt100 / 2.5 * g) / 100;
+      console.log('✅ [Sodium] Using salt_100g with serving size:', { salt100, g, sodium, conversion: 'salt/2.5' });
+    } else {
+      sodium = salt100 / 2.5;
+      console.log('✅ [Sodium] Using salt_100g (no serving size):', { salt100, sodium, conversion: 'salt/2.5' });
+    }
+  } else {
+    console.log('❌ [Sodium] No sodium/salt data found');
+  }
+
   return {
     name,
     brand: p.brands ? String(p.brands).split(",")[0].trim() : undefined,
@@ -77,8 +156,8 @@ export function mapOFF(p: OFFProduct): Food | null {
     carbs: macro("carbohydrates"),
     fat: macro("fat"),
     fiber: null,
-    sugar: null,
-    sodium: null,
+    sugar,
+    sodium,
     source: "search",
   };
 }

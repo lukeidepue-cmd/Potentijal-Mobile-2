@@ -5,6 +5,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../constants/theme";
+import { useAuth } from "../../../providers/AuthProvider";
+import { getMyProfile, updateMyProfile } from "../../../lib/api/profile";
+import { useEffect } from "react";
+import { Alert } from "react-native";
 
 /* ---- Fonts ---- */
 import {
@@ -19,17 +23,65 @@ import {
 
 export default function EditProfile() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
   const [geistLoaded] = useGeist({ Geist_700Bold, Geist_800ExtraBold });
   const [sgLoaded] = useSpaceGrotesk({ SpaceGrotesk_700Bold });
   const fontsReady = geistLoaded && sgLoaded;
 
-  // local state (no persistence yet; placeholders show "current" values)
+  // local state
   const [bio, setBio] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  if (!fontsReady) {
+  // Load current profile data
+  useEffect(() => {
+    if (!user) return;
+
+    const loadProfile = async () => {
+      setLoading(true);
+      const { data, error } = await getMyProfile();
+      if (data) {
+        setBio(data.bio || "");
+        setDisplayName(data.display_name || "");
+        setUsername(data.username || "");
+      }
+      setLoading(false);
+    };
+
+    loadProfile();
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+
+    setSaving(true);
+    const { data, error } = await updateMyProfile({
+      bio: bio.trim(),
+      displayName: displayName.trim(),
+      username: username.trim(),
+    });
+
+    setSaving(false);
+
+    if (error) {
+      if (error.code === 'USERNAME_TAKEN' || error.message?.includes('username')) {
+        Alert.alert("Error", "Username is already taken. Please choose a different username.");
+      } else {
+        Alert.alert("Error", error.message || "Failed to update profile");
+      }
+      return;
+    }
+
+    if (data) {
+      Alert.alert("Success", "Profile updated successfully");
+      router.back();
+    }
+  };
+
+  if (!fontsReady || loading) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.bg0, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator />
@@ -117,8 +169,12 @@ export default function EditProfile() {
         </View>
 
         {/* Save button — 8px under last text box */}
-        <Pressable style={styles.saveBtn} onPress={() => router.back()}>
-          <Text style={styles.saveText}>Save</Text>
+        <Pressable
+          style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={styles.saveText}>{saving ? "Saving..." : "Save"}</Text>
         </Pressable>
       </ScrollView>
     </View>

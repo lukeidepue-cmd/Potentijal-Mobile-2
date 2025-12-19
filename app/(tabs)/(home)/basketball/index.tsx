@@ -1,5 +1,5 @@
 // app/(tabs)/(home)/basketball/index.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,9 +16,19 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { theme } from "../../../../constants/theme";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
+import { listWeeklyGoals, getWeeklyGoalProgress, type WeeklyGoal } from "../../../../lib/api/goals";
+import { getWeeklyGoalProgressDirect } from "../../../../lib/api/goals-direct";
+import { useAuth } from "../../../../providers/AuthProvider";
+import { useExerciseProgressGraph, type ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
+import { useExerciseProgressGraphDirect } from "../../../../hooks/useExerciseProgressGraphDirect";
+import { getPrimaryExerciseType } from "../../../../lib/api/exercise-types";
+import { getPrimaryExerciseTypeDirect } from "../../../../lib/api/exercise-types-direct";
+import { getMetricOptionsForExerciseType } from "../../../../lib/api/exercise-types";
+import { useFeatures } from "../../../../hooks/useFeatures";
+import PremiumGatedCard from "../../../../components/PremiumGatedCard";
 
 // Fonts: Geist (UI available) + Space Grotesk (Display = "3rd font")
 import {
@@ -161,6 +171,7 @@ const yOnly = (d: Date) => `${d.getFullYear()}`;
 
 /* ------------------------------- Screen --------------------------------- */
 export default function BasketballHome() {
+  const { canLogGames, canLogPractices } = useFeatures();
   const [geistLoaded] = useGeist({
     Geist_400Regular,
     Geist_500Medium,
@@ -174,10 +185,58 @@ export default function BasketballHome() {
     SpaceGrotesk_700Bold,
   });
   const fontsReady = geistLoaded && sgLoaded;
+  const { user } = useAuth();
 
-  const [goals] = useState<Goal[]>(SAMPLE_GOALS);
+  // Load real goals from API
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
   const [page, setPage] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (user) {
+      loadGoals();
+    }
+  }, [user]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user) {
+        loadGoals();
+      }
+    }, [user])
+  );
+
+  const loadGoals = async () => {
+    setGoalsLoading(true);
+    const { data, error } = await listWeeklyGoals({ mode: 'basketball' });
+    
+    if (error) {
+      console.error('Failed to load goals:', error);
+      setGoals([]);
+      setGoalsLoading(false);
+      return;
+    }
+
+    // Load progress for each goal and convert to Goal format - using direct query to bypass RPC
+    const goalsWithProgress = await Promise.all(
+      (data || []).map(async (goal: WeeklyGoal) => {
+        const { data: progress } = await getWeeklyGoalProgressDirect(goal.id);
+        const currentValue = progress?.currentValue || 0;
+        const targetValue = goal.targetValue || 1;
+        
+        return {
+          id: goal.id,
+          name: goal.name,
+          done: Math.round(currentValue),
+          total: Math.round(targetValue),
+        };
+      })
+    );
+
+    setGoals(goalsWithProgress);
+    setGoalsLoading(false);
+  };
 
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
@@ -185,15 +244,90 @@ export default function BasketballHome() {
     setPage(Math.max(0, Math.min(idx, goals.length - 1)));
   };
 
-  // ===== NEW: state for progress graph
-  const [metric, setMetric] = useState<MetricKey>("reps");
+  // ===== Progress graph state
+  const [metric, setMetric] = useState<string>("reps");
   const [range, setRange] = useState<RangeKey>("90d");
-  const [query, setQuery] = useState(""); // reuse your existing "query" state as exercise
+  const [query, setQuery] = useState("");
+  const [availableMetrics, setAvailableMetrics] = useState<string[]>(["reps", "attempted", "made", "percentage"]);
 
-  const { data: series, avg } = useMemo(
-    () => makeSeries(metric, range, query),
-    [metric, range, query]
-  );
+  // Detect exercise type when query changes - using direct query to bypass RPC
+  useEffect(() => {
+    if (query.trim() && user) {
+      getPrimaryExerciseTypeDirect({ mode: 'basketball', query: query.trim() }).then(({ data: exerciseType, error }) => {
+        if (error) {
+          console.error('Error getting exercise type:', error);
+          // Default to exercise type metrics
+          setAvailableMetrics(["reps", "weight", "reps_x_weight"]);
+          setMetric("reps");
+          return;
+        }
+        if (exerciseType) {
+          const metrics = getMetricOptionsForExerciseType(exerciseType, 'basketball');
+          setAvailableMetrics(metrics);
+          // Reset metric if current one is not available
+          if (!metrics.includes(metric)) {
+            setMetric(metrics[0] || "reps");
+          }
+        } else {
+          // No exercise type found, default to exercise type
+          setAvailableMetrics(["reps", "weight", "reps_x_weight"]);
+          setMetric("reps");
+        }
+      });
+    } else {
+      // Default metrics for basketball when no query
+      setAvailableMetrics(["reps", "attempted", "made", "percentage"]);
+      setMetric("reps");
+    }
+  }, [query, user]);
+
+  // Map frontend metric/range to backend
+  const backendMetric: ProgressMetric = metric as ProgressMetric;
+  
+  const backendDays = 
+    range === "7d" ? 7 :
+    range === "30d" ? 30 :
+    range === "90d" ? 90 :
+    range === "180d" ? 180 :
+    360;
+
+  // Fetch real progress data - using direct query to bypass RPC issues
+  const { data: progressData, loading: progressLoading } = useExerciseProgressGraphDirect({
+    mode: 'basketball',
+    query: query,
+    metric: backendMetric,
+    days: backendDays as 7 | 30 | 90 | 180 | 360,
+  });
+
+  // Convert progress data to series format for graph
+  const { data: series, avg } = useMemo(() => {
+    if (!progressData || progressData.length === 0 || !query.trim()) {
+      return { data: [], avg: 0 };
+    }
+
+    // Convert backend data to graph series
+    // Handle both camelCase (from Supabase) and snake_case (direct from DB)
+    const graphSeries = progressData
+      .filter(p => p.value !== null)
+      .map(p => {
+        const bucketStart = (p as any).bucketStart ?? (p as any).bucket_start ?? '';
+        const date = bucketStart ? new Date(bucketStart) : new Date();
+        return {
+          x: (p as any).bucketIndex ?? (p as any).bucket_index ?? 0,
+          y: Number(p.value) || 0,
+          date: date,
+        };
+      })
+      .sort((a, b) => a.x - b.x);
+
+    const values = graphSeries.map(s => s.y);
+    const average = values.length > 0 
+      ? values.reduce((sum, v) => sum + v, 0) / values.length 
+      : 0;
+
+    return { data: graphSeries, avg: average };
+  }, [progressData, query]);
+
   const yTicks = useMemo(() => yTicksFrom(avg), [avg]);
 
   // Chart layout
@@ -258,27 +392,39 @@ export default function BasketballHome() {
           onMomentumScrollEnd={onMomentumEnd}
           contentContainerStyle={{ paddingHorizontal: EDGE_PAD }}
         >
-          {goals.map((g) => {
-            const p = pct(g.done, g.total);
-            return (
-              <View key={g.id} style={[styles.goalCard, { width: CARD_W, marginRight: CARD_GAP }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                  <View style={styles.leftBar} />
-                  <Text style={styles.goalName} numberOfLines={1}>
-                    {g.name}
-                  </Text>
-                  <View style={{ flex: 1 }} />
-                  <Text style={styles.goalSubtle}>
-                    {g.done} / {g.total}
-                  </Text>
-                </View>
+          {goalsLoading ? (
+            <View style={[styles.goalCard, { width: CARD_W, alignItems: "center", justifyContent: "center", padding: 20 }]}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            </View>
+          ) : goals.length === 0 ? (
+            <View style={[styles.goalCard, { width: CARD_W, alignItems: "center", justifyContent: "center", padding: 20 }]}>
+              <Text style={{ color: theme.colors.textLo, textAlign: "center", fontSize: 12 }}>
+                No goals yet. Add one to get started!
+              </Text>
+            </View>
+          ) : (
+            goals.map((g) => {
+              const p = pct(g.done, g.total);
+              return (
+                <View key={g.id} style={[styles.goalCard, { width: CARD_W, marginRight: CARD_GAP }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+                    <View style={styles.leftBar} />
+                    <Text style={styles.goalName} numberOfLines={1}>
+                      {g.name}
+                    </Text>
+                    <View style={{ flex: 1 }} />
+                    <Text style={styles.goalSubtle}>
+                      {g.done} / {g.total}
+                    </Text>
+                  </View>
 
-                <View style={styles.trackBox}>
-                  <View style={[styles.fill, { width: `${p * 100}%` }]} />
+                  <View style={styles.trackBox}>
+                    <View style={[styles.fill, { width: `${p * 100}%` }]} />
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </ScrollView>
       </LinearGradient>
 
@@ -323,6 +469,9 @@ export default function BasketballHome() {
           value={query}
           onChangeText={setQuery}
           style={styles.search}
+          autoCorrect={false}
+          autoCapitalize="none"
+          blurOnSubmit={false}
         />
 
         {/* Two dropdowns row */}
@@ -337,7 +486,15 @@ export default function BasketballHome() {
               style={[styles.dropdown, openMetric && styles.dropdownActive]}
             >
               <Text style={styles.dropdownText}>
-                {metric === "reps" ? "Reps" : metric === "filler1" ? "Filler 1" : "Filler 2"}
+                {metric === "reps" ? "Reps" : 
+                 metric === "attempted" ? "Attempted" :
+                 metric === "made" ? "Made" :
+                 metric === "percentage" ? "Percentage" :
+                 metric === "weight" ? "Weight" :
+                 metric === "reps_x_weight" ? "Reps × Weight" :
+                 metric === "distance" ? "Distance" :
+                 metric === "time_min" ? "Time (min)" :
+                 metric}
               </Text>
               <Ionicons
                 name="chevron-down"
@@ -347,7 +504,7 @@ export default function BasketballHome() {
             </Pressable>
             {openMetric && (
               <View style={styles.menu}>
-                {(["reps", "filler1", "filler2"] as MetricKey[]).map((k) => (
+                {availableMetrics.map((k) => (
                   <Pressable
                     key={k}
                     onPress={() => {
@@ -357,7 +514,15 @@ export default function BasketballHome() {
                     style={styles.menuItem}
                   >
                     <Text style={styles.menuText}>
-                      {k === "reps" ? "Reps" : k === "filler1" ? "Filler 1" : "Filler 2"}
+                      {k === "reps" ? "Reps" : 
+                       k === "attempted" ? "Attempted" :
+                       k === "made" ? "Made" :
+                       k === "percentage" ? "Percentage" :
+                       k === "weight" ? "Weight" :
+                       k === "reps_x_weight" ? "Reps × Weight" :
+                       k === "distance" ? "Distance" :
+                       k === "time_min" ? "Time (min)" :
+                       k}
                     </Text>
                   </Pressable>
                 ))}
@@ -443,7 +608,7 @@ export default function BasketballHome() {
                 const lbl = range === "180d" || range === "360d" ? yOnly(p.date) : md(p.date);
                 return (
                   <SvgText key={`x-${i}`} x={x} y={H - 12} fill="#8AA0B5" fontSize={10} textAnchor="middle">
-                    {lbl}
+                    {String(lbl)}
                   </SvgText>
                 );
               })}
@@ -474,31 +639,25 @@ export default function BasketballHome() {
 
       {/* Game & Practice cards — titles/subtitles = 1st font */}
       <View style={{ gap: 20, marginTop: 12 }}>
-        <View style={styles.bigCard}>
-          <Image source={require("../../../../assets/players/shai.webp")} style={styles.heroImageTop} resizeMode="cover" />
-          <View style={styles.bigContent}>
-            <Text style={styles.bigTitle}>Log Game</Text>
-            <Text style={styles.bigSub}>For Optimized Training</Text>
-            <Pressable style={{ alignSelf: "flex-start", marginTop: 12 }} onPress={() => router.push("/(tabs)/(home)/basketball/add-game")}>
-              <LinearGradient colors={[theme.colors.primary600, "#3BAA6F"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cta}>
-                <Text style={styles.ctaText}>+ Add Game</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
+        <PremiumGatedCard
+          image={require("../../../../assets/players/shai.webp")}
+          title="Log Game"
+          subtitle="For Optimized Training"
+          buttonText="+ Add Game"
+          onPress={() => router.push("/(tabs)/(home)/basketball/add-game")}
+          isPremium={canLogGames}
+          featureName="Log Game"
+        />
 
-        <View style={styles.bigCard}>
-          <Image source={require("../../../../assets/players/kyrie.png")} style={styles.heroImageTop} resizeMode="cover" />
-          <View style={styles.bigContent}>
-            <Text style={styles.bigTitle}>Log Team Practices</Text>
-            <Text style={styles.bigSub}>To Add Additional Training</Text>
-            <Pressable style={{ alignSelf: "flex-start", marginTop: 12 }} onPress={() => router.push("/(tabs)/(home)/basketball/add-practice")}>
-              <LinearGradient colors={[theme.colors.primary600, "#3BAA6F"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cta}>
-                <Text style={styles.ctaText}>+ Add Practice</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
+        <PremiumGatedCard
+          image={require("../../../../assets/players/kyrie.png")}
+          title="Log Team Practices"
+          subtitle="To Add Additional Training"
+          buttonText="+ Add Practice"
+          onPress={() => router.push("/(tabs)/(home)/basketball/add-practice")}
+          isPremium={canLogPractices}
+          featureName="Log Practice"
+        />
       </View>
     </ScrollView>
   );

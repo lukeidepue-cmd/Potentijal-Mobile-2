@@ -1,14 +1,22 @@
 // app/(tabs)/(home)/soccer/index.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
   Dimensions, NativeScrollEvent, NativeSyntheticEvent, Image, ActivityIndicator, Platform
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { theme } from "../../../../constants/theme";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
+import { listWeeklyGoals, type WeeklyGoal } from "../../../../lib/api/goals";
+import { getWeeklyGoalProgressDirect } from "../../../../lib/api/goals-direct";
+import { useAuth } from "../../../../providers/AuthProvider";
+import { useExerciseProgressGraphDirect, type ProgressMetric } from "../../../../hooks/useExerciseProgressGraphDirect";
+import { getPrimaryExerciseTypeDirect } from "../../../../lib/api/exercise-types-direct";
+import { getMetricOptionsForExerciseType } from "../../../../lib/api/exercise-types";
+import { useFeatures } from "../../../../hooks/useFeatures";
+import PremiumGatedCard from "../../../../components/PremiumGatedCard";
 import {
   useFonts as useGeist,
   Geist_400Regular, Geist_500Medium, Geist_600SemiBold, Geist_700Bold, Geist_800ExtraBold,
@@ -19,11 +27,6 @@ import {
 } from "@expo-google-fonts/space-grotesk";
 
 type Goal = { id: string; name: string; done: number; total: number };
-const SAMPLE_GOALS: Goal[] = [
-  { id: "g1", name: "Passing Reps", done: 120, total: 400 },
-  { id: "g2", name: "Dribbling Reps", done: 70, total: 300 },
-  { id: "g3", name: "Shots", done: 50, total: 200 },
-];
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const OUTER_PAD = theme.layout.xl;
@@ -44,39 +47,8 @@ function IntervalChip({ label, active, onPress }: { label: string; active: boole
 }
 
 /* ---------- Progress chart helpers (graph) ---------- */
-type MetricKey = "reps" | "filler1" | "filler2";
 type RangeKey = "7d" | "30d" | "90d" | "180d" | "360d";
-type Pt = { x: number; y: number; date: Date };
 
-function binsFor(range: RangeKey) {
-  switch (range) {
-    case "7d": return { bins: 7, stepDays: 1 };
-    case "30d": return { bins: 5, stepDays: 6 };
-    case "90d": return { bins: 9, stepDays: 10 };
-    case "180d": return { bins: 6, stepDays: 30 };
-    case "360d": return { bins: 6, stepDays: 60 };
-  }
-}
-function baseAvgFor(metric: MetricKey) {
-  if (metric === "reps") return 110;
-  if (metric === "filler1") return 45;
-  return 75; // filler2
-}
-function randomNear(avg: number, spread: number) {
-  return Math.max(0, Math.round(avg + (Math.random() * 2 - 1) * spread));
-}
-function makeSeries(metric: MetricKey, range: RangeKey, _exercise: string): { data: Pt[]; avg: number } {
-  const { bins, stepDays } = binsFor(range);
-  const avg = baseAvgFor(metric);
-  const spread = Math.max(4, Math.round(avg * 0.18));
-  const data: Pt[] = Array.from({ length: bins }).map((_, i) => {
-    const daysBack = (bins - 1 - i) * stepDays;
-    const d = new Date();
-    d.setDate(d.getDate() - daysBack);
-    return { x: i + 1, y: randomNear(avg, spread), date: d };
-  });
-  return { data, avg };
-}
 function yTicksFrom(avg: number) {
   const step = Math.max(1, Math.round(avg * 0.06));
   const arr = [
@@ -89,23 +61,153 @@ const md = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 const yOnly = (d: Date) => `${d.getFullYear()}`;
 
 export default function SoccerHome() {
+  const { canLogGames, canLogPractices } = useFeatures();
   const [geistLoaded] = useGeist({ Geist_400Regular, Geist_500Medium, Geist_600SemiBold, Geist_700Bold, Geist_800ExtraBold });
   const [sgLoaded] = useSpaceGrotesk({ SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold });
   const fontsReady = geistLoaded && sgLoaded;
+  const { user } = useAuth();
 
-  const [goals] = useState<Goal[]>(SAMPLE_GOALS);
+  // Load real goals from API
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
   const [page, setPage] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
-  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => setPage(Math.round(e.nativeEvent.contentOffset.x / SNAP));
 
-  // keep existing state
-  const [interval, setInterval] = useState<"7" | "30" | "90" | "180">("7");
-  const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (user) {
+      loadGoals();
+    }
+  }, [user]);
 
-  // ===== Graph state =====
-  const [metric, setMetric] = useState<MetricKey>("reps");
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user) {
+        loadGoals();
+      }
+    }, [user])
+  );
+
+  const loadGoals = async () => {
+    setGoalsLoading(true);
+    const { data, error } = await listWeeklyGoals({ mode: 'soccer' });
+    
+    if (error) {
+      console.error('Failed to load goals:', error);
+      setGoals([]);
+      setGoalsLoading(false);
+      return;
+    }
+
+    // Load progress for each goal and convert to Goal format - using direct query to bypass RPC
+    const goalsWithProgress = await Promise.all(
+      (data || []).map(async (goal: WeeklyGoal) => {
+        const { data: progress } = await getWeeklyGoalProgressDirect(goal.id);
+        const currentValue = progress?.currentValue || 0;
+        const targetValue = goal.targetValue || 1;
+        
+        return {
+          id: goal.id,
+          name: goal.name,
+          done: Math.round(currentValue),
+          total: Math.round(targetValue),
+        };
+      })
+    );
+
+    setGoals(goalsWithProgress);
+    setGoalsLoading(false);
+  };
+
+  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const idx = Math.round(x / SNAP);
+    setPage(Math.max(0, Math.min(idx, goals.length - 1)));
+  };
+
+  // ===== Progress graph state
+  const [metric, setMetric] = useState<string>("reps");
   const [range, setRange] = useState<RangeKey>("90d");
-  const { data: series, avg } = useMemo(() => makeSeries(metric, range, query), [metric, range, query]);
+  const [query, setQuery] = useState("");
+  const [availableMetrics, setAvailableMetrics] = useState<string[]>(["reps", "attempted", "made", "percentage"]);
+
+  // Detect exercise type when query changes - using direct query to bypass RPC
+  useEffect(() => {
+    if (query.trim() && user) {
+      getPrimaryExerciseTypeDirect({ mode: 'soccer', query: query.trim() }).then(({ data: exerciseType, error }) => {
+        if (error) {
+          console.error('Error getting exercise type:', error);
+          // Default to exercise type metrics
+          setAvailableMetrics(["reps", "weight", "reps_x_weight"]);
+          setMetric("reps");
+          return;
+        }
+        if (exerciseType) {
+          const metrics = getMetricOptionsForExerciseType(exerciseType, 'soccer');
+          setAvailableMetrics(metrics);
+          // Reset metric if current one is not available
+          if (!metrics.includes(metric)) {
+            setMetric(metrics[0] || "reps");
+          }
+        } else {
+          // No exercise type found, default to exercise type
+          setAvailableMetrics(["reps", "weight", "reps_x_weight"]);
+          setMetric("reps");
+        }
+      });
+    } else {
+      // Default metrics for soccer when no query
+      setAvailableMetrics(["reps", "attempted", "made", "percentage"]);
+      setMetric("reps");
+    }
+  }, [query, user]);
+
+  // Map frontend metric/range to backend
+  const backendMetric: ProgressMetric = metric as ProgressMetric;
+  
+  const backendDays = 
+    range === "7d" ? 7 :
+    range === "30d" ? 30 :
+    range === "90d" ? 90 :
+    range === "180d" ? 180 :
+    360;
+
+  // Fetch real progress data - using direct query to bypass RPC issues
+  const { data: progressData, loading: progressLoading } = useExerciseProgressGraphDirect({
+    mode: 'soccer',
+    query: query,
+    metric: backendMetric,
+    days: backendDays as 7 | 30 | 90 | 180 | 360,
+  });
+
+  // Convert progress data to series format for graph
+  const { data: series, avg } = useMemo(() => {
+    if (!progressData || progressData.length === 0 || !query.trim()) {
+      return { data: [], avg: 0 };
+    }
+
+    // Convert backend data to graph series
+    // Handle both camelCase (from Supabase) and snake_case (direct from DB)
+    const graphSeries = progressData
+      .filter(p => p.value !== null)
+      .map(p => {
+        const bucketStart = (p as any).bucketStart ?? (p as any).bucket_start ?? '';
+        const date = bucketStart ? new Date(bucketStart) : new Date();
+        return {
+          x: (p as any).bucketIndex ?? (p as any).bucket_index ?? 0,
+          y: Number(p.value) || 0,
+          date: date,
+        };
+      })
+      .sort((a, b) => a.x - b.x);
+
+    const values = graphSeries.map(s => s.y);
+    const average = values.length > 0 
+      ? values.reduce((sum, v) => sum + v, 0) / values.length 
+      : 0;
+
+    return { data: graphSeries, avg: average };
+  }, [progressData, query]);
+
   const yTicks = useMemo(() => yTicksFrom(avg), [avg]);
 
   // Chart layout
@@ -141,20 +243,32 @@ export default function SoccerHome() {
         <Text style={styles.sectionTitle}>Goals</Text>
 
         <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false} snapToInterval={SNAP} decelerationRate="fast" onMomentumScrollEnd={onMomentumEnd} contentContainerStyle={{ paddingHorizontal: EDGE_PAD }}>
-          {goals.map((g) => {
-            const p = pct(g.done, g.total);
-            return (
-              <View key={g.id} style={[styles.goalCard, { width: CARD_W, marginRight: CARD_GAP }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                  <View style={styles.leftBar} />
-                  <Text style={styles.goalName} numberOfLines={1}>{g.name}</Text>
-                  <View style={{ flex: 1 }} />
-                  <Text style={styles.goalSubtle}>{g.done} / {g.total}</Text>
+          {goalsLoading ? (
+            <View style={[styles.goalCard, { width: CARD_W, alignItems: "center", justifyContent: "center", padding: 20 }]}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            </View>
+          ) : goals.length === 0 ? (
+            <View style={[styles.goalCard, { width: CARD_W, alignItems: "center", justifyContent: "center", padding: 20 }]}>
+              <Text style={{ color: theme.colors.textLo, textAlign: "center", fontSize: 12 }}>
+                No goals yet. Add one to get started!
+              </Text>
+            </View>
+          ) : (
+            goals.map((g) => {
+              const p = pct(g.done, g.total);
+              return (
+                <View key={g.id} style={[styles.goalCard, { width: CARD_W, marginRight: CARD_GAP }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+                    <View style={styles.leftBar} />
+                    <Text style={styles.goalName} numberOfLines={1}>{g.name}</Text>
+                    <View style={{ flex: 1 }} />
+                    <Text style={styles.goalSubtle}>{g.done} / {g.total}</Text>
+                  </View>
+                  <View style={styles.trackBox}><View style={[styles.fill, { width: `${p * 100}%` }]} /></View>
                 </View>
-                <View style={styles.trackBox}><View style={[styles.fill, { width: `${p * 100}%` }]} /></View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </ScrollView>
       </LinearGradient>
 
@@ -185,6 +299,9 @@ export default function SoccerHome() {
           value={query}
           onChangeText={setQuery}
           style={styles.search}
+          autoCorrect={false}
+          autoCapitalize="none"
+          blurOnSubmit={false}
         />
 
         {/* Dropdowns */}
@@ -196,15 +313,46 @@ export default function SoccerHome() {
               style={[styles.dropdown, openMetric && styles.dropdownActive]}
             >
               <Text style={styles.dropdownText}>
-                {metric === "reps" ? "Reps" : metric === "filler1" ? "Filler 1" : "Filler 2"}
+                {metric === "reps" ? "Reps" : 
+                 metric === "attempted" ? "Attempted" :
+                 metric === "made" ? "Made" :
+                 metric === "percentage" ? "Percentage" :
+                 metric === "weight" ? "Weight" :
+                 metric === "reps_x_weight" ? "Reps × Weight" :
+                 metric === "distance" ? "Distance" :
+                 metric === "time_min" ? "Time (min)" :
+                 metric === "avg_time_sec" ? "Avg. Time (sec)" :
+                 metric}
               </Text>
-              <Ionicons name="chevron-down" size={12} color={openMetric ? theme.colors.primary600 : theme.colors.textHi} />
+              <Ionicons
+                name="chevron-down"
+                size={12}
+                color={openMetric ? theme.colors.primary600 : theme.colors.textHi}
+              />
             </Pressable>
             {openMetric && (
               <View style={styles.menu}>
-                {(["reps", "filler1", "filler2"] as MetricKey[]).map((k) => (
-                  <Pressable key={k} onPress={() => { setMetric(k); setOpenMetric(false); }} style={styles.menuItem}>
-                    <Text style={styles.menuText}>{k === "reps" ? "Reps" : k === "filler1" ? "Filler 1" : "Filler 2"}</Text>
+                {availableMetrics.map((k) => (
+                  <Pressable
+                    key={k}
+                    onPress={() => {
+                      setMetric(k);
+                      setOpenMetric(false);
+                    }}
+                    style={styles.menuItem}
+                  >
+                    <Text style={styles.menuText}>
+                      {k === "reps" ? "Reps" : 
+                       k === "attempted" ? "Attempted" :
+                       k === "made" ? "Made" :
+                       k === "percentage" ? "Percentage" :
+                       k === "weight" ? "Weight" :
+                       k === "reps_x_weight" ? "Reps × Weight" :
+                       k === "distance" ? "Distance" :
+                       k === "time_min" ? "Time (min)" :
+                       k === "avg_time_sec" ? "Avg. Time (sec)" :
+                       k}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
@@ -264,9 +412,20 @@ export default function SoccerHome() {
               <SvgLine x1={M.left} x2={M.left} y1={M.top} y2={H - M.bottom} stroke="#22303d" strokeWidth={1} />
             </G>
 
+            {/* Line */}
             {linePath ? <Path d={linePath} fill="none" stroke={theme.colors.primary600} strokeWidth={2} /> : null}
+
+            {/* Points */}
             {series.map((p, i) => (
-              <Circle key={`pt-${i}`} cx={xFor(i)} cy={yFor(p.y)} r={4.5} stroke="#0a1a13" strokeWidth={2} fill={theme.colors.primary600} />
+              <Circle
+                key={`pt-${i}`}
+                cx={xFor(i)}
+                cy={yFor(p.y)}
+                r={4.5}
+                stroke="#0a1a13"
+                strokeWidth={2}
+                fill={theme.colors.primary600}
+              />
             ))}
           </Svg>
         </View>
@@ -274,31 +433,25 @@ export default function SoccerHome() {
       {/* =================== /Progress (GRAPH) =================== */}
 
       <View style={{ gap: 20, marginTop: 12 }}>
-        <View style={styles.bigCard}>
-          <Image source={require("../../../../assets/players/yamal.jpg")} style={styles.heroImageTop} resizeMode="cover" />
-          <View style={styles.bigContent}>
-            <Text style={styles.bigTitle}>Log Game</Text>
-            <Text style={styles.bigSub}>For Optimized Training</Text>
-            <Pressable style={{ alignSelf: "flex-start", marginTop: 12 }} onPress={() => router.push("/(tabs)/(home)/soccer/add-game")}>
-              <LinearGradient colors={[theme.colors.primary600, "#3BAA6F"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cta}>
-                <Text style={styles.ctaText}>+ Add Game</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
+        <PremiumGatedCard
+          image={require("../../../../assets/players/yamal.jpg")}
+          title="Log Game"
+          subtitle="For Optimized Training"
+          buttonText="+ Add Game"
+          onPress={() => router.push("/(tabs)/(home)/soccer/add-game")}
+          isPremium={canLogGames}
+          featureName="Log Game"
+        />
 
-        <View style={styles.bigCard}>
-          <Image source={require("../../../../assets/players/mbappe.webp")} style={styles.heroImageTop} resizeMode="cover" />
-          <View style={styles.bigContent}>
-            <Text style={styles.bigTitle}>Log Team Practices</Text>
-            <Text style={styles.bigSub}>To Add Additional Training</Text>
-            <Pressable style={{ alignSelf: "flex-start", marginTop: 12 }} onPress={() => router.push("/(tabs)/(home)/soccer/add-practice")}>
-              <LinearGradient colors={[theme.colors.primary600, "#3BAA6F"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cta}>
-                <Text style={styles.ctaText}>+ Add Practice</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
+        <PremiumGatedCard
+          image={require("../../../../assets/players/mbappe.webp")}
+          title="Log Team Practices"
+          subtitle="To Add Additional Training"
+          buttonText="+ Add Practice"
+          onPress={() => router.push("/(tabs)/(home)/soccer/add-practice")}
+          isPremium={canLogPractices}
+          featureName="Log Practice"
+        />
       </View>
     </ScrollView>
   );

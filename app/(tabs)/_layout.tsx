@@ -33,6 +33,20 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
+        name="workout-summary"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+
+      <Tabs.Screen
+        name="test-auth"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+
+      <Tabs.Screen
         name="meals"
         options={{
           title: "Meals",
@@ -43,11 +57,11 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
-        name="scan"
+        name="history"
         options={{
-          title: "Scan",
+          title: "History",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="scan-outline" color={color} size={size} />
+            <Ionicons name="hourglass-outline" color={color} size={size} />
           ),
         }}
       />
@@ -59,6 +73,27 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-circle-outline" color={color} size={size} />
           ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="scan"
+        options={{
+          href: null, // Hide from tab bar (accessed from meals tab)
+        }}
+      />
+
+      <Tabs.Screen
+        name="purchase-premium"
+        options={{
+          href: null, // Hide from tab bar (accessed from upgrade modals)
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null, // Hide from tab bar (accessed from home screen)
         }}
       />
     </Tabs>

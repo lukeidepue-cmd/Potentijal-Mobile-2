@@ -1,6 +1,7 @@
 // app/(tabs)/workouts.tsx
 // Revamped Workouts tab: pro header + compact set layout + angled inputs + per-mode toolbars
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -18,6 +19,10 @@ import { useMode } from "../../providers/ModeContext";
 import * as Location from "expo-location";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import { theme } from "../../constants/theme";
+import { router } from "expo-router";
+import { saveCompleteWorkout, getWorkoutWithDetails } from "../../lib/api/workouts";
+import { useAuth } from "../../providers/AuthProvider";
+import { mapModeKeyToSportMode, mapItemKindToExerciseType } from "../../lib/types";
 
 /* ---------------- Fonts (match Home pages) ---------------- */
 import {
@@ -184,8 +189,17 @@ const FONT = {
    Screen
 ============================================================================ */
 export default function WorkoutsScreen() {
-  const { mode } = useMode();
+  const { mode, setMode } = useMode();
+  const { user } = useAuth();
+  const params = useLocalSearchParams<{ workoutId?: string }>();
   const m = (mode || "lifting").toLowerCase() as ModeKey;
+
+  // Redirect to test auth if not signed in
+  useEffect(() => {
+    if (!user) {
+      router.replace('/(tabs)/test-auth');
+    }
+  }, [user]);
 
   // Load fonts to match Home pages
   const [geistLoaded] = useGeist({
@@ -204,6 +218,142 @@ export default function WorkoutsScreen() {
   /* ---------- top meta ---------- */
   const [isCreating, setIsCreating] = useState(false);
   const [workoutName, setWorkoutName] = useState("");
+  const nameInputRef = useRef<TextInput>(null);
+
+  // Reset workout state when mode changes
+  useEffect(() => {
+    setIsCreating(false);
+    setWorkoutName("");
+    setList([]);
+  }, [m]);
+
+  // Load workout if workoutId is provided (e.g., from copying a creator workout)
+  useEffect(() => {
+    const loadWorkout = async () => {
+      if (params.workoutId && user) {
+        console.log(`💪 [Workouts] Loading workout from copy: ${params.workoutId}`);
+        const { data: workout, error } = await getWorkoutWithDetails(params.workoutId);
+        
+        if (error || !workout) {
+          console.error(`❌ [Workouts] Failed to load workout:`, error);
+          Alert.alert("Error", "Failed to load copied workout");
+          return;
+        }
+
+        console.log(`✅ [Workouts] Loaded workout: ${workout.name} with ${workout.exercises.length} exercises`);
+        
+        // Map database mode to frontend mode
+        const modeMapping: Record<string, ModeKey> = {
+          'workout': 'lifting',
+          'basketball': 'basketball',
+          'football': 'football',
+          'baseball': 'baseball',
+          'soccer': 'soccer',
+          'hockey': 'hockey',
+          'tennis': 'tennis',
+          'running': 'running',
+        };
+        
+        const frontendMode = modeMapping[workout.mode] || 'lifting';
+        
+        // Set the mode to match the workout
+        setMode(frontendMode);
+        
+        // Set workout name (remove "(Copied)" suffix if present)
+        const nameWithoutCopied = workout.name.replace(' (Copied)', '');
+        setWorkoutName(nameWithoutCopied);
+        
+        // Convert workout exercises to the format expected by the workouts tab
+        const convertedItems: AnyItem[] = workout.exercises.map((exercise) => {
+          // Map exercise type to item kind
+          const typeToKind: Record<string, ItemKind> = {
+            'exercise': 'exercise',
+            'shooting': 'bb_shot',
+            'drill': 'fb_drill',
+            'sprints': 'fb_sprint',
+            'hitting': 'bs_hit',
+            'fielding': 'bs_field',
+            'rally': 'tn_rally',
+          };
+          
+          const kind = typeToKind[exercise.type] || 'exercise';
+          
+          // Convert sets to SetRecord format
+          const sets: SetRecord[] = exercise.sets.map((set) => {
+            const setRecord: SetRecord = {};
+            if (set.reps !== undefined) setRecord.reps = String(set.reps);
+            if (set.weight !== undefined) setRecord.weight = String(set.weight);
+            if (set.attempted !== undefined) setRecord.attempted = String(set.attempted);
+            if (set.made !== undefined) setRecord.made = String(set.made);
+            if (set.distance !== undefined) setRecord.distance = String(set.distance);
+            if (set.timeMin !== undefined) setRecord.time = String(set.timeMin);
+            if (set.avgTimeSec !== undefined) setRecord.avgTime = String(set.avgTimeSec);
+            if (set.completed !== undefined) setRecord.completed = String(set.completed);
+            if (set.points !== undefined) setRecord.points = String(set.points);
+            return setRecord;
+          });
+          
+          // If no sets, add one empty set
+          if (sets.length === 0) {
+            const empty: SetRecord = {};
+            FIELD_SETS[kind].forEach((f) => (empty[f.key] = ""));
+            sets.push(empty);
+          }
+          
+          return {
+            id: uid(),
+            kind,
+            name: exercise.name,
+            sets,
+          };
+        });
+        
+        // Wait for mode to update, then set the exercises
+        // Use a small delay to ensure the mode context has updated
+        setTimeout(() => {
+          // Get the correct draft setter based on the updated mode
+          const currentMode = (mode || "lifting").toLowerCase() as ModeKey;
+          const draftSetters: Record<ModeKey, React.Dispatch<React.SetStateAction<AnyItem[]>>> = {
+            lifting: setLiftDraft,
+            basketball: setBbDraft,
+            football: setFbDraft,
+            baseball: setBsDraft,
+            soccer: setScDraft,
+            hockey: setHkDraft,
+            tennis: setTnDraft,
+            running: setRunDraft,
+          };
+          
+          const setDraft = draftSetters[currentMode] || draftSetters[frontendMode];
+          if (setDraft) {
+            setDraft(convertedItems);
+            
+            // Start the workout
+            setIsCreating(true);
+            
+            console.log(`✅ [Workouts] Workout loaded and started with ${convertedItems.length} exercises`);
+          } else {
+            console.error(`❌ [Workouts] No setter found for mode: ${currentMode}`);
+          }
+        }, 200);
+      }
+    };
+    
+    loadWorkout();
+  }, [params.workoutId, user, mode, setMode]);
+
+  // Reset workout state when screen comes into focus (after finishing workout)
+  // But don't reset if we're loading a workout from params
+  useFocusEffect(
+    React.useCallback(() => {
+      // Only reset if we're not loading a workout from params
+      if (!params.workoutId) {
+        setIsCreating(false);
+        setWorkoutName("");
+        setList([]);
+      }
+    }, [params.workoutId])
+  );
 
   /* ---------- per-mode drafts ---------- */
   const [liftDraft, setLiftDraft] = useState<AnyItem[]>([]);
@@ -227,6 +377,119 @@ export default function WorkoutsScreen() {
   };
 
   const [list, setList] = drafts[m];
+
+  // Load workout if workoutId is provided (e.g., from copying a creator workout)
+  useEffect(() => {
+    const loadWorkout = async () => {
+      if (params.workoutId && user) {
+        console.log(`💪 [Workouts] Loading workout from copy: ${params.workoutId}`);
+        const { data: workout, error } = await getWorkoutWithDetails(params.workoutId);
+        
+        if (error || !workout) {
+          console.error(`❌ [Workouts] Failed to load workout:`, error);
+          Alert.alert("Error", "Failed to load copied workout");
+          return;
+        }
+
+        console.log(`✅ [Workouts] Loaded workout: ${workout.name} with ${workout.exercises.length} exercises`);
+        
+        // Map database mode to frontend mode
+        const modeMapping: Record<string, ModeKey> = {
+          'workout': 'lifting',
+          'basketball': 'basketball',
+          'football': 'football',
+          'baseball': 'baseball',
+          'soccer': 'soccer',
+          'hockey': 'hockey',
+          'tennis': 'tennis',
+          'running': 'running',
+        };
+        
+        const frontendMode = modeMapping[workout.mode] || 'lifting';
+        
+        // Set the mode to match the workout
+        setMode(frontendMode);
+        
+        // Set workout name (remove "(Copied)" suffix if present)
+        const nameWithoutCopied = workout.name.replace(' (Copied)', '');
+        setWorkoutName(nameWithoutCopied);
+        
+        // Convert workout exercises to the format expected by the workouts tab
+        const convertedItems: AnyItem[] = workout.exercises.map((exercise) => {
+          // Map exercise type to item kind
+          const typeToKind: Record<string, ItemKind> = {
+            'exercise': 'exercise',
+            'shooting': 'bb_shot',
+            'drill': 'fb_drill',
+            'sprints': 'fb_sprint',
+            'hitting': 'bs_hit',
+            'fielding': 'bs_field',
+            'rally': 'tn_rally',
+          };
+          
+          const kind = typeToKind[exercise.type] || 'exercise';
+          
+          // Convert sets to SetRecord format
+          const sets: SetRecord[] = exercise.sets.map((set) => {
+            const setRecord: SetRecord = {};
+            if (set.reps !== undefined) setRecord.reps = String(set.reps);
+            if (set.weight !== undefined) setRecord.weight = String(set.weight);
+            if (set.attempted !== undefined) setRecord.attempted = String(set.attempted);
+            if (set.made !== undefined) setRecord.made = String(set.made);
+            if (set.distance !== undefined) setRecord.distance = String(set.distance);
+            if (set.timeMin !== undefined) setRecord.time = String(set.timeMin);
+            if (set.avgTimeSec !== undefined) setRecord.avgTime = String(set.avgTimeSec);
+            if (set.completed !== undefined) setRecord.completed = String(set.completed);
+            if (set.points !== undefined) setRecord.points = String(set.points);
+            return setRecord;
+          });
+          
+          // If no sets, add one empty set
+          if (sets.length === 0) {
+            const empty: SetRecord = {};
+            FIELD_SETS[kind].forEach((f) => (empty[f.key] = ""));
+            sets.push(empty);
+          }
+          
+          return {
+            id: uid(),
+            kind,
+            name: exercise.name,
+            sets,
+          };
+        });
+        
+        // Wait a bit for mode to update, then set the exercises
+        setTimeout(() => {
+          // Get the correct draft setter based on the frontend mode
+          const draftSetters: Record<ModeKey, React.Dispatch<React.SetStateAction<AnyItem[]>>> = {
+            lifting: setLiftDraft,
+            basketball: setBbDraft,
+            football: setFbDraft,
+            baseball: setBsDraft,
+            soccer: setScDraft,
+            hockey: setHkDraft,
+            tennis: setTnDraft,
+            running: setRunDraft,
+          };
+          
+          const setDraft = draftSetters[frontendMode];
+          if (setDraft) {
+            setDraft(convertedItems);
+            
+            // Start the workout
+            setIsCreating(true);
+            
+            console.log(`✅ [Workouts] Workout loaded and started with ${convertedItems.length} exercises`);
+          } else {
+            console.error(`❌ [Workouts] No setter found for mode: ${frontendMode}`);
+          }
+        }, 300);
+      }
+    };
+    
+    loadWorkout();
+  }, [params.workoutId, user, setMode, setLiftDraft, setBbDraft, setFbDraft, setBsDraft, setScDraft, setHkDraft, setTnDraft, setRunDraft]);
 
   /* ---------- actions ---------- */
   const addItem = (kind: ItemKind) => {
@@ -258,7 +521,9 @@ export default function WorkoutsScreen() {
     );
   };
 
-  const saveWorkout = () => {
+  const [saving, setSaving] = useState(false);
+
+  const saveWorkout = async () => {
     if (!workoutName.trim()) {
       Alert.alert("Name your workout", "Please give your workout a name.");
       return;
@@ -267,10 +532,27 @@ export default function WorkoutsScreen() {
       Alert.alert("Add something first", "Add at least one square.");
       return;
     }
-    Alert.alert("Saved!", "Workout added to your recent list.");
-    setList([]);
-    setIsCreating(false);
-    setWorkoutName("");
+
+    // Don't save to database yet - just pass data to summary screen
+    // Workout will be saved when user clicks "Finish Workout"
+    const workoutData = {
+      mode: m,
+      name: workoutName.trim(),
+      performedAt: new Date().toISOString().split('T')[0],
+      items: list.map(item => ({
+        kind: item.kind,
+        name: item.name,
+        sets: item.sets,
+      })),
+    };
+
+    // Encode workout data as JSON string for navigation params
+    const workoutDataJson = encodeURIComponent(JSON.stringify(workoutData));
+    
+    router.push({
+      pathname: "/(tabs)/workout-summary",
+      params: { workoutData: workoutDataJson },
+    });
   };
 
   /* ---------- Running state ---------- */
@@ -482,17 +764,8 @@ export default function WorkoutsScreen() {
       </Pressable>
     );
 
-    // first row: workout name full width
-    const nameRow = (
-      <TextInput
-        key="name"
-        value={workoutName}
-        onChangeText={setWorkoutName}
-        placeholder="Workout name…"
-        placeholderTextColor={theme.colors.textLo}
-        style={styles.nameInput}
-      />
-    );
+    // first row: workout name full width - will be rendered outside Toolbar
+    const nameRow = null;
 
     // second row: per-mode green boxes
     const rowBtns: React.ReactNode[] = [];
@@ -524,11 +797,9 @@ export default function WorkoutsScreen() {
       rowBtns.push(<Button key="+rally" label="+ Rally" onPress={() => addItem("tn_rally")} />);
     }
 
+    // Don't render nameRow here - it's rendered outside Toolbar
     return (
-      <>
-        <View style={{ marginTop: 8 }}>{nameRow}</View>
-        <View style={[styles.row, { marginTop: 8 }]}>{rowBtns}</View>
-      </>
+      <View style={[styles.row, { marginTop: 8 }]}>{rowBtns}</View>
     );
   };
 
@@ -556,6 +827,27 @@ export default function WorkoutsScreen() {
           </View>
           <RightIcon />
         </View>
+        {isCreating && (
+          <View style={{ marginTop: 8 }}>
+            <TextInput
+              ref={nameInputRef}
+              value={workoutName}
+              onChangeText={(text) => {
+                setWorkoutName(text);
+              }}
+              placeholder="Workout name…"
+              placeholderTextColor={theme.colors.textLo}
+              style={styles.nameInput}
+              autoCorrect={false}
+              autoCapitalize="words"
+              keyboardType="default"
+              returnKeyType="done"
+              blurOnSubmit={false}
+              onSubmitEditing={() => {}}
+              editable={true}
+            />
+          </View>
+        )}
         <Toolbar />
       </View>
 
@@ -605,8 +897,16 @@ export default function WorkoutsScreen() {
       {/* Sticky bottom save (non-running, when creating) */}
       {m !== "running" && isCreating && (
         <View style={styles.stickySaveWrap}>
-          <Pressable onPress={saveWorkout} style={styles.bigSaveBtn}>
-            <Text style={[styles.bigSaveText, { fontFamily: FONT.displayBold }]}>Save Workout</Text>
+          <Pressable 
+            onPress={saveWorkout} 
+            style={styles.bigSaveBtn}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={[styles.bigSaveText, { fontFamily: FONT.displayBold }]}>Save Workout</Text>
+            )}
           </Pressable>
         </View>
       )}
@@ -681,10 +981,12 @@ function FullWidthCard({
             ))}
 
             {item.kind === "bb_shot" && (
-              <Text style={styles.shotPct}>{(() => {
-                const p = pctFor(s);
-                return p == null ? "—" : `${p}%`;
-              })()}</Text>
+              <Text style={styles.shotPct}>
+                {(() => {
+                  const p = pctFor(s);
+                  return p == null ? "—" : String(p) + "%";
+                })()}
+              </Text>
             )}
           </View>
         ))}

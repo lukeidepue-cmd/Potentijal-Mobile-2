@@ -1,5 +1,5 @@
 // app/(tabs)/profile/index.tsx
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,10 +14,17 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Video, ResizeMode } from "expo-av";
+import { Video, ResizeMode, Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../../../providers/AuthProvider";
+import { getMyProfile, getProfileStats, uploadProfileImage, type Profile } from "../../../lib/api/profile";
+import { listHighlights, uploadHighlights, deleteHighlight, type Highlight as HighlightType } from "../../../lib/api/highlights";
+import { Alert } from "react-native";
+import { supabase } from "../../../lib/supabase";
+import { useFeatures } from "../../../hooks/useFeatures";
+import UpgradeModal from "../../../components/UpgradeModal";
 
 /* ---- Fonts ---- */
 import {
@@ -54,7 +61,8 @@ const DIM = "#8AA0B5";
 const GREEN = "#2BF996";
 const STROKE = "#1A2430";
 
-type Highlight = { id: string; uri: string };
+// Highlight type matches API
+type Highlight = { id: string; uri: string; video_url?: string };
 
 /** Back-compat shim: prefer new `MediaType`, fall back to deprecated `MediaTypeOptions` */
 const hasNewMediaType = !!(ImagePicker as any).MediaType;
@@ -79,38 +87,233 @@ export default function Profile() {
     SpaceGrotesk_700Bold,
   });
   const fontsReady = geistLoaded && sgLoaded;
+  const { canAddHighlights, canViewCreatorWorkouts } = useFeatures();
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const { user } = useAuth();
+  const params = useLocalSearchParams<{ profileId?: string }>();
+  const viewingProfileId = params.profileId || user?.id;
+  const isViewingOwnProfile = !params.profileId || params.profileId === user?.id;
+
+  // Configure audio to play through speakers
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false, // Play through speakers, not earpiece
+    });
+  }, []);
 
   /* -------- Profile data -------- */
-  const [name] = useState("Troy Hornbreck");
-  const [handle] = useState("@thetroyhornbreck67");
-  const [followers] = useState(207);
-  const [following] = useState(310);
-  const [bio] = useState("Montverde Academy  ’25  PG");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [stats, setStats] = useState({ followers: 0, following: 0, highlights: 0 });
+  const [loading, setLoading] = useState(true);
+  const [pfpUri, setPfpUri] = useState<string | null>(null);
+
+  /* -------- Load profile data -------- */
+  const loadProfile = useCallback(async () => {
+    if (!viewingProfileId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    
+    if (isViewingOwnProfile && user) {
+      // Viewing own profile
+      const [profileResult, statsResult] = await Promise.all([
+        getMyProfile(),
+        getProfileStats(user.id),
+      ]);
+
+      if (profileResult.data) {
+        setProfile(profileResult.data);
+        // Only set pfpUri if we have a valid URL, and don't clear if we already have one
+        if (profileResult.data.profile_image_url) {
+          console.log('📸 [Profile] Setting profile image URL:', profileResult.data.profile_image_url);
+          setPfpUri(profileResult.data.profile_image_url);
+        } else if (!pfpUri) {
+          // Only clear if we don't already have a URI set
+          setPfpUri(null);
+        }
+      }
+      if (statsResult.data) {
+        console.log(`📊 [Profile] Stats for own profile:`, statsResult.data);
+        setStats(statsResult.data);
+      }
+    } else {
+      // Viewing another user's profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, bio, profile_image_url, is_premium, is_creator, plan, sports, primary_sport')
+        .eq('id', viewingProfileId)
+        .single();
+
+      if (profileData) {
+        setProfile(profileData as Profile);
+        // Only set pfpUri if we have a valid URL
+        if (profileData.profile_image_url) {
+          console.log('📸 [Profile] Setting profile image URL:', profileData.profile_image_url);
+          setPfpUri(profileData.profile_image_url);
+        } else {
+          setPfpUri(null);
+        }
+      }
+
+      const statsResult = await getProfileStats(viewingProfileId);
+      if (statsResult.data) {
+        console.log(`📊 [Profile] Stats for ${viewingProfileId}:`, statsResult.data);
+        setStats(statsResult.data);
+      } else if (statsResult.error) {
+        console.error(`❌ [Profile] Stats error for ${viewingProfileId}:`, statsResult.error);
+      }
+    }
+    
+    setLoading(false);
+  }, [viewingProfileId, isViewingOwnProfile, user]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  // Reload profile when screen comes into focus (e.g., after editing)
+  useFocusEffect(
+    useCallback(() => {
+      if (viewingProfileId) {
+        loadProfile();
+      }
+    }, [viewingProfileId, loadProfile])
+  );
+
+  /* -------- Load highlights -------- */
+  const [clips, setClips] = useState<Highlight[]>([]);
+  const [videoAspectRatios, setVideoAspectRatios] = useState<Map<string, number>>(new Map());
+  
+  useEffect(() => {
+    if (!viewingProfileId) return;
+
+    const loadHighlights = async () => {
+      console.log(`📹 [Highlights] ===== START Loading highlights for profile: ${viewingProfileId} =====`);
+      const { data, error } = await listHighlights(viewingProfileId);
+      if (data) {
+        console.log(`📹 [Highlights] Raw data from API: ${data.length} highlights`);
+        const validClips = data
+          .filter((h) => {
+            const isValid = h.video_url && h.video_url.trim() !== '';
+            if (!isValid) {
+              console.log(`📹 [Highlights] Filtering out highlight ${h.id} - no valid video_url`);
+            }
+            return isValid;
+          })
+          .map((h) => ({ id: h.id, uri: h.video_url || '', video_url: h.video_url }));
+        setClips(validClips);
+        console.log(`📹 [Highlights] Valid clips: ${validClips.length} out of ${data.length} total`);
+        console.log(`📹 [Highlights] Current stats.highlights before update: ${stats.highlights}`);
+        
+        // Update stats to reflect actual visible highlights count
+        // This will override the count from getProfileStats with the actual valid count
+        setStats(prev => {
+          const newStats = { ...prev, highlights: validClips.length };
+          console.log(`📹 [Highlights] Updated stats.highlights from ${prev.highlights} to ${newStats.highlights}`);
+          return newStats;
+        });
+      } else if (error) {
+        console.error('❌ [Highlights] Load error:', error);
+      }
+      console.log(`📹 [Highlights] ===== END =====`);
+    };
+
+    loadHighlights();
+  }, [viewingProfileId, stats.highlights]);
 
   /* -------- Avatar -------- */
-  const [pfpUri, setPfpUri] = useState<string | null>(null);
   const pickPfp = async () => {
+    // Only allow editing own profile
+    if (!isViewingOwnProfile) return;
+    
     const res = await ImagePicker.launchImageLibraryAsync({
       ...(mediaTypesImage as any),
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.9,
     } as any);
-    if (!res.canceled) setPfpUri(res.assets[0].uri);
+    if (!res.canceled && res.assets[0]) {
+      const imageUri = res.assets[0].uri;
+      setPfpUri(imageUri); // Optimistic update
+
+      // Upload to Supabase
+      const { data, error } = await uploadProfileImage(imageUri);
+      if (error) {
+        console.error('❌ [Profile] Upload error details:', error);
+        Alert.alert("Error", `Failed to upload profile picture: ${error.message || 'Unknown error'}`);
+        setPfpUri(profile?.profile_image_url || null); // Revert
+      } else if (data) {
+        // Set the new URL immediately (don't wait for reload)
+        setPfpUri(data);
+        // Update profile state with new image URL
+        if (profile) {
+          setProfile({ ...profile, profile_image_url: data });
+        }
+        // Reload profile in background to ensure consistency
+        setTimeout(async () => {
+          const { data: updatedProfile } = await getMyProfile();
+          if (updatedProfile) {
+            setProfile(updatedProfile);
+            setPfpUri(updatedProfile.profile_image_url);
+          }
+        }, 500);
+      }
+    }
   };
 
-  /* -------- Highlights (local) -------- */
-  const [clips, setClips] = useState<Highlight[]>([]);
+  /* -------- Highlights -------- */
   const addHighlight = async () => {
+    // Double-check premium status (defensive)
+    if (!canAddHighlights) {
+      console.log('🔒 [Profile] Add Highlights blocked - not premium');
+      setShowUpgradeModal(true);
+      return;
+    }
+    console.log('✅ [Profile] Add Highlights allowed - user is premium');
     const res = await ImagePicker.launchImageLibraryAsync({
       ...(mediaTypesVideo as any),
       quality: 1,
       allowsMultipleSelection: true,
       selectionLimit: 10,
     } as any);
-    if (!res.canceled) {
-      const added = res.assets.map((a) => ({ id: `${a.uri}-${Date.now()}`, uri: a.uri }));
-      setClips((prev) => [...prev, ...added]);
+    if (!res.canceled && res.assets.length > 0) {
+      const files = res.assets.map((a) => ({ uri: a.uri }));
+      const { data, error } = await uploadHighlights(files);
+      if (error) {
+        console.error('❌ [Highlights] Upload error details:', error);
+        Alert.alert("Error", `Failed to upload highlights: ${error.message || 'Unknown error'}`);
+      } else if (data) {
+        // Add new highlights to clips immediately
+        const newClips = data.map((h) => ({ 
+          id: h.id, 
+          uri: h.video_url || '', 
+          video_url: h.video_url 
+        }));
+        setClips(prev => [...newClips, ...prev]);
+        
+        // Reload highlights from DB to ensure consistency
+        setTimeout(async () => {
+          const { data: highlights } = await listHighlights(user!.id);
+          if (highlights) {
+            setClips(highlights.map((h) => ({ 
+              id: h.id, 
+              uri: h.video_url || '', 
+              video_url: h.video_url 
+            })));
+          }
+        }, 500);
+        
+        // Reload stats
+        const { data: updatedStats } = await getProfileStats(user!.id);
+        if (updatedStats) {
+          setStats(updatedStats);
+        }
+      }
     }
   };
 
@@ -136,7 +339,17 @@ export default function Profile() {
     setViewerOpen(true);
   };
 
-  const deleteCurrent = () => {
+  const deleteCurrent = async () => {
+    const highlightToDelete = clips[currentIndex];
+    if (!highlightToDelete) return;
+
+    const { error } = await deleteHighlight(highlightToDelete.id);
+    if (error) {
+      Alert.alert("Error", "Failed to delete highlight");
+      return;
+    }
+
+    // Update local state
     setClips((prev) => {
       const next = [...prev];
       next.splice(currentIndex, 1);
@@ -148,6 +361,14 @@ export default function Profile() {
       setCurrentIndex(newIdx);
       return next;
     });
+
+    // Reload stats
+    if (user) {
+      const { data: updatedStats } = await getProfileStats(user.id);
+      if (updatedStats) {
+        setStats(updatedStats);
+      }
+    }
   };
 
   const onViewableItemsChanged = useRef(
@@ -161,7 +382,7 @@ export default function Profile() {
 
   const viewConfig = useMemo(() => ({ itemVisiblePercentThreshold: 80 }), []);
 
-  if (!fontsReady) {
+  if (!fontsReady || loading) {
     return (
       <View style={{ flex: 1, backgroundColor: DARK, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator />
@@ -169,7 +390,10 @@ export default function Profile() {
     );
   }
 
-  const highlightCount = clips.length; // (used for “Highlights” stat)
+  const displayName = profile?.display_name || "User";
+  const username = profile?.username ? `@${profile.username}` : "@username";
+  const bioText = profile?.bio || "";
+  const highlightCount = stats.highlights;
 
   /* ---------------------------- UI ---------------------------- */
   return (
@@ -183,15 +407,57 @@ export default function Profile() {
         }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Back button when viewing another user's profile */}
+        {!isViewingOwnProfile && (
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              position: 'absolute',
+              top: 44,
+              left: 16,
+              zIndex: 10,
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.15)",
+              backgroundColor: "rgba(0,0,0,0.3)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={22} color={TEXT} />
+          </Pressable>
+        )}
+
         {/* Heading (Space Grotesk) */}
         <Text style={styles.pageTitle}>Profile</Text>
         <View style={styles.headerRule} />
 
         {/* Top row */}
         <View style={styles.topRow}>
-          <Pressable style={styles.pfpWrap} onPress={pickPfp}>
+          <Pressable style={styles.pfpWrap} onPress={isViewingOwnProfile ? pickPfp : undefined}>
             {pfpUri ? (
-              <Image source={{ uri: pfpUri }} style={styles.pfpImg} />
+              <Image 
+                source={{ 
+                  uri: pfpUri,
+                  cache: 'reload' // Force reload to avoid stale cache
+                }} 
+                style={styles.pfpImg}
+                onError={(error) => {
+                  // Silently handle image load errors (old corrupted files may still be in DB)
+                  // Only log in development
+                  if (__DEV__) {
+                    console.warn('⚠️ [Profile Image] Failed to load (may be corrupted or missing):', pfpUri);
+                  }
+                  // Clear the broken image URL so placeholder shows
+                  setPfpUri(null);
+                }}
+                onLoad={() => {
+                  console.log('✅ [Profile Image] Loaded successfully:', pfpUri);
+                }}
+              />
             ) : (
               <View style={styles.pfpPlaceholder}>
                 <Ionicons name="add" size={28} color={DIM} />
@@ -201,9 +467,9 @@ export default function Profile() {
 
           <View style={{ flex: 1, marginLeft: 16 /* CHANGE (SPACING): gap between avatar and name/handle */ }}>
             {/* Display name (Geist) */}
-            <Text style={styles.displayName}>{name}</Text>
+            <Text style={styles.displayName}>{displayName}</Text>
             {/* Handle (system) */}
-            <Text style={styles.handle}>{handle}</Text>
+            <Text style={styles.handle}>{username}</Text>
           </View>
         </View>
 
@@ -215,7 +481,7 @@ export default function Profile() {
         >
           <Text style={styles.sectionHeading}>Bio</Text>
           <View style={{ height: 10 /* CHANGE (SPACING): space between "Bio" label and bio text */ }} />
-          <Text style={styles.bioText}>{bio}</Text>
+          <Text style={styles.bioText}>{bioText}</Text>
         </View>
 
         {/* Followers / Following / Highlights */}
@@ -223,36 +489,109 @@ export default function Profile() {
           style={styles.ffRowOuter}
           /* CHANGE (SPACING): ffRowOuter.marginTop is space between Bio block and stats row */
         >
-          <View style={styles.ffCol}>
+          <Pressable 
+            style={styles.ffCol}
+            onPress={() => {
+              if (stats.followers > 0 || isViewingOwnProfile) {
+                router.push(`/(tabs)/profile/followers?profileId=${viewingProfileId}`);
+              }
+            }}
+          >
             <Text style={styles.ffLabel /* CHANGE (TYPO/SPACE): label baseline offset via marginBottom */}>Followers</Text>
-            <Text style={styles.ffNumber}>{followers}</Text>
-          </View>
-          <View style={styles.ffCol}>
+            <Text style={styles.ffNumber}>{stats.followers}</Text>
+          </Pressable>
+          <Pressable 
+            style={styles.ffCol}
+            onPress={() => {
+              if (stats.following > 0 || isViewingOwnProfile) {
+                router.push(`/(tabs)/profile/following?profileId=${viewingProfileId}`);
+              }
+            }}
+          >
             <Text style={styles.ffLabel}>Following</Text>
-            <Text style={styles.ffNumber}>{following}</Text>
-          </View>
+            <Text style={styles.ffNumber}>{stats.following}</Text>
+          </Pressable>
           <View style={styles.ffCol}>
             <Text style={styles.ffLabel}>Highlights</Text>
             <Text style={styles.ffNumber}>{highlightCount}</Text>
           </View>
         </View>
 
-        {/* Buttons */}
-        <View
-          style={styles.btnRow}
-          /* CHANGE (SPACING): btnRow.marginTop is space above buttons; marginBottom is space below buttons */
-        >
+        {/* Buttons - only show for own profile */}
+        {isViewingOwnProfile && (
+          <>
+            <View
+              style={styles.btnRow}
+              /* CHANGE (SPACING): btnRow.marginTop is space above buttons; marginBottom is space below buttons */
+            >
+              <Pressable
+                style={[styles.pillBtn, styles.pillSolid]}
+                // ***** ONLY CHANGE: use absolute path so the route is guaranteed to resolve
+                onPress={() => router.push("/(tabs)/profile/edit")}
+              >
+                <Text style={[styles.pillText, { color: TEXT }]}>Edit Profile</Text>
+              </Pressable>
+              <Pressable 
+                style={[
+                  styles.pillBtn, 
+                  styles.pillSolid,
+                  !canAddHighlights && { opacity: 0.5 }
+                ]} 
+                onPress={() => {
+                  console.log('🔍 [Profile] Add Highlights button pressed, canAddHighlights:', canAddHighlights);
+                  if (!canAddHighlights) {
+                    console.log('🔒 [Profile] Showing upgrade modal for Add Highlights');
+                    setShowUpgradeModal(true);
+                    return;
+                  }
+                  console.log('✅ [Profile] Calling addHighlight function');
+                  addHighlight();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  {!canAddHighlights && (
+                    <Ionicons name="lock-closed" size={16} color={TEXT} />
+                  )}
+                  <Text style={[styles.pillText, { color: TEXT }]}>Add Highlights</Text>
+                </View>
+              </Pressable>
+            </View>
+
+            {/* Find Friends and Creators button */}
+            <Pressable
+              style={[styles.pillBtn, styles.pillSolid, { marginTop: 18 }]}
+              onPress={() => router.push("/(tabs)/profile/find-friends")}
+            >
+              <Text style={[styles.pillText, { color: TEXT }]}>Find Friends and Creators</Text>
+            </Pressable>
+          </>
+        )}
+
+        {/* View Creator Workouts button (for creators, own or others) */}
+        {profile?.is_creator && (
           <Pressable
-            style={[styles.pillBtn, styles.pillSolid]}
-            // ***** ONLY CHANGE: use absolute path so the route is guaranteed to resolve
-            onPress={() => router.push("/(tabs)/profile/edit")}
+            style={[
+              styles.pillBtn, 
+              styles.pillSolid, 
+              { marginTop: 12, backgroundColor: "#FFD700", borderColor: "#FFA500" },
+              !canViewCreatorWorkouts && { opacity: 0.5 }
+            ]}
+            onPress={() => {
+              if (canViewCreatorWorkouts) {
+                router.push(`/(tabs)/profile/creator-workouts?profileId=${viewingProfileId}`);
+              } else {
+                setShowUpgradeModal(true);
+              }
+            }}
           >
-            <Text style={[styles.pillText, { color: TEXT }]}>Edit Profile</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {!canViewCreatorWorkouts && (
+                <Ionicons name="lock-closed" size={16} color="#000" />
+              )}
+              <Text style={[styles.pillText, { color: "#000" }]}>View Creator Workouts</Text>
+            </View>
           </Pressable>
-          <Pressable style={[styles.pillBtn, styles.pillSolid]} onPress={addHighlight}>
-            <Text style={[styles.pillText, { color: TEXT }]}>Add Highlights</Text>
-          </Pressable>
-        </View>
+        )}
 
         {/* Highlights */}
         <Text
@@ -274,21 +613,65 @@ export default function Profile() {
           </View>
         ) : (
           <Pressable
+            key={`preview-${clips[0].id}`}
             style={styles.previewCard}
             onPress={() => openViewer(0)}
             /* CHANGE (SPACING): previewCard.marginTop = gap between heading and video preview */
           >
             <Video
-              source={{ uri: clips[0].uri }}
+              key={`video-${clips[0].id}`}
+              source={{ 
+                uri: clips[0].video_url || clips[0].uri || "",
+              }}
               style={styles.previewVideo}
               resizeMode={ResizeMode.COVER}
-              shouldPlay
+              shouldPlay={false}
               isLooping
-              isMuted
+              isMuted={false}
+              volume={1.0}
+              useNativeControls={false}
+              onError={(error: any) => {
+                // Silently handle video load errors (old corrupted files may still be in DB)
+                // Only log in development
+                if (__DEV__) {
+                  console.warn('⚠️ [Video] Preview failed to load (may be corrupted or missing)');
+                }
+                // Remove the broken video from clips
+                setClips(prev => prev.filter(c => c.id !== clips[0].id));
+              }}
+              onLoad={(status: any) => {
+                console.log('✅ [Video] Preview loaded:', clips[0].video_url || clips[0].uri);
+                // Get video dimensions to determine aspect ratio (for fullscreen)
+                if (status.naturalSize) {
+                  const { width, height } = status.naturalSize;
+                  const aspectRatio = width / height;
+                  console.log(`📐 [Video] Aspect ratio: ${aspectRatio} (${width}x${height})`);
+                  setVideoAspectRatios(prev => {
+                    const newMap = new Map(prev);
+                    newMap.set(clips[0].id, aspectRatio);
+                    return newMap;
+                  });
+                }
+              }}
+              onLoadStart={() => {
+                console.log('🔄 [Video] Preview loading started:', clips[0].video_url || clips[0].uri);
+              }}
             />
           </Pressable>
         )}
       </ScrollView>
+
+      {/* Upgrade Modal for Add Highlights */}
+      {showUpgradeModal && (
+        <UpgradeModal
+          visible={showUpgradeModal}
+          onClose={() => {
+            console.log('🔍 [Profile] Closing upgrade modal');
+            setShowUpgradeModal(false);
+          }}
+          featureName="Add Highlights"
+        />
+      )}
 
       {/* Full-screen viewer (unchanged) */}
       <Modal visible={viewerOpen} animationType="fade" onRequestClose={() => setViewerOpen(false)}>
@@ -304,12 +687,41 @@ export default function Profile() {
                   ref={(r) => {
                     players.current.set(index, r);
                   }}
-                  source={{ uri: item.uri }}
+                  source={{ 
+                    uri: item.video_url || item.uri || "",
+                  }}
                   style={styles.fullVideo}
-                  resizeMode={ResizeMode.COVER}
+                  resizeMode={ResizeMode.CONTAIN}
                   shouldPlay={index === currentIndex}
                   isLooping
                   isMuted={false}
+                  volume={1.0}
+                  useNativeControls={false}
+                  onError={(error: any) => {
+                    // Silently handle video load errors (old corrupted files may still be in DB)
+                    // Only log in development
+                    if (__DEV__) {
+                      console.warn('⚠️ [Video] Fullscreen failed to load (may be corrupted or missing)');
+                    }
+                    // Remove the broken video from clips
+                    setClips(prev => prev.filter(c => c.id !== item.id));
+                  }}
+                  onLoad={(status: any) => {
+                    console.log('✅ [Video] Fullscreen loaded:', item.video_url || item.uri);
+                    // Get video dimensions to determine aspect ratio
+                    if (status.naturalSize) {
+                      const { width, height } = status.naturalSize;
+                      const aspectRatio = width / height;
+                      setVideoAspectRatios(prev => {
+                        const newMap = new Map(prev);
+                        newMap.set(item.id, aspectRatio);
+                        return newMap;
+                      });
+                    }
+                  }}
+                  onLoadStart={() => {
+                    console.log('🔄 [Video] Fullscreen loading started:', item.video_url || item.uri);
+                  }}
                 />
               </View>
             )}
@@ -333,7 +745,7 @@ export default function Profile() {
             <Ionicons name="trash-outline" size={22} color="#FFF" />
           </Pressable>
 
-          <View style={[styles.hintWrap, { bottom: (insets.bottom || 0) + 20 }]}>
+          <View style={[styles.hintWrap, { bottom: (insets.bottom || 0) - 16 }]}>
             <Text style={styles.hintText}>Scroll to see more highlights</Text>
             <Ionicons name="chevron-down" size={18} color="#FFF" style={{ marginTop: 2, opacity: 0.8 }} />
           </View>

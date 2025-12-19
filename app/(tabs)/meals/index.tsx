@@ -10,9 +10,12 @@ import {
   LayoutChangeEvent,
   ActivityIndicator,
   Platform,
+  Modal,
+  Keyboard,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from "../../../constants/theme";
 import {
   MEAL_TYPES,
@@ -21,7 +24,10 @@ import {
   type Food,
   type FoodEntry,
 } from "../../../providers/MealsContext";
+import { useMacroProgressGraphDirect } from "../../../hooks/useMacroProgressGraphDirect";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
+import { useFeatures } from "../../../hooks/useFeatures";
+import UpgradeModal from "../../../components/UpgradeModal";
 
 /* Fonts */
 import {
@@ -123,6 +129,8 @@ function Drop({
 }
 
 export default function MealsHome() {
+  const { canSeeMealsGraph } = useFeatures();
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [geistLoaded] = useGeist({
     Geist_400Regular, Geist_500Medium, Geist_600SemiBold, Geist_700Bold, Geist_800ExtraBold,
   });
@@ -133,9 +141,14 @@ export default function MealsHome() {
   const params = useLocalSearchParams<{ add?: string; to?: MealType }>();
 
   const {
-    meals, totalsFor, entryTotals, addFood,
+    meals, totalsFor, entryTotals, addFood, removeFood,
     burnedCalories, setBurnedCalories, dayCalories, netCalories,
+    selectedDate, setSelectedDate, loading, macroGoals,
   } = useMeals();
+
+  // Date picker state
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const currentDate = new Date(selectedDate + 'T00:00:00');
 
   // ingest scanned item
   const [incoming, setIncoming] = useState<Food | null>(null);
@@ -160,7 +173,7 @@ export default function MealsHome() {
 
         const target = params.to;
         if (target && (MEAL_TYPES as readonly MealType[]).includes(target)) {
-          addFood(target, { ...asFood, id: undefined } as Food);
+          addFood(target, { ...asFood, id: undefined } as Food).catch(console.error);
         } else {
           setIncoming(asFood as Food);
         }
@@ -169,22 +182,33 @@ export default function MealsHome() {
     }
   }, [params.add, params.to, router, addFood]);
 
-  const addIncomingTo = (meal: MealType) => {
+  const addIncomingTo = async (meal: MealType) => {
     if (!incoming) return;
-    addFood(meal, { ...incoming, id: undefined } as Food);
+    await addFood(meal, { ...incoming, id: undefined } as Food);
     setIncoming(null);
   };
 
   // burned cals
   const [burnEdit, setBurnEdit] = useState<string>("");
   useEffect(() => setBurnEdit(String(burnedCalories || "")), [burnedCalories]);
-  const commitBurn = () => {
+  const commitBurn = async () => {
+    console.log('🔥 [Burned Calories] commitBurn called', { burnEdit, burnedCalories });
     const n = Number(burnEdit.replace(/[^\d]/g, ""));
-    setBurnedCalories(Number.isFinite(n) ? n : 0);
+    const value = Number.isFinite(n) ? n : 0;
+    console.log('🔥 [Burned Calories] Parsed value:', { n, value });
+    await setBurnedCalories(value);
+    console.log('🔥 [Burned Calories] setBurnedCalories called with:', value);
+    // Clear the input after saving
+    setBurnEdit(String(value));
+    console.log('🔥 [Burned Calories] Input updated to:', String(value));
+    // Dismiss keyboard
+    Keyboard.dismiss();
+    console.log('🔥 [Burned Calories] Keyboard dismissed');
   };
 
   // day totals (robust sugar/sodium)
   const dayTotals = useMemo(() => {
+    console.log('🍽️ [Day Totals] Recalculating', { mealsCount: Object.values(meals).flat().length, burnedCalories });
     const scalePct = (v: number | null | undefined, pct: number | undefined) =>
       v == null ? 0 : Math.round((v * (pct ?? 100)) / 100);
 
@@ -210,10 +234,12 @@ export default function MealsHome() {
         sodium += scalePct(getSodium(e as any), (e as FoodEntry).servingPct);
       }
     }
+    console.log('🍽️ [Day Totals] Calculated:', { calories, protein, carbs, fat, sugar, sodium });
     return { calories, protein, carbs, fat, sugar, sodium };
-  }, [meals, entryTotals]);
+  }, [meals, entryTotals, burnedCalories]); // Add burnedCalories to dependencies to force update
 
-  const GOAL = { calories: 2500, protein: 160, carbs: 400, fat: 90, sugar: 80, sodium: 2300 };
+  // Use macro goals from backend, fallback to defaults
+  const GOAL = macroGoals || { calories: 2500, protein: 150, carbs: 400, fat: 100, sugar: 80, sodium: 2000 };
 
   // graph
   const [macro, setMacro] = useState<MacroKey>("calories");
@@ -221,10 +247,100 @@ export default function MealsHome() {
   const [openMacro, setOpenMacro] = useState(false);
   const [openRange, setOpenRange] = useState(false);
 
-  const { data: series, avg } = useMemo(() => generateSeries(macro, range), [macro, range]);
-  const yTicks = useMemo(() => yTicksFrom(avg), [avg]);
-  const yMin = yTicks[0];
-  const yMax = yTicks[yTicks.length - 1];
+  // Use real macro progress graph data (direct query approach)
+  const macroMetric = macro === 'fat' ? 'fats' : macro as 'calories' | 'protein' | 'carbs' | 'fats' | 'sugar' | 'sodium';
+  const daysValue = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === '180d' ? 180 : 360;
+  const { data: macroGraphData, loading: graphLoading } = useMacroProgressGraphDirect({
+    metric: macroMetric,
+    days: daysValue as 7 | 30 | 90 | 180 | 360,
+  });
+
+  // Convert graph data to series format (matching exercise progress graph format)
+  const { data: series, avg, yMin, yMax } = useMemo(() => {
+    if (!macroGraphData || macroGraphData.length === 0) {
+      return { data: [], avg: 0, yMin: 0, yMax: 0 };
+    }
+
+    // Convert backend data to graph series
+    // Handle both camelCase (from Supabase) and snake_case (direct from DB)
+    // Include ALL values including zeros (they should show on x-axis)
+    const graphSeries = macroGraphData
+      .filter((p: any) => p.value !== null && p.value !== undefined)
+      .map((p: any) => {
+        const bucketStart = p.bucketStart ?? p.bucket_start ?? '';
+        // Parse date string and create local date (not UTC) to avoid timezone issues
+        let date: Date;
+        if (bucketStart) {
+          // Parse YYYY-MM-DD format and create local date
+          const [year, month, day] = bucketStart.split('-').map(Number);
+          date = new Date(year, month - 1, day); // month is 0-indexed
+        } else {
+          date = new Date();
+        }
+        
+        // Value is already converted to mg in the hook for sodium, so use as-is
+        const value = Number(p.value) || 0;
+        
+        return {
+          x: p.bucketIndex ?? p.bucket_index ?? 0,
+          y: value,
+          date: date,
+        };
+      })
+      .sort((a, b) => a.x - b.x); // Sort by bucket index
+
+    if (graphSeries.length === 0) {
+      return { data: [], avg: 0, yMin: 0, yMax: 0 };
+    }
+
+    // Calculate Y-axis range based on min/max of actual data points
+    const allValues = graphSeries.map(s => s.y);
+    const nonZeroValues = allValues.filter(v => v > 0);
+    
+    // Use min/max of all values (including zeros) for Y-axis range
+    const minValue = Math.min(...allValues);
+    const maxValue = Math.max(...allValues);
+    
+    // Calculate average from non-zero values for reference
+    const average = nonZeroValues.length > 0 
+      ? Math.round((nonZeroValues.reduce((sum, v) => sum + v, 0) / nonZeroValues.length) * 10) / 10
+      : 0;
+
+    console.log('📊 [Meals Graph] Series calculation:', {
+      graphSeriesLength: graphSeries.length,
+      values: allValues,
+      minValue,
+      maxValue,
+      average,
+      nonZeroValues,
+    });
+
+    return { data: graphSeries, avg: average, yMin: minValue, yMax: maxValue };
+  }, [macroGraphData, macro, range]);
+  // Use min/max from data for Y-axis, or fallback to average-based ticks
+  const yTicks = useMemo(() => {
+    if (yMin !== undefined && yMax !== undefined && yMax >= yMin) {
+      // Calculate ticks based on actual data range
+      const range = Math.max(1, yMax - yMin); // Ensure at least 1 to avoid division by zero
+      const step = Math.max(1, Math.round(range / 8)); // 8-9 ticks
+      const ticks: number[] = [];
+      const startTick = Math.floor(yMin / step) * step;
+      const endTick = Math.ceil(yMax / step) * step;
+      for (let i = startTick; i <= endTick; i += step) {
+        ticks.push(Math.max(0, i));
+      }
+      // Ensure we have at least 2 ticks
+      if (ticks.length < 2) {
+        ticks.push(ticks[0] + step);
+      }
+      return Array.from(new Set(ticks)).sort((a, b) => a - b);
+    }
+    // Fallback to average-based calculation
+    return yTicksFrom(avg);
+  }, [yMin, yMax, avg]);
+  
+  const finalYMin = yTicks[0] ?? 0;
+  const finalYMax = yTicks[yTicks.length - 1] ?? Math.max(100, avg || 100);
 
   const [w, setW] = useState(0);
   const H = 240;
@@ -233,7 +349,7 @@ export default function MealsHome() {
   const innerH = H - M.top - M.bottom;
   const onLayoutChart = (e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width);
   const xFor = (i: number) => M.left + (series.length <= 1 ? 0 : (i * innerW) / (series.length - 1));
-  const yFor = (val: number) => M.top + innerH - (innerH * (val - yMin)) / Math.max(1, yMax - yMin);
+  const yFor = (val: number) => M.top + innerH - (innerH * (val - finalYMin)) / Math.max(1, finalYMax - finalYMin);
   const linePath = useMemo(() => {
     if (!series.length) return "";
     return series.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.y)}`).join(" ");
@@ -247,12 +363,83 @@ export default function MealsHome() {
     );
   }
 
+  const onDateChange = (event: any, date?: Date) => {
+    setShowDatePicker(false);
+    if (date) {
+      const dateStr = date.toISOString().split('T')[0];
+      setSelectedDate(dateStr);
+    }
+  };
+
+  const formatDateDisplay = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg0 }}>
       {/* Header */}
       <View style={{ alignItems: "center", marginTop: 32, paddingHorizontal: theme.layout.xl }}>
         <Text style={styles.headerMeals}>Meals</Text>
         <View style={styles.headerUnderline} />
+        
+        {/* Date Picker Button */}
+        <Pressable 
+          onPress={() => setShowDatePicker(true)}
+          style={{ marginTop: 12, paddingVertical: 8, paddingHorizontal: 16 }}
+        >
+          <Text style={{ 
+            color: theme.colors.textHi, 
+            fontSize: 16, 
+            fontFamily: FONT.displayMed,
+            textTransform: 'uppercase',
+            letterSpacing: 1,
+          }}>
+            {formatDateDisplay(selectedDate)}
+          </Text>
+        </Pressable>
+
+        {/* Date Picker Modal */}
+        {showDatePicker && (
+          <Modal
+            transparent={true}
+            animationType="slide"
+            visible={showDatePicker}
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <View style={{ 
+              flex: 1, 
+              backgroundColor: 'rgba(0,0,0,0.5)', 
+              justifyContent: 'flex-end' 
+            }}>
+              <View style={{ 
+                backgroundColor: theme.colors.bg0, 
+                borderTopLeftRadius: 20, 
+                borderTopRightRadius: 20,
+                padding: 20,
+                paddingBottom: 40,
+              }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+                  <Text style={{ color: theme.colors.textHi, fontSize: 18, fontFamily: FONT.displayBold }}>
+                    Select Date
+                  </Text>
+                  <Pressable onPress={() => setShowDatePicker(false)}>
+                    <Ionicons name="close" size={24} color={theme.colors.textHi} />
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={currentDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onDateChange}
+                  maximumDate={new Date()}
+                  minimumDate={new Date(2020, 0, 1)} // Allow going back to 2020
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
       </View>
 
       <ScrollView
@@ -306,9 +493,14 @@ export default function MealsHome() {
                         </Text>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Text style={[styles.kcalRight, { fontFamily: FONT.displayBold }]}>{t.calories}</Text>
-                          <View style={styles.removeBtn}>
+                          <Pressable 
+                            onPress={() => {
+                              removeFood(meal, e.entryId).catch(console.error);
+                            }}
+                            style={styles.removeBtn}
+                          >
                             <Text style={{ color: TEXT, fontFamily: FONT.uiBold }}>×</Text>
-                          </View>
+                          </Pressable>
                         </View>
                       </Pressable>
                     );
@@ -347,12 +539,29 @@ export default function MealsHome() {
 
         {/* Macro Bars (includes Sodium & Sugar) */}
         <View style={styles.barsCard}>
-          <MacroBar label="Calories" color="#7CFF4F" value={dayTotals.calories} goal={GOAL.calories} />
+          <MacroBar label="Calories" color="#7CFF4F" value={netCalories} goal={GOAL.calories} />
           <MacroBar label="Protein"  color="#FF4C4C" value={dayTotals.protein}  goal={GOAL.protein} />
           <MacroBar label="Carbs"    color="#6AA3FF" value={dayTotals.carbs}    goal={GOAL.carbs} />
           <MacroBar label="Fats"     color="#FFE14E" value={dayTotals.fat}      goal={GOAL.fat} />
           <MacroBar label="Sugar"    color="#C07CFF" value={dayTotals.sugar}    goal={GOAL.sugar} />
-          <MacroBar label="Sodium"   color="#FFA64D" value={dayTotals.sodium}   goal={GOAL.sodium} />
+          <MacroBar label="Sodium"   color="#FFA64D" value={dayTotals.sodium * 1000}   goal={GOAL.sodium * 1000} />
+          
+          {/* Edit Macro Goals Button */}
+          <Pressable
+            onPress={() => router.push('/(tabs)/meals/edit-goals')}
+            style={{ 
+              marginTop: 16, 
+              paddingVertical: 12, 
+              alignItems: 'center',
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255,255,255,0.1)',
+              paddingTop: 16,
+            }}
+          >
+            <Text style={{ color: theme.colors.textHi, fontSize: 16, fontFamily: FONT.uiSemi }}>
+              Edit Macro Goals
+            </Text>
+          </Pressable>
         </View>
 
         {/* Progress graph */}
@@ -413,55 +622,92 @@ export default function MealsHome() {
           </View>
 
           {/* chart */}
-          <View
-            onLayout={onLayoutChart}
-            style={{
-              height: 240,
-              backgroundColor: "#0B121A",
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: STROKE,
-              overflow: "hidden",
+          <Pressable
+            onPress={() => {
+              if (!canSeeMealsGraph) {
+                setShowUpgradeModal(true);
+              }
             }}
+            disabled={canSeeMealsGraph}
           >
-            <Svg width="100%" height="100%">
-              <G>
-                {yTicks.map((t, i) => {
-                  const y = yFor(t);
-                  return (
-                    <SvgLine key={`gy-${i}`} x1={M.left} x2={w - M.right} y1={y} y2={y} stroke="#16222c" strokeWidth={1} />
-                  );
-                })}
-                {yTicks.map((t, i) => {
-                  const y = yFor(t);
-                  return (
-                    <SvgText key={`gt-${i}`} x={M.left - 6} y={y + 3} fill="#8AA0B5" fontSize={10} textAnchor="end">
-                      {t}
-                    </SvgText>
-                  );
-                })}
-                {series.map((p, i) => {
-                  const x = xFor(i);
-                  const label = range === "180d" || range === "360d" ? yearOnly(p.date) : md(p.date);
-                  return (
-                    <SvgText key={`xl-${i}`} x={x} y={240 - 14} fill="#8AA0B5" fontSize={10} textAnchor="middle">
-                      {label}
-                    </SvgText>
-                  );
-                })}
-                <SvgLine x1={M.left} x2={w - M.right} y1={240 - M.bottom} y2={240 - M.bottom} stroke="#22303d" strokeWidth={1} />
-                <SvgLine x1={M.left} x2={M.left} y1={M.top} y2={240 - M.bottom} stroke="#22303d" strokeWidth={1} />
-              </G>
+            <View
+              onLayout={onLayoutChart}
+              style={{
+                height: 240,
+                backgroundColor: "#0B121A",
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: STROKE,
+                overflow: "hidden",
+                opacity: canSeeMealsGraph ? 1 : 0.5,
+                position: "relative",
+              }}
+            >
+              {!canSeeMealsGraph && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: [{ translateX: -16 }, { translateY: -16 }],
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: "rgba(0, 0, 0, 0.7)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 10,
+                  }}
+                >
+                  <Ionicons name="lock-closed" size={32} color={TEXT} />
+                </View>
+              )}
+              <Svg width="100%" height="100%">
+                <G>
+                  {yTicks.map((t, i) => {
+                    const y = yFor(t);
+                    return (
+                      <SvgLine key={`gy-${i}`} x1={M.left} x2={w - M.right} y1={y} y2={y} stroke="#16222c" strokeWidth={1} />
+                    );
+                  })}
+                  {yTicks.map((t, i) => {
+                    const y = yFor(t);
+                    return (
+                      <SvgText key={`gt-${i}`} x={M.left - 6} y={y + 3} fill="#8AA0B5" fontSize={10} textAnchor="end">
+                        {t}
+                      </SvgText>
+                    );
+                  })}
+                  {series.map((p, i) => {
+                    const x = xFor(i);
+                    const label = range === "180d" || range === "360d" ? yearOnly(p.date) : md(p.date);
+                    return (
+                      <SvgText key={`xl-${i}`} x={x} y={240 - 14} fill="#8AA0B5" fontSize={10} textAnchor="middle">
+                        {label}
+                      </SvgText>
+                    );
+                  })}
+                  <SvgLine x1={M.left} x2={w - M.right} y1={240 - M.bottom} y2={240 - M.bottom} stroke="#22303d" strokeWidth={1} />
+                  <SvgLine x1={M.left} x2={M.left} y1={M.top} y2={240 - M.bottom} stroke="#22303d" strokeWidth={1} />
+                </G>
 
-              {linePath ? <Path d={linePath} fill="none" stroke={GREEN} strokeWidth={2} /> : null}
+                {linePath ? <Path d={linePath} fill="none" stroke={GREEN} strokeWidth={2} /> : null}
 
-              {series.map((p, i) => (
-                <Circle key={`pt-${i}`} cx={xFor(i)} cy={yFor(p.y)} r={4.5} stroke="#0a1a13" strokeWidth={2} fill={GREEN} />
-              ))}
-            </Svg>
-          </View>
+                {series.map((p, i) => (
+                  <Circle key={`pt-${i}`} cx={xFor(i)} cy={yFor(p.y)} r={4.5} stroke="#0a1a13" strokeWidth={2} fill={GREEN} />
+                ))}
+              </Svg>
+            </View>
+          </Pressable>
         </View>
       </ScrollView>
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        featureName="Meals Progress Graph"
+      />
 
       {/* Incoming chooser */}
       {incoming && (
@@ -498,7 +744,9 @@ function MacroBar({ label, color, value, goal }: { label: string; color: string;
           <Text style={{ color: "#FFFFFF", fontSize: 16, fontFamily: FONT.displayMed }}>{label}</Text>
         </View>
         <Text style={{ color: "#FFFFFF", fontSize: 16, fontFamily: "Geist_700Bold" }}>
-          {value} / {goal}
+          {label === 'Sodium' ? `${Math.round(value)} / ${Math.round(goal)} mg` : 
+           label === 'Calories' ? `${Math.round(value)} / ${Math.round(goal)} kcal` :
+           `${Math.round(value)} / ${Math.round(goal)} g`}
         </Text>
       </View>
       <View

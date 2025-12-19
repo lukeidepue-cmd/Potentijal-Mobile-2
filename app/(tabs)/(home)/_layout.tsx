@@ -10,6 +10,8 @@ export default function HomeStackLayout() {
       <Stack.Screen name="basketball/weekly-goals" />
       <Stack.Screen name="basketball/add-practice" />
       <Stack.Screen name="basketball/add-game" />
+      <Stack.Screen name="schedule-week" />
+      <Stack.Screen name="add-weekly-goal" />
     </Stack>
   );
 }

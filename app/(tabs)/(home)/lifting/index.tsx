@@ -1,5 +1,5 @@
 // app/(tabs)/(home)/lifting/index.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,8 +11,13 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
 import { theme } from "../../../../constants/theme";
+import { getScheduleWithStatus, getCurrentWeekStart } from "../../../../lib/api/schedule";
+import { useAuth } from "../../../../providers/AuthProvider";
+import { useExerciseProgressGraph, type ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
+import { useExerciseProgressGraphDirect } from "../../../../hooks/useExerciseProgressGraphDirect";
 
 // Fonts: Geist (Font 2) + Space Grotesk (Font 3 kept available)
 import {
@@ -146,16 +151,97 @@ export default function LiftingHome() {
   const fontsReady = geistLoaded && sgLoaded;
 
   const days = getCurrentWeekStartingSunday();
+  const { user } = useAuth();
+  const weekStart = getCurrentWeekStart();
+
+  // Schedule state
+  const [scheduleData, setScheduleData] = useState<Array<{
+    dayIndex: number;
+    label: string | null;
+    status: 'completed' | 'missed' | 'rest' | 'empty';
+    date: string;
+  }> | null>(null);
+
+  // Load schedule on mount and when screen comes into focus
+  useEffect(() => {
+    if (user) {
+      loadSchedule();
+    }
+  }, [user, weekStart]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user) {
+        loadSchedule();
+      }
+    }, [user, weekStart])
+  );
+
+  const loadSchedule = async () => {
+    const { data } = await getScheduleWithStatus({
+      mode: 'lifting',
+      weekStartDate: weekStart,
+    });
+    if (data) {
+      setScheduleData(data);
+    }
+  };
 
   // Progress state -> now controlled by 2 dropdowns
   const [metric, setMetric] = useState<MetricKey>("weight");
   const [range, setRange] = useState<RangeKey>("90d");
   const [exercise, setExercise] = useState("");
 
-  const { data: series, avg } = useMemo(
-    () => makeSeries(metric, range, exercise),
-    [metric, range, exercise]
-  );
+  // Map frontend metric/range to backend
+  const backendMetric: ProgressMetric = 
+    metric === "reps" ? "reps" :
+    metric === "weight" ? "weight" :
+    "reps_x_weight";
+  
+  const backendDays = 
+    range === "7d" ? 7 :
+    range === "30d" ? 30 :
+    range === "90d" ? 90 :
+    range === "180d" ? 180 :
+    360;
+
+  // Fetch real progress data - using direct query to bypass RPC issues
+  const { data: progressData, loading: progressLoading } = useExerciseProgressGraphDirect({
+    mode: 'lifting',
+    query: exercise,
+    metric: backendMetric,
+    days: backendDays as 7 | 30 | 90 | 180 | 360,
+  });
+
+  // Convert progress data to series format for graph
+  const { data: series, avg } = useMemo(() => {
+    if (!progressData || progressData.length === 0 || !exercise.trim()) {
+      return { data: [], avg: 0 };
+    }
+
+    // Convert backend data to graph series
+    // Handle both camelCase (from Supabase) and snake_case (direct from DB)
+    const graphSeries = progressData
+      .filter(p => p.value !== null)
+      .map(p => {
+        const bucketStart = (p as any).bucketStart ?? (p as any).bucket_start ?? '';
+        const date = bucketStart ? new Date(bucketStart) : new Date();
+        return {
+          x: (p as any).bucketIndex ?? (p as any).bucket_index ?? 0,
+          y: Number(p.value) || 0,
+          date: date,
+        };
+      })
+      .sort((a, b) => a.x - b.x);
+
+    const values = graphSeries.map(s => s.y);
+    const average = values.length > 0 
+      ? values.reduce((sum, v) => sum + v, 0) / values.length 
+      : 0;
+
+    return { data: graphSeries, avg: average };
+  }, [progressData, exercise]);
+
   const yTicks = useMemo(() => yTicksFrom(avg), [avg]);
 
   // Chart layout
@@ -203,24 +289,35 @@ export default function LiftingHome() {
 
         <View style={{ marginTop: 4 }}>
           {days.map((d, idx) => {
-            const status = statusForDay(d, idx);
+            const scheduleItem = scheduleData?.[idx];
+            const label = scheduleItem?.label || '';
+            const status = scheduleItem?.status || 'empty';
+            
+            // Map status to UI status
+            const uiStatus: DayStatus = 
+              status === 'completed' || status === 'rest' ? 'done' :
+              status === 'missed' ? 'missed' :
+              'future';
+            
             const underlineColor =
-              status === "done" ? theme.colors.primary600 :
-              status === "missed" ? "#F14D4D" : "rgba(255,255,255,0.68)";
+              uiStatus === "done" ? theme.colors.primary600 :
+              uiStatus === "missed" ? "#F14D4D" : "rgba(255,255,255,0.68)";
             const markColor =
-              status === "done" ? theme.colors.primary600 :
-              status === "missed" ? "#F14D4D" : "rgba(255,255,255,0.45)";
+              uiStatus === "done" ? theme.colors.primary600 :
+              uiStatus === "missed" ? "#F14D4D" : "rgba(255,255,255,0.45)";
 
             return (
               <View key={idx} style={styles.checkRow}>
                 {/* checkbox */}
                 <View style={[styles.checkbox, { borderColor: markColor }]}>
-                  {status === "done" && <Ionicons name="checkmark" size={12} color={markColor} />}
-                  {status === "missed" && <Ionicons name="close" size={12} color={markColor} />}
+                  {uiStatus === "done" && <Ionicons name="checkmark" size={12} color={markColor} />}
+                  {uiStatus === "missed" && <Ionicons name="close" size={12} color={markColor} />}
                 </View>
 
                 {/* name */}
-                <Text style={styles.checkName} numberOfLines={1}>{WEEK_NAMES[idx]}</Text>
+                <Text style={styles.checkName} numberOfLines={1}>
+                  {label || ''}
+                </Text>
 
                 {/* date */}
                 <Text style={styles.checkDate}>{md(d)}</Text>
@@ -235,7 +332,7 @@ export default function LiftingHome() {
 
       {/* Right-aligned CTA under the schedule card, with 8px margin top/bottom */}
       <View style={{ alignItems: "flex-end", marginVertical: 8 }}>
-        <Pressable onPress={() => {}} style={{ borderRadius: 999, overflow: "hidden" }}>
+        <Pressable onPress={() => router.push("/(tabs)/(home)/schedule-week")} style={{ borderRadius: 999, overflow: "hidden" }}>
           <LinearGradient
             colors={[theme.colors.primary600, "#3BAA6F"]}
             start={{ x: 0, y: 0 }}
@@ -262,6 +359,9 @@ export default function LiftingHome() {
           value={exercise}
           onChangeText={(t) => setExercise(t)}
           style={styles.search}
+          autoCorrect={false}
+          autoCapitalize="none"
+          blurOnSubmit={false}
         />
 
         {/* Two dropdowns row (Font 2) */}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   SafeAreaView,
   View,
@@ -121,19 +121,49 @@ export default function FoodDetailScreen() {
 
   /** Determine base values shown for 1 serving */
   const base = (existingEntry as any) ?? (incomingFood as any) ?? {};
-  const basePerServing = {
+  
+  // If this is an existing entry from DB, the values are already TOTALS (calories × servings)
+  // So we need to calculate the base per-serving by dividing by current servings
+  const currentServings = existingEntry ? ((existingEntry.servingPct ?? 100) / 100) : 1;
+  
+  const basePerServing = existingEntry ? {
+    // For existing entries: divide totals by current servings to get base per-serving
+    calories: asNum(base.calories) / currentServings,
+    protein: asNum(base.protein) / currentServings,
+    carbs: asNum(base.carbs) / currentServings,
+    fat: asNum(base.fat) / currentServings,
+    sugar: (getSugarG(base) ?? 0) / currentServings,
+    sodium: (getSodiumG(base) ?? 0) / currentServings,
+  } : {
+    // For new entries: values are already per-serving
     calories: asNum(base.calories),
     protein: asNum(base.protein),
     carbs: asNum(base.carbs),
     fat: asNum(base.fat),
-    sugar: getSugarG(base),
-    sodium: getSodiumG(base),
+    sugar: getSugarG(base) ?? 0,
+    sodium: getSodiumG(base) ?? 0,
   };
 
-  /** Controlled servings input: default 1 for search, or entry.servingPct/100 for existing */
-  const [servingsText, setServingsText] = useState(
-    existingEntry ? String(Math.max(0.01, (existingEntry.servingPct ?? 100) / 100)) : "1"
-  );
+  /** Controlled servings input: use servingPct from incomingFood if available, otherwise default to 1 */
+  const getInitialServings = () => {
+    if (existingEntry) {
+      return String(Math.max(0.01, (existingEntry.servingPct ?? 100) / 100));
+    }
+    if (incomingFood && (incomingFood as any).servingPct) {
+      return String(Math.max(0.01, ((incomingFood as any).servingPct ?? 100) / 100));
+    }
+    return "1";
+  };
+  
+  const [servingsText, setServingsText] = useState(getInitialServings);
+  
+  // Update servings when incomingFood changes (e.g., from scanner)
+  useEffect(() => {
+    if (incomingFood && !existingEntry) {
+      const newServings = getInitialServings();
+      setServingsText(newServings);
+    }
+  }, [incomingFood, existingEntry]);
   const servings = Math.max(0, Number(servingsText.replace(/[^\d.]/g, "")) || 0);
 
   /** Scaled values to display */
@@ -162,28 +192,37 @@ export default function FoodDetailScreen() {
   const servingSize = (existingEntry?.servingSize ?? incomingFood?.servingSize)?.trim();
 
   /** Save / Add */
-  const onSaveExisting = () => {
+  const onSaveExisting = async () => {
     if (!existingEntry) return;
     const pct = Math.max(1, Math.round((servings || 1) * 100)); // servings -> servingPct
-    updateServingPct(meal, existingEntry.entryId, pct);
+    await updateServingPct(meal, existingEntry.entryId, pct);
     router.back();
   };
-  const onAddFromSearch = () => {
+  const onAddFromSearch = async () => {
     if (!incomingFood) return;
-    // IMPORTANT: also normalize sugar & sodium into top-level fields so day totals track them
+    
+    // IMPORTANT: Pass BASE per-serving values and servingPct
+    // The addFood function will scale them correctly based on servings
+    // Use basePerServing (not shown) because addFood will multiply by servings
     const normalizedSugar = getSugarG(incomingFood);
     const normalizedSodium = getSodiumG(incomingFood);
-
+    
     const payload: Food = {
       ...incomingFood,
       id: undefined,
-      ...(normalizedSugar != null ? { sugar: normalizedSugar } : {}),
-      ...(normalizedSodium != null ? { sodium: normalizedSodium } : {}),
+      // Use base per-serving values (basePerServing), not scaled values
+      calories: basePerServing.calories,
+      protein: basePerServing.protein,
+      carbs: basePerServing.carbs,
+      fat: basePerServing.fat,
+      sugar: normalizedSugar ?? 0,
+      sodium: normalizedSodium ?? 0,
+      // Set servingPct to reflect the servings the user entered
       ...( { servingPct: Math.max(1, Math.round((servings || 1) * 100)) } as any ),
       source: incomingFood.source ?? "search",
     };
-    addFood(meal, payload);
-    router.back();
+    await addFood(meal, payload);
+    router.replace('/(tabs)/meals');
   };
 
   /** UI — post-scan style (no outer heading/green line) */
@@ -231,7 +270,7 @@ export default function FoodDetailScreen() {
                   {macroRow("Carbs",    shown.carbs,    "g")}
                   {macroRow("Fat",      shown.fat,      "g")}
                   {macroRow("Sugar",    shown.sugar,    "g")}
-                  {macroRow("Sodium",   shown.sodium,   "g")}
+                  {macroRow("Sodium",   Math.round((shown.sodium || 0) * 1000),   "mg")}
                 </View>
               </View>
             </View>
@@ -256,10 +295,11 @@ export default function FoodDetailScreen() {
 }
 
 function macroRow(label: string, value?: number | null, unit?: string) {
+  const displayValue = value != null ? value : 0;
   return (
     <View style={styles.rowBetween}>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value != null ? `${value} ${unit || ""}` : "—"}</Text>
+      <Text style={styles.rowValue}>{displayValue.toFixed(1)} {unit || ""}</Text>
     </View>
   );
 }
