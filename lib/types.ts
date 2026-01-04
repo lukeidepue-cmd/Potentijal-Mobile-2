@@ -8,8 +8,7 @@ export type SportMode =
   | 'baseball'
   | 'soccer'
   | 'hockey'
-  | 'tennis'
-  | 'running';
+  | 'tennis';
 
 export type ExerciseType =
   | 'exercise'   // reps, weight
@@ -19,8 +18,6 @@ export type ExerciseType =
   | 'hitting'    // reps, avg_distance
   | 'fielding'   // reps, distance
   | 'rally';     // points, time_min
-
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 export type GameResult = 'win' | 'loss' | 'tie';
 
@@ -55,7 +52,6 @@ export function mapModeKeyToSportMode(mode: string): SportMode {
     soccer: 'soccer',
     hockey: 'hockey',
     tennis: 'tennis',
-    running: 'running',
   };
   return mapping[mode.toLowerCase()] || 'workout';
 }

@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import { supabase } from '../lib/supabase';
+import { syncUserToLoops } from '../lib/api/loops';
 
 type AuthContextType = {
   user: User | null;
@@ -56,13 +57,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     metadata?: { username?: string; display_name?: string }
   ) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: metadata,
       },
     });
+
+    // If sign-up successful, sync to Loops (non-blocking)
+    if (!error && data.user) {
+      // Sync user to Loops in the background (don't wait for it)
+      syncUserToLoops({
+        email: data.user.email || email,
+        firstName: metadata?.display_name?.split(' ')[0] || metadata?.username,
+        lastName: metadata?.display_name?.split(' ').slice(1).join(' '),
+        userId: data.user.id,
+      }).then(({ error: loopsError }) => {
+        if (loopsError) {
+          console.warn('⚠️ [Loops] Failed to sync user:', loopsError);
+        } else {
+          console.log('✅ [Loops] User synced successfully - Welcome email will be sent via Journey if configured');
+          // Welcome email is sent automatically via Loops Journey when contact is added
+          // No need to call sendWelcomeEmail() - it's handled by the Journey
+        }
+      });
+    }
+
     return { error };
   };
 

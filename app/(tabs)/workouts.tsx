@@ -13,15 +13,26 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Modal,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from "react-native-reanimated";
 import { useMode } from "../../providers/ModeContext";
-import * as Location from "expo-location";
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import { theme } from "../../constants/theme";
 import { router } from "expo-router";
 import { saveCompleteWorkout, getWorkoutWithDetails } from "../../lib/api/workouts";
 import { useAuth } from "../../providers/AuthProvider";
+import { useSettings } from "../../providers/SettingsContext";
 import { mapModeKeyToSportMode, mapItemKindToExerciseType } from "../../lib/types";
 
 /* ---------------- Fonts (match Home pages) ---------------- */
@@ -44,7 +55,6 @@ type ModeKey =
   | "lifting"
   | "basketball"
   | "football"
-  | "running"
   | "baseball"
   | "soccer"
   | "hockey"
@@ -77,12 +87,22 @@ type DraftTuple = readonly [AnyItem[], React.Dispatch<React.SetStateAction<AnyIt
 /* ---------------- Helpers ---------------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+// Helper to get weight label based on user's unit preference
+const getWeightLabel = (): string => {
+  try {
+    // This will be set dynamically in the component
+    return "Weight (lb)"; // Default, will be overridden
+  } catch {
+    return "Weight (lb)";
+  }
+};
+
 /** Field templates per kind (order = vertical stacking) */
 const FIELD_SETS: Record<ItemKind, { key: string; label: string; numeric?: boolean }[]> = {
   // Shared
   exercise: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "weight", label: "Weight (lb)", numeric: true },
+    { key: "weight", label: "Weight", numeric: true }, // Will be set dynamically
   ],
   // Basketball
   bb_shot: [
@@ -137,42 +157,6 @@ const FIELD_SETS: Record<ItemKind, { key: string; label: string; numeric?: boole
   ],
 };
 
-/* ---------------- Running helpers ---------------- */
-type Pt = { lat: number; lon: number; ts: number; acc?: number };
-const toRad = (d: number) => (d * Math.PI) / 180;
-function haversine(a: Pt, b: Pt): number {
-  const R = 6371000;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-function sumDistanceM(points: Pt[]): number {
-  let m = 0;
-  for (let i = 1; i < points.length; i++) {
-    const p = points[i - 1];
-    const q = points[i];
-    if (q.acc !== undefined && q.acc > 50) continue;
-    const d = haversine(p, q);
-    if (d < 100) m += d;
-  }
-  return m;
-}
-const mToMi = (m: number) => m / 1609.344;
-const paceStr = (secPerMile: number | null) =>
-  secPerMile == null || !isFinite(secPerMile) || secPerMile <= 0
-    ? "—"
-    : `${Math.floor(secPerMile / 60)}:${String(Math.round(secPerMile % 60)).padStart(2, "0")}/mi`;
-const timeStr = (s: number) => {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = Math.floor(s % 60);
-  return `${h > 0 ? h + ":" : ""}${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-};
 
 /* ---------------- Fonts map ---------------- */
 const FONT = {
@@ -190,6 +174,7 @@ const FONT = {
 ============================================================================ */
 export default function WorkoutsScreen() {
   const { mode, setMode } = useMode();
+  const { unitsWeight } = useSettings();
   const { user } = useAuth();
   const params = useLocalSearchParams<{ workoutId?: string }>();
   const m = (mode || "lifting").toLowerCase() as ModeKey;
@@ -219,6 +204,44 @@ export default function WorkoutsScreen() {
   const [isCreating, setIsCreating] = useState(false);
   const [workoutName, setWorkoutName] = useState("");
   const nameInputRef = useRef<TextInput>(null);
+
+  // Animation values for empty state transition
+  const nameInputTranslateY = useSharedValue(-100);
+  const nameInputOpacity = useSharedValue(0);
+  const actionButtonsTranslateY = useSharedValue(-100);
+  const actionButtonsOpacity = useSharedValue(0);
+
+  // Animated styles
+  const nameInputAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: nameInputTranslateY.value }],
+    opacity: nameInputOpacity.value,
+  }));
+
+  const actionButtonsAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: actionButtonsTranslateY.value }],
+    opacity: actionButtonsOpacity.value,
+  }));
+
+  // Animate in when creating starts
+  useEffect(() => {
+    if (isCreating) {
+      // Animate name input
+      nameInputTranslateY.value = withSpring(0, { damping: 25, stiffness: 100 });
+      nameInputOpacity.value = withTiming(1, { duration: 300 });
+      
+      // Animate action buttons with slight delay
+      setTimeout(() => {
+        actionButtonsTranslateY.value = withSpring(0, { damping: 25, stiffness: 100 });
+        actionButtonsOpacity.value = withTiming(1, { duration: 300 });
+      }, 100);
+    } else {
+      // Reset animations when not creating
+      nameInputTranslateY.value = -100;
+      nameInputOpacity.value = 0;
+      actionButtonsTranslateY.value = -100;
+      actionButtonsOpacity.value = 0;
+    }
+  }, [isCreating]);
 
   // Reset workout state when mode changes
   useEffect(() => {
@@ -251,7 +274,6 @@ export default function WorkoutsScreen() {
           'soccer': 'soccer',
           'hockey': 'hockey',
           'tennis': 'tennis',
-          'running': 'running',
         };
         
         const frontendMode = modeMapping[workout.mode] || 'lifting';
@@ -321,7 +343,6 @@ export default function WorkoutsScreen() {
             soccer: setScDraft,
             hockey: setHkDraft,
             tennis: setTnDraft,
-            running: setRunDraft,
           };
           
           const setDraft = draftSetters[currentMode] || draftSetters[frontendMode];
@@ -363,13 +384,11 @@ export default function WorkoutsScreen() {
   const [scDraft, setScDraft] = useState<AnyItem[]>([]);
   const [hkDraft, setHkDraft] = useState<AnyItem[]>([]);
   const [tnDraft, setTnDraft] = useState<AnyItem[]>([]);
-  const [runDraft, setRunDraft] = useState<AnyItem[]>([]); // placeholder list
 
   const drafts: Record<ModeKey, DraftTuple> = {
     lifting: [liftDraft, setLiftDraft],
     basketball: [bbDraft, setBbDraft],
     football: [fbDraft, setFbDraft],
-    running: [runDraft, setRunDraft],
     baseball: [bsDraft, setBsDraft],
     soccer: [scDraft, setScDraft],
     hockey: [hkDraft, setHkDraft],
@@ -402,7 +421,6 @@ export default function WorkoutsScreen() {
           'soccer': 'soccer',
           'hockey': 'hockey',
           'tennis': 'tennis',
-          'running': 'running',
         };
         
         const frontendMode = modeMapping[workout.mode] || 'lifting';
@@ -470,7 +488,6 @@ export default function WorkoutsScreen() {
             soccer: setScDraft,
             hockey: setHkDraft,
             tennis: setTnDraft,
-            running: setRunDraft,
           };
           
           const setDraft = draftSetters[frontendMode];
@@ -489,7 +506,7 @@ export default function WorkoutsScreen() {
     };
     
     loadWorkout();
-  }, [params.workoutId, user, setMode, setLiftDraft, setBbDraft, setFbDraft, setBsDraft, setScDraft, setHkDraft, setTnDraft, setRunDraft]);
+  }, [params.workoutId, user, setMode, setLiftDraft, setBbDraft, setFbDraft, setBsDraft, setScDraft, setHkDraft, setTnDraft]);
 
   /* ---------- actions ---------- */
   const addItem = (kind: ItemKind) => {
@@ -535,10 +552,17 @@ export default function WorkoutsScreen() {
 
     // Don't save to database yet - just pass data to summary screen
     // Workout will be saved when user clicks "Finish Workout"
+    // Format date using local date to avoid timezone issues
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const performedAtDate = `${year}-${month}-${day}`;
+
     const workoutData = {
       mode: m,
       name: workoutName.trim(),
-      performedAt: new Date().toISOString().split('T')[0],
+      performedAt: performedAtDate,
       items: list.map(item => ({
         kind: item.kind,
         name: item.name,
@@ -555,151 +579,6 @@ export default function WorkoutsScreen() {
     });
   };
 
-  /* ---------- Running state ---------- */
-  type RunState = "idle" | "tracking" | "paused" | "finished";
-  const [runState, setRunState] = useState<RunState>("idle");
-  const [points, setPoints] = useState<Pt[]>([]);
-  const [elapsed, setElapsed] = useState(0);
-  const locSub = useRef<Location.LocationSubscription | null>(null);
-  const timerRef = useRef<any>(null);
-
-  const distanceM = useMemo(() => sumDistanceM(points), [points]);
-  const distanceMi = useMemo(() => mToMi(distanceM), [distanceM]);
-  const avgPaceSec = useMemo(
-    () => (distanceMi > 0 ? Math.round(elapsed / distanceMi) : null),
-    [elapsed, distanceMi]
-  );
-  const currentPaceSec = useMemo(() => {
-    if (points.length < 2) return null;
-    let d = 0;
-    let i = points.length - 1;
-    const end = points[i];
-    while (i > 0 && d < 100) {
-      d += haversine(points[i - 1], points[i]);
-      i--;
-    }
-    const dt = (end.ts - points[i].ts) / 1000;
-    if (d < 30 || dt <= 0) return null;
-    const mi = mToMi(d);
-    return Math.round(dt / mi);
-  }, [points]);
-
-  const region: Region = useMemo(
-    () =>
-      points.length
-        ? {
-            latitude: points[points.length - 1].lat,
-            longitude: points[points.length - 1].lon,
-            latitudeDelta: 0.004,
-            longitudeDelta: 0.004,
-          }
-        : {
-            latitude: 37.78825,
-            longitude: -122.4324,
-            latitudeDelta: 0.02,
-            longitudeDelta: 0.02,
-          },
-    [points]
-  );
-
-  useEffect(() => {
-    return () => {
-      if (locSub.current) locSub.current.remove();
-      if (timerRef.current) clearInterval(timerRef.current);
-      locSub.current = null;
-      timerRef.current = null;
-    };
-  }, []);
-
-  const startRun = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Location needed", "Enable location to track your run.");
-      return;
-    }
-    try {
-      const cur = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      setPoints([
-        {
-          lat: cur.coords.latitude,
-          lon: cur.coords.longitude,
-          ts: Date.now(),
-          acc: cur.coords.accuracy ?? undefined,
-        },
-      ]);
-    } catch {}
-    locSub.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 2000,
-        distanceInterval: 5,
-      },
-      (loc) =>
-        setPoints((prev) => [
-          ...prev,
-          {
-            lat: loc.coords.latitude,
-            lon: loc.coords.longitude,
-            ts: Date.now(),
-            acc: loc.coords.accuracy ?? undefined,
-          },
-        ])
-    );
-    timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-    setRunState("tracking");
-  };
-  const pauseRun = () => {
-    if (locSub.current) {
-      locSub.current.remove();
-      locSub.current = null;
-    }
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setRunState("paused");
-  };
-  const resumeRun = async () => {
-    setRunState("tracking");
-    locSub.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 2000,
-        distanceInterval: 5,
-      },
-      (loc) =>
-        setPoints((prev) => [
-          ...prev,
-          {
-            lat: loc.coords.latitude,
-            lon: loc.coords.longitude,
-            ts: Date.now(),
-            acc: loc.coords.accuracy ?? undefined,
-          },
-        ])
-    );
-    timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-  };
-  const endRun = () => {
-    if (locSub.current) {
-      locSub.current.remove();
-      locSub.current = null;
-    }
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setRunState("finished");
-  };
-  const saveRun = () => {
-    setRunState("idle");
-    setPoints([]);
-    setElapsed(0);
-    Alert.alert("Saved!", "Run added to your recent list.");
-  };
-
   /* ---------- sport icon (right pill) ---------- */
   const RightIcon = () => {
     const iconProps = { size: 18, color: theme.colors.textHi } as const;
@@ -711,8 +590,6 @@ export default function WorkoutsScreen() {
           return <Ionicons name="basketball-outline" {...iconProps} />;
         case "football":
           return <Ionicons name="american-football-outline" {...iconProps} />;
-        case "running":
-          return <Ionicons name="walk-outline" {...iconProps} />;
         case "soccer":
           return <Ionicons name="football-outline" {...iconProps} />;
         case "baseball":
@@ -732,15 +609,8 @@ export default function WorkoutsScreen() {
     );
   };
 
-  /* ---------- toolbar (name + “green boxes”) ---------- */
+  /* ---------- toolbar (name + "green boxes") ---------- */
   const Toolbar = () => {
-    if (m === "running") {
-      return (
-        <Pressable onPress={startRun} style={styles.addWorkoutBtn}>
-          <Text style={[styles.addWorkoutText, { fontFamily: FONT.displayBold }]}>+ Start Run</Text>
-        </Pressable>
-      );
-    }
 
     if (!isCreating) {
       return (
@@ -814,103 +684,342 @@ export default function WorkoutsScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: "padding", android: undefined })}
-      style={{ flex: 1, backgroundColor: theme.colors.bg0 }}
+      style={{ flex: 1 }}
     >
-      {/* Header (centered title, right sport icon) */}
-      <View style={{ paddingHorizontal: theme.layout.xl, paddingTop: theme.layout.lg, marginTop: 30 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          {/* left spacer keeps title centered */}
-          <View style={{ width: 48, height: 48 }} />
-          <View style={{ alignItems: "center", flex: 1 }}>
-            <Text style={styles.header}>Workouts</Text>
-            <View style={styles.headerUnderline} />
-          </View>
-          <RightIcon />
-        </View>
-        {isCreating && (
-          <View style={{ marginTop: 8 }}>
-            <TextInput
-              ref={nameInputRef}
-              value={workoutName}
-              onChangeText={(text) => {
-                setWorkoutName(text);
-              }}
-              placeholder="Workout name…"
-              placeholderTextColor={theme.colors.textLo}
-              style={styles.nameInput}
-              autoCorrect={false}
-              autoCapitalize="words"
-              keyboardType="default"
-              returnKeyType="done"
-              blurOnSubmit={false}
-              onSubmitEditing={() => {}}
-              editable={true}
-            />
-          </View>
-        )}
-        <Toolbar />
-      </View>
-
-      {/* BODY */}
-      <ScrollView
-        style={{ flex: 1, marginTop: theme.layout.lg }}
-        contentContainerStyle={{
-          paddingHorizontal: theme.layout.xl,
-          paddingVertical: theme.layout.lg,
-          paddingBottom: 120,
-          gap: theme.layout.lg,
+      {/* Layer A: Base gradient */}
+      <LinearGradient
+        colors={["#0B1513", "#0F2A22", "#0F3B2E", "#070B0A"]}
+        locations={[0, 0.3, 0.6, 1]}
+        style={{ flex: 1, position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+      />
+      
+      {/* Layer B: Vignette overlay */}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.4)", "transparent", "transparent", "rgba(0,0,0,0.5)"]}
+        locations={[0, 0.15, 0.85, 1]}
+        style={{ flex: 1, position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+        pointerEvents="none"
+      />
+      
+      {/* Layer C: Subtle grain/noise (simulated with opacity) */}
+      <View
+        style={{
+          flex: 1,
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(255,255,255,0.02)",
+          opacity: 0.06,
         }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Non-running: full-width cards */}
-        {m !== "running" &&
-          list.map((item) => (
-            <FullWidthCard
-              key={item.id}
-              item={item}
-              onRemove={() => removeItem(item.id)}
-              onName={(v) => updateName(item.id, v)}
-              onAddSet={() => addSet(item.id)}
-              onChange={(setIdx, key, v) => updateSet(item.id, setIdx, key, v)}
-            />
-          ))}
-
-        {/* Running section */}
-        {m === "running" && (
-          <RunningSection
-            runState={runState}
-            region={region}
-            points={points}
-            startRun={startRun}
-            pauseRun={pauseRun}
-            resumeRun={resumeRun}
-            endRun={endRun}
-            saveRun={saveRun}
-            elapsed={elapsed}
-            distanceMi={mToMi(sumDistanceM(points))}
-            avgPaceSec={avgPaceSec}
-            currentPaceSec={currentPaceSec}
-          />
-        )}
-      </ScrollView>
-
-      {/* Sticky bottom save (non-running, when creating) */}
-      {m !== "running" && isCreating && (
-        <View style={styles.stickySaveWrap}>
-          <Pressable 
-            onPress={saveWorkout} 
-            style={styles.bigSaveBtn}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={[styles.bigSaveText, { fontFamily: FONT.displayBold }]}>Save Workout</Text>
+        pointerEvents="none"
+      />
+      
+      <View style={{ flex: 1 }}>
+        {/* Header with blur/haze backdrop */}
+        <BlurView intensity={20} tint="dark" style={styles.headerBlur}>
+          <View style={styles.headerContainer}>
+            {/* Workout name input - floating pill with animation */}
+            {isCreating && (
+              <Animated.View style={[styles.nameInputContainer, nameInputAnimatedStyle]}>
+                <View style={styles.nameInputPill}>
+                  <Ionicons name="create-outline" size={18} color="rgba(255,255,255,0.6)" style={{ marginRight: 8 }} />
+                  <TextInput
+                    ref={nameInputRef}
+                    value={workoutName}
+                    onChangeText={(text) => {
+                      setWorkoutName(text);
+                    }}
+                    placeholder="Workout name…"
+                    placeholderTextColor="rgba(255,255,255,0.5)"
+                    style={styles.nameInputText}
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                    keyboardType="default"
+                    returnKeyType="done"
+                    blurOnSubmit={false}
+                    onSubmitEditing={() => {}}
+                    editable={true}
+                  />
+                </View>
+              </Animated.View>
             )}
-          </Pressable>
-        </View>
-      )}
+          </View>
+        </BlurView>
+
+        {/* Revolut-style action buttons with labels - animated */}
+        {isCreating && (
+          <Animated.View style={[styles.actionRow, actionButtonsAnimatedStyle]}>
+              {/* Exercise button */}
+              <ActionButton
+                icon={<MaterialCommunityIcons name="dumbbell" size={20} color="#FFFFFF" />}
+                label="Exercise"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  addItem("exercise");
+                }}
+              />
+
+              {/* Mode-specific buttons */}
+              {m === "basketball" && (
+                <>
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="target" size={20} color="#FFFFFF" />}
+                    label="Shooting"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("bb_shot");
+                    }}
+                  />
+                  <ActionButton
+                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
+                    label="Drill"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("sc_drill");
+                    }}
+                  />
+                </>
+              )}
+              
+              {m === "football" && (
+                <>
+                  <ActionButton
+                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
+                    label="Drill"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("fb_drill");
+                    }}
+                  />
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="run-fast" size={20} color="#FFFFFF" />}
+                    label="Sprints"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("fb_sprint");
+                    }}
+                  />
+                </>
+              )}
+
+              {m === "soccer" && (
+                <>
+                  <ActionButton
+                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
+                    label="Drill"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("sc_drill");
+                    }}
+                  />
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="target" size={20} color="#FFFFFF" />}
+                    label="Shooting"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("sc_shoot");
+                    }}
+                  />
+                </>
+              )}
+
+              {m === "baseball" && (
+                <>
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="baseball-bat" size={20} color="#FFFFFF" />}
+                    label="Hitting"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("bs_hit");
+                    }}
+                  />
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="baseball" size={20} color="#FFFFFF" />}
+                    label="Fielding"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("bs_field");
+                    }}
+                  />
+                </>
+              )}
+
+              {m === "hockey" && (
+                <>
+                  <ActionButton
+                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
+                    label="Drill"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("hk_drill");
+                    }}
+                  />
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="target" size={20} color="#FFFFFF" />}
+                    label="Shooting"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("hk_shoot");
+                    }}
+                  />
+                </>
+              )}
+
+              {m === "tennis" && (
+                <>
+                  <ActionButton
+                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
+                    label="Drill"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("tn_drill");
+                    }}
+                  />
+                  <ActionButton
+                    icon={<MaterialCommunityIcons name="tennisball" size={20} color="#FFFFFF" />}
+                    label="Rally"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addItem("tn_rally");
+                    }}
+                  />
+                </>
+              )}
+
+              {/* Finish Workout button */}
+              <ActionButton
+                icon={<MaterialCommunityIcons name="hexagon" size={20} color="#FFFFFF" />}
+                label="Finish"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  saveWorkout();
+                }}
+                variant="finish"
+                disabled={saving}
+              />
+          </Animated.View>
+        )}
+
+        {/* Empty state with circles and hero button */}
+        {!isCreating && (
+          <View style={styles.emptyStateContainer}>
+            {/* Mascot circles */}
+            <View style={styles.mascotCircles}>
+              <View style={styles.mascotCircle1} />
+              <View style={styles.mascotCircle2} />
+              <View style={styles.mascotCircle3} />
+            </View>
+            
+            {/* Hero button */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setIsCreating(true);
+                setWorkoutName("");
+              }}
+              style={({ pressed }) => [
+                styles.startWorkoutButton,
+                pressed && styles.startWorkoutButtonPressed,
+              ]}
+            >
+              <LinearGradient
+                colors={[theme.colors.primary600, theme.colors.primary500]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.startWorkoutGradient}
+              >
+                <Text style={styles.startWorkoutText}>Start Workout</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        )}
+
+        {/* BODY - Exercise cards */}
+        {isCreating && (
+          <ScrollView
+            style={{ flex: 1, marginTop: 20 }}
+            contentContainerStyle={{
+              paddingHorizontal: theme.layout.xl,
+              paddingTop: 20,
+              paddingBottom: 120,
+              gap: 16,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {list.map((item) => (
+              <FullWidthCard
+                key={item.id}
+                item={item}
+                onRemove={() => removeItem(item.id)}
+                onName={(v) => updateName(item.id, v)}
+                onAddSet={() => addSet(item.id)}
+                onChange={(setIdx, key, v) => updateSet(item.id, setIdx, key, v)}
+              />
+            ))}
+          </ScrollView>
+        )}
+      </View>
     </KeyboardAvoidingView>
+  );
+}
+
+/* ================= Action Button Component ================= */
+function ActionButton({
+  icon,
+  label,
+  onPress,
+  variant = "default",
+  disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onPress: () => void;
+  variant?: "default" | "finish";
+  disabled?: boolean;
+}) {
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.95, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(0.8, { duration: 100 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(1, { duration: 100 });
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+      style={{ alignItems: "center", gap: 6 }}
+    >
+      <Animated.View
+        style={[
+          styles.actionButton,
+          variant === "finish" && styles.actionButtonFinish,
+          animatedStyle,
+        ]}
+      >
+        {disabled ? (
+          <ActivityIndicator color="#FFFFFF" size="small" />
+        ) : (
+          icon
+        )}
+      </Animated.View>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -928,218 +1037,250 @@ function FullWidthCard({
   onAddSet: () => void;
   onChange: (setIdx: number, key: string, value: string) => void;
 }) {
-  const fields = FIELD_SETS[item.kind];
+  const { unitsWeight } = useSettings();
+  const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
+  
+  const fields = FIELD_SETS[item.kind].map(f => {
+    // Update weight label based on user preference
+    if (f.key === 'weight') {
+      return { ...f, label: `Weight (${unitsWeight === 'kg' ? 'kg' : 'lb'})` };
+    }
+    return f;
+  });
 
-  // shot % (basketball)
-  const pctFor = (s: SetRecord) => {
-    const a = parseInt(s.attempted || "0", 10) || 0;
-    const m = parseInt(s.made || "0", 10) || 0;
-    return a > 0 ? Math.round((m / a) * 100) : null;
+  // Get the type label (Exercise, Shooting, Drill)
+  const getTypeLabel = (kind: ItemKind): string => {
+    if (kind === "exercise") return "Exercise";
+    if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") return "Shooting";
+    if (kind.endsWith("_drill") || kind === "fb_sprint" || kind === "bs_hit" || kind === "bs_field" || kind === "tn_rally") return "Drill";
+    return "Exercise";
+  };
+
+  const typeLabel = getTypeLabel(item.kind);
+
+  // Get gradient colors based on exercise type
+  const getHeaderGradientColors = (kind: ItemKind): string[] => {
+    if (kind === "exercise") {
+      // Blue for exercises
+      return ["rgba(90, 166, 255, 0.3)", "rgba(90, 166, 255, 0.1)", "transparent"];
+    } else if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") {
+      // Light green for shooting
+      return ["rgba(100, 200, 120, 0.3)", "rgba(100, 200, 120, 0.1)", "transparent"];
+    } else {
+      // Light purple for drills
+      return ["rgba(180, 140, 255, 0.3)", "rgba(180, 140, 255, 0.1)", "transparent"];
+    }
+  };
+
+  const headerGradientColors = getHeaderGradientColors(item.kind);
+
+  // Format set display value
+  const formatSetDisplay = (set: SetRecord): string => {
+    const parts: string[] = [];
+    fields.forEach(f => {
+      const value = set[f.key];
+      if (value && value.trim()) {
+        parts.push(`${f.label}: ${value}`);
+      }
+    });
+    return parts.length > 0 ? parts.join(" • ") : "Tap to add";
+  };
+
+  const cardScale = useSharedValue(1);
+  const cardOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    cardOpacity.value = withTiming(1, { duration: 200 });
+    cardScale.value = withSpring(1, { damping: 20, stiffness: 100 });
+  }, []);
+
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: cardOpacity.value,
+    transform: [{ translateY: (1 - cardScale.value) * 6 }, { scale: cardScale.value }],
+  }));
+
+  return (
+    <>
+      <Animated.View style={[styles.card, cardAnimatedStyle]}>
+        {/* Top strip header with gradient accent */}
+        <LinearGradient
+          colors={headerGradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.cardHeaderStrip}
+        >
+          <View style={styles.cardHeaderContent}>
+            <TextInput
+              value={item.name}
+              onChangeText={onName}
+              placeholder={typeLabel}
+              placeholderTextColor="rgba(255, 255, 255, 0.6)"
+              style={styles.cardHeaderText}
+            />
+          </View>
+          <View style={styles.cardHeaderActions}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onAddSet();
+              }}
+              style={styles.cardActionButton}
+              hitSlop={8}
+            >
+              <Ionicons name="add" size={18} color="rgba(255, 255, 255, 0.9)" />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onRemove();
+              }}
+              style={styles.cardActionButton}
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={18} color="rgba(255, 255, 255, 0.9)" />
+            </Pressable>
+          </View>
+        </LinearGradient>
+
+        {/* Sets list - rows */}
+        <View style={styles.setsListContainer}>
+          {item.sets.map((s, idx) => (
+            <Pressable
+              key={idx}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setEditingSetIndex(idx);
+              }}
+              style={({ pressed }) => [
+                styles.setRow,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <View style={styles.setRowContent}>
+                <Text style={styles.setRowLabel}>Set {idx + 1}</Text>
+                <Text style={styles.setRowValue}>{formatSetDisplay(s)}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.4)" />
+            </Pressable>
+          ))}
+        </View>
+      </Animated.View>
+
+      {/* Bottom sheet for editing set */}
+      {editingSetIndex !== null && (
+        <SetEditorBottomSheet
+          set={item.sets[editingSetIndex]}
+          fields={fields}
+          onSave={(updatedSet) => {
+            fields.forEach(f => {
+              onChange(editingSetIndex, f.key, updatedSet[f.key] || "");
+            });
+            setEditingSetIndex(null);
+          }}
+          onClose={() => setEditingSetIndex(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/* ================= Set Editor Bottom Sheet ================= */
+function SetEditorBottomSheet({
+  set,
+  fields,
+  onSave,
+  onClose,
+}: {
+  set: SetRecord;
+  fields: { key: string; label: string; numeric?: boolean }[];
+  onSave: (updatedSet: SetRecord) => void;
+  onClose: () => void;
+}) {
+  const [localSet, setLocalSet] = useState<SetRecord>({ ...set });
+  const insets = useSafeAreaInsets();
+  const sheetY = useSharedValue(600);
+
+  useEffect(() => {
+    sheetY.value = withSpring(0, { damping: 25, stiffness: 100 });
+  }, []);
+
+  const sheetAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetY.value }],
+  }));
+
+  const handleSave = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    sheetY.value = withTiming(600, { duration: 200 }, (finished) => {
+      if (finished) {
+        runOnJS(onSave)(localSet);
+      }
+    });
+  };
+
+  const handleClose = () => {
+    sheetY.value = withTiming(600, { duration: 200 }, (finished) => {
+      if (finished) {
+        runOnJS(onClose)();
+      }
+    });
   };
 
   return (
-    <View style={styles.card}>
-      {/* cut-in name row */}
-      <View style={styles.cardHeader}>
-        <TextInput
-          value={item.name}
-          onChangeText={onName}
-          placeholder={
-            item.kind === "exercise"
-              ? "Exercise name…"
-              : item.kind.endsWith("_drill")
-              ? "Drill name…"
-              : "Name…"
-          }
-          placeholderTextColor={theme.colors.textLo}
-          style={styles.cardName}
-        />
-        <Pressable onPress={onRemove} hitSlop={8}>
-          <Text style={{ color: theme.colors.textLo, fontWeight: "800" }}>×</Text>
-        </Pressable>
-      </View>
+    <Modal visible={true} transparent animationType="none" onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable style={styles.bottomSheetBackdrop} onPress={handleClose} />
+          <Animated.View style={[styles.bottomSheet, sheetAnimatedStyle]}>
+            <View style={styles.bottomSheetHandle} />
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>Edit Set</Text>
+              <Pressable onPress={handleClose}>
+                <Ionicons name="close" size={24} color={theme.colors.textHi} />
+              </Pressable>
+            </View>
+            
+            <ScrollView
+              style={styles.bottomSheetScrollView}
+              contentContainerStyle={styles.bottomSheetContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+            >
+              {fields.length > 0 ? (
+                fields.map((f) => (
+                  <View key={f.key} style={styles.bottomSheetField}>
+                    <Text style={styles.bottomSheetFieldLabel}>{f.label}</Text>
+                    <TextInput
+                      value={localSet[f.key] ?? ""}
+                      onChangeText={(t) => {
+                        setLocalSet({ ...localSet, [f.key]: f.numeric ? t.replace(/[^\d.]/g, "") : t });
+                      }}
+                      placeholder={`Enter ${f.label.toLowerCase()}`}
+                      placeholderTextColor={theme.colors.textLo}
+                      keyboardType={f.numeric ? "numeric" : "default"}
+                      style={styles.bottomSheetInput}
+                    />
+                  </View>
+                ))
+              ) : (
+                <Text style={{ color: theme.colors.textLo, textAlign: "center", padding: 20 }}>
+                  No fields available
+                </Text>
+              )}
+            </ScrollView>
 
-      {/* Set+ chip */}
-      <Pressable onPress={onAddSet} style={styles.setChip}>
-        <Text style={[styles.setChipText, { fontFamily: FONT.uiSemi }]}>Set +</Text>
-      </Pressable>
-
-      {/* sets in 2 columns */}
-      <View style={styles.setGrid}>
-        {item.sets.map((s, idx) => (
-          <View key={idx} style={styles.setTile}>
-            <Text style={[styles.setBadge, { fontFamily: FONT.displayMed }]}>Set {idx + 1}</Text>
-
-            {fields.map((f) => (
-              <AngledInput
-                key={f.key}
-                placeholder={f.label}
-                value={s[f.key] ?? ""}
-                onChangeText={(t) => onChange(idx, f.key, f.numeric ? t.replace(/[^\d.]/g, "") : t)}
-                keyboardType={f.numeric ? "numeric" : "default"}
-              />
-            ))}
-
-            {item.kind === "bb_shot" && (
-              <Text style={styles.shotPct}>
-                {(() => {
-                  const p = pctFor(s);
-                  return p == null ? "—" : String(p) + "%";
-                })()}
-              </Text>
-            )}
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-/* Angled / “Tennessee” input: skewed wrapper + counter-skewed TextInput so text is straight */
-function AngledInput({
-  value,
-  onChangeText,
-  placeholder,
-  keyboardType,
-}: {
-  value: string;
-  onChangeText: (t: string) => void;
-  placeholder: string;
-  keyboardType?: "default" | "numeric";
-}) {
-  return (
-    <View style={styles.angledWrap}>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={theme.colors.textLo}
-        keyboardType={keyboardType}
-        style={styles.angledInput}
-      />
-    </View>
-  );
-}
-
-/* ================= Running section ================= */
-function RunningSection(props: {
-  runState: "idle" | "tracking" | "paused" | "finished";
-  region: Region;
-  points: Pt[];
-  startRun: () => void;
-  pauseRun: () => void;
-  resumeRun: () => void;
-  endRun: () => void;
-  saveRun: () => void;
-  elapsed: number;
-  distanceMi: number;
-  avgPaceSec: number | null;
-  currentPaceSec: number | null;
-}) {
-  const {
-    runState,
-    region,
-    points,
-    startRun,
-    pauseRun,
-    resumeRun,
-    endRun,
-    saveRun,
-    elapsed,
-    distanceMi,
-    avgPaceSec,
-    currentPaceSec,
-  } = props;
-
-  return (
-    <View style={{ gap: 12 }}>
-      <View style={[styles.card, { overflow: "hidden" }]}>
-        <View style={{ height: 380 }}>
-          <MapView
-            provider={PROVIDER_GOOGLE}
-            style={{ flex: 1 }}
-            initialRegion={region}
-            region={region}
-            showsUserLocation
-            followsUserLocation={runState === "tracking"}
-            showsMyLocationButton={false}
-          >
-            {points.length >= 2 && (
-              <Polyline
-                coordinates={points.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
-                strokeColor={theme.colors.primary600}
-                strokeWidth={4}
-              />
-            )}
-            {points.length > 0 && (
-              <Marker coordinate={{ latitude: points[points.length - 1].lat, longitude: points[points.length - 1].lon }} />
-            )}
-          </MapView>
+            <View style={[styles.bottomSheetFooter, { paddingBottom: insets.bottom }]}>
+              <Pressable onPress={handleSave} style={styles.bottomSheetSaveButton}>
+                <Text style={styles.bottomSheetSaveText}>Save</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
         </View>
-      </View>
-
-      {runState !== "idle" && (
-        <View style={[styles.card, { padding: 12, gap: 10 }]}>
-          <Text style={{ color: theme.colors.textLo, textAlign: "center" }}>
-            {runState === "tracking" ? "Running" : runState === "paused" ? "Paused" : "Finished"}
-          </Text>
-
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <View style={[styles.metric, { flex: 1 }]}>
-              <Text style={styles.metricLabel}>Distance</Text>
-              <Text style={styles.metricValue}>{distanceMi.toFixed(2)} mi</Text>
-            </View>
-            <View style={[styles.metric, { flex: 1 }]}>
-              <Text style={styles.metricLabel}>Calories</Text>
-              <Text style={styles.metricValue}>{Math.round(distanceMi * 100)}</Text>
-            </View>
-          </View>
-
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <View style={[styles.metric, { flex: 1 }]}>
-              <Text style={styles.metricLabel}>Current Pace</Text>
-              <Text style={styles.metricValue}>{paceStr(currentPaceSec)}</Text>
-            </View>
-            <View style={[styles.metric, { flex: 1 }]}>
-              <Text style={styles.metricLabel}>Avg Pace</Text>
-              <Text style={styles.metricValue}>{paceStr(avgPaceSec)}</Text>
-            </View>
-          </View>
-
-          {runState === "tracking" && (
-            <View style={styles.ctrlRow}>
-              <Pressable onPress={pauseRun} style={[styles.ctrlBtn, styles.ctrlHollow]}>
-                <Text style={[styles.ctrlText, { color: theme.colors.textHi }]}>Pause</Text>
-              </Pressable>
-              <Pressable onPress={endRun} style={[styles.ctrlBtn, { backgroundColor: theme.colors.danger }]}>
-                <Text style={[styles.ctrlText, { color: "#fff" }]}>End Run</Text>
-              </Pressable>
-            </View>
-          )}
-          {runState === "paused" && (
-            <View style={styles.ctrlRow}>
-              <Pressable onPress={resumeRun} style={[styles.ctrlBtn, { backgroundColor: theme.colors.primary600 }]}>
-                <Text style={[styles.ctrlText, { color: "#052d1b" }]}>Resume</Text>
-              </Pressable>
-              <Pressable onPress={endRun} style={[styles.ctrlBtn, { backgroundColor: theme.colors.danger }]}>
-                <Text style={[styles.ctrlText, { color: "#fff" }]}>End Run</Text>
-              </Pressable>
-            </View>
-          )}
-          {runState === "finished" && (
-            <View style={styles.ctrlRow}>
-              <Pressable onPress={saveRun} style={[styles.ctrlBtn, { backgroundColor: theme.colors.primary600 }]}>
-                <Text style={[styles.ctrlText, { color: "#052d1b" }]}>Save Run</Text>
-              </Pressable>
-            </View>
-          )}
-
-          <Text style={{ color: theme.colors.textHi, textAlign: "center", fontSize: 24, fontFamily: FONT.displayBold, marginTop: 4 }}>
-            Time: {timeStr(elapsed)}
-          </Text>
-        </View>
-      )}
-    </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -1147,200 +1288,369 @@ function RunningSection(props: {
    Styles
 ============================================================================ */
 const styles = StyleSheet.create({
-  /* header */
+  /* Header with blur */
+  headerBlur: {
+    paddingTop: 30,
+    paddingBottom: 16,
+  },
+  headerContainer: {
+    paddingHorizontal: theme.layout.xl,
+  },
   header: {
     color: theme.colors.textHi,
-    fontSize: 28,
-    letterSpacing: 0.2,
-    fontFamily: "Geist_800ExtraBold", // Font 3
-  },
-  headerUnderline: {
-    height: 3,
-    alignSelf: "stretch",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 999,
-    marginTop: 6,
+    fontSize: 32,
+    letterSpacing: -0.5,
+    fontFamily: "SpaceGrotesk_700Bold",
+    fontWeight: "700",
   },
   iconPill: {
     width: 48,
     height: 48,
-    borderRadius: 16,
-    backgroundColor: theme.colors.surface1,
-    borderColor: theme.colors.strokeSoft,
-    borderWidth: 1,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.10)",
     alignItems: "center",
     justifyContent: "center",
-    ...theme.shadow.soft,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
 
-  /* toolbar */
-  row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  addWorkoutBtn: {
-    backgroundColor: theme.colors.primary600,
-    borderRadius: 12,
-    paddingVertical: 12,
+  /* Workout name input - floating pill */
+  nameInputPill: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: "#0e3c24",
+    height: 50,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    paddingHorizontal: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.25,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
   },
-  addWorkoutText: { color: "#052d1b", fontWeight: "900", fontSize: 16 },
-
-  nameInput: {
-    backgroundColor: theme.colors.surface1,
+  nameInputText: {
+    flex: 1,
     color: theme.colors.textHi,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
+    fontSize: 15,
+    fontFamily: "Geist_500Medium",
   },
-  topBtn: {
-    backgroundColor: "#0b1a13",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.primary600,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  topBtnText: { color: theme.colors.primary600, fontWeight: "800" },
 
-  /* sticky save */
-  stickySaveWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 16,
+  /* Action buttons row */
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: 20,
+    marginTop: 24,
+    marginBottom: 20,
     paddingHorizontal: theme.layout.xl,
   },
-  bigSaveBtn: {
+  actionButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  actionButtonFinish: {
+    backgroundColor: "rgba(255, 90, 90, 0.25)",
+    borderColor: "rgba(255, 90, 90, 0.3)",
+  },
+  actionLabel: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 12,
+    fontFamily: "Geist_500Medium",
+    marginTop: 4,
+    textAlign: "center",
+  },
+
+  /* Empty state */
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.layout.xl,
+    paddingTop: 60,
+  },
+  mascotCircles: {
+    width: 120,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    marginBottom: 40,
+  },
+  mascotCircle1: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(23, 214, 127, 0.2)",
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+  mascotCircle2: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(23, 214, 127, 0.3)",
+    position: "absolute",
+    top: 15,
+    left: 15,
+  },
+  mascotCircle3: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(23, 214, 127, 0.4)",
+    position: "absolute",
+    top: 30,
+    left: 30,
+  },
+  startWorkoutButton: {
+    borderRadius: 20,
+    overflow: "hidden",
+    ...Platform.select({
+      ios: {
+        shadowColor: theme.colors.primary600,
+        shadowOpacity: 0.4,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
+  },
+  startWorkoutButtonPressed: {
+    opacity: 0.9,
+  },
+  startWorkoutGradient: {
+    paddingVertical: 18,
+    paddingHorizontal: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  startWorkoutText: {
+    color: "#052d1b",
+    fontSize: 18,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  nameInputContainer: {
+    marginTop: 26,
+  },
+
+  /* Card - glass surface */
+  card: {
+    backgroundColor: "rgba(10, 14, 16, 0.55)",
+    borderRadius: 24,
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    overflow: "hidden",
+    width: "100%",
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 8 },
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  
+  /* Card header strip with gradient */
+  cardHeaderStrip: {
+    height: 56,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardHeaderContent: {
+    flex: 1,
+  },
+  cardHeaderText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    fontFamily: "Geist_700Bold",
+  },
+  cardHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  cardActionButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* Sets list */
+  setsListContainer: {
+    padding: 16,
+    gap: 0,
+  },
+  setRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+  setRowContent: {
+    flex: 1,
+    gap: 4,
+  },
+  setRowLabel: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 12,
+    fontFamily: "Geist_500Medium",
+  },
+  setRowValue: {
+    color: theme.colors.textHi,
+    fontSize: 15,
+    fontFamily: "Geist_600SemiBold",
+  },
+
+  /* Bottom sheet */
+  bottomSheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  bottomSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  bottomSheet: {
+    backgroundColor: theme.colors.surface1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    maxHeight: "85%",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: -8 },
+      },
+      android: {
+        elevation: 20,
+      },
+    }),
+  },
+  bottomSheetScrollView: {
+    maxHeight: 400,
+  },
+  bottomSheetFooter: {
+    paddingTop: 16,
+    paddingHorizontal: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  bottomSheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  bottomSheetTitle: {
+    color: theme.colors.textHi,
+    fontSize: 22,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+  },
+  bottomSheetContent: {
+    gap: 20,
+    paddingBottom: 24,
+    paddingTop: 8,
+  },
+  bottomSheetField: {
+    gap: 8,
+  },
+  bottomSheetFieldLabel: {
+    color: theme.colors.textLo,
+    fontSize: 13,
+    fontFamily: "Geist_500Medium",
+  },
+  bottomSheetInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    color: theme.colors.textHi,
+    fontSize: 16,
+    fontFamily: "Geist_500Medium",
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  bottomSheetSaveButton: {
     backgroundColor: theme.colors.primary600,
     borderRadius: 16,
     paddingVertical: 16,
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#0e3c24",
+    marginBottom: 20,
   },
-  bigSaveText: { color: "#052d1b", fontSize: 18 },
-
-  /* card */
-  card: {
-    backgroundColor: theme.colors.surface1,
-    borderRadius: theme.radii.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    padding: theme.layout.lg,
-    width: "100%",
-    ...theme.shadow.soft,
+  bottomSheetSaveText: {
+    color: "#052d1b",
+    fontSize: 16,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
   },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#0E1216",
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.06)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
-  },
-  cardName: {
-    flex: 1,
-    color: theme.colors.textHi,
-    fontWeight: "800",
-  },
-
-  /* Set+ chip */
-  setChip: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "#0A0F12",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 8,
-  },
-  setChipText: {
-    color: theme.colors.textHi,
-    fontSize: 12,
-    letterSpacing: 0.2,
-  },
-
-  /* sets */
-  setGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    columnGap: 10,
-    rowGap: 10,
-  },
-  setTile: {
-    backgroundColor: "#0C1016",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    padding: 12,
-    flexBasis: "48%", // 2 per row
-    minWidth: 150,
-    position: "relative",
-  },
-  setBadge: {
-    color: theme.colors.textHi,
-    marginBottom: 8,
-    fontSize: 14,
-  },
-  shotPct: {
-    position: "absolute",
-    right: 10,
-    top: 10,
-    color: theme.colors.primary600,
-    fontWeight: "900",
-    fontSize: 12,
-  },
-
-  /* angled inputs */
-  angledWrap: {
-    transform: [{ skewX: "-12deg" }],
-    backgroundColor: "#0E141C",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    marginBottom: 8,
-    overflow: "hidden",
-  },
-  angledInput: {
-    transform: [{ skewX: "12deg" }],
-    color: theme.colors.textHi,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-
-  /* Running cards */
-  metric: {
-    flex: 1,
-    backgroundColor: "#0C1016",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  metricLabel: { color: theme.colors.textLo, marginBottom: 4, fontWeight: "700" },
-  metricValue: { color: theme.colors.textHi, fontWeight: "900", fontSize: 18 },
-
-  ctrlRow: { flexDirection: "row", gap: 10, justifyContent: "center", marginTop: 4 },
-  ctrlBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    minWidth: 120,
-    alignItems: "center",
-  },
-  ctrlHollow: { borderWidth: 1, borderColor: theme.colors.strokeSoft, backgroundColor: "#0B121A" },
-  ctrlText: { fontWeight: "900" },
 });
 
 

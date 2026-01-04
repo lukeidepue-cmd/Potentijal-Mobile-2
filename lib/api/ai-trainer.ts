@@ -50,20 +50,7 @@ export interface UserContextData {
     drill: string;
     notes: string | null;
   }>;
-  recentMeals: Array<{
-    date: string;
-    type: string;
-    items: Array<{
-      foodName: string;
-      servings: number;
-      calories: number;
-      protein: number;
-      carbs: number;
-      fats: number;
-      sugar: number;
-      sodium: number;
-    }>;
-  }>;
+  // recentMeals removed - meals feature removed from app
 }
 
 /**
@@ -135,20 +122,10 @@ export function formatUserContextForAI(context: UserContextData): string {
     prompt += `\n`;
   }
 
-  // Recent meals
-  if (context.recentMeals.length > 0) {
-    prompt += `RECENT MEALS (last 7 days):\n`;
-    context.recentMeals.forEach((meal) => {
-      prompt += `- ${meal.date} (${meal.type}): ${meal.items.length} items\n`;
-      meal.items.forEach((item) => {
-        prompt += `  ${item.foodName}: ${item.calories} cal, ${item.protein}g protein, ${item.carbs}g carbs, ${item.fats}g fats\n`;
-      });
-    });
-    prompt += `\n`;
-  }
+  // Recent meals removed - meals feature removed from app
 
   prompt += `Based on this information, provide personalized advice, insights, and recommendations to help this athlete improve. `;
-  prompt += `You should reference their specific workouts, games, practices, and diet when giving advice. `;
+  prompt += `You should reference their specific workouts, games, and practices when giving advice. `;
   prompt += `If they mention new information (like injuries), remember it for future conversations. `;
   prompt += `Be encouraging, specific, and actionable in your responses.\n\n`;
 

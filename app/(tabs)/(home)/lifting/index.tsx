@@ -1,5 +1,5 @@
 // app/(tabs)/(home)/lifting/index.tsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,56 +7,59 @@ import {
   ScrollView,
   Pressable,
   TextInput,
-  ActivityIndicator,
+  StatusBar,
+  Platform,
+  Modal,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect, router } from "expo-router";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
-import { theme } from "../../../../constants/theme";
 import { getScheduleWithStatus, getCurrentWeekStart } from "../../../../lib/api/schedule";
 import { useAuth } from "../../../../providers/AuthProvider";
-import { useExerciseProgressGraph, type ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
+import { getHistoryStats } from "../../../../lib/api/history";
 import { useExerciseProgressGraphDirect } from "../../../../hooks/useExerciseProgressGraphDirect";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useMode } from "../../../../providers/ModeContext";
+import type { ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
+import { Confetti } from "../../../../components/Confetti";
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from "react-native-reanimated";
 
-// Fonts: Geist (Font 2) + Space Grotesk (Font 3 kept available)
-import {
-  useFonts as useGeist,
-  Geist_400Regular,
-  Geist_500Medium,
-  Geist_600SemiBold,
-  Geist_700Bold,
-  Geist_800ExtraBold,
-} from "@expo-google-fonts/geist";
-import {
-  useFonts as useSpaceGrotesk,
-  SpaceGrotesk_600SemiBold,
-  SpaceGrotesk_700Bold,
-} from "@expo-google-fonts/space-grotesk";
+const AnimatedText = Animated.createAnimatedComponent(Text);
 
-/* ---------------- Font roles ---------------- */
-const FONT = {
-  // Font 2 (UI = Geist)
-  uiRegular: "Geist_400Regular",
-  uiMedium: "Geist_500Medium",
-  uiSemi: "Geist_600SemiBold",
-  uiBold: "Geist_700Bold",
-  uiXBold: "Geist_800ExtraBold",
-  // Font 3 (Display = Space Grotesk)
-  displayMed: "SpaceGrotesk_600SemiBold",
-  displayBold: "SpaceGrotesk_700Bold",
-};
+// Animated Hero Headline Component
+function AnimatedHeroHeadline({ 
+  message, 
+  textScale, 
+  textOpacity 
+}: { 
+  message: string; 
+  textScale: Animated.SharedValue<number>; 
+  textOpacity: Animated.SharedValue<number>;
+}) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: textScale.value }],
+    opacity: textOpacity.value,
+  }));
 
-/* ---------------- Helpers: week + mock data ---------------- */
+  return (
+    <AnimatedText style={[styles.heroHeadline, animatedStyle]}>
+      {message}
+    </AnimatedText>
+  );
+}
+
+/* ---------------- Types ---------------- */
 type MetricKey = "reps" | "weight" | "volume";
 type RangeKey = "7d" | "30d" | "90d" | "180d";
-type DayStatus = "future" | "done" | "missed";
 
+/* ---------------- Helpers ---------------- */
 function startOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
 }
+
 function getCurrentWeekStartingSunday(): Date[] {
   const now = startOfDay(new Date());
   const sunday = new Date(now);
@@ -67,63 +70,28 @@ function getCurrentWeekStartingSunday(): Date[] {
     return d;
   });
 }
+
+const getDayName = (d: Date) => {
+  const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  return days[d.getDay()];
+};
+
 const md = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
-const yearOnly = (d: Date) => `${d.getFullYear()}`;
 
-const WEEK_NAMES = [
-  "Legs",
-  "Chest & Triceps",
-  "Back",
-  "Rest",
-  "Shoulders & Biceps",
-  "Legs",
-  "Forearms",
-];
-
-// simple rule for demo
-function statusForDay(day: Date, index: number): DayStatus {
-  const today = startOfDay(new Date());
-  const dayStart = startOfDay(day);
-
-  // demo: done on indices 1 & 4; missed on 0; others future/neutral
-  if (dayStart.getTime() > today.getTime()) return "future";
-  if (index === 1 || index === 4) return "done";
-  if (index === 0) return "missed";
-  return "future";
+// Format date as YYYY-MM-DD in local timezone (not UTC)
+function formatDateLocal(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-/* --------- Progress chart helpers (mock data) ---------- */
-function binsFor(range: RangeKey) {
-  switch (range) {
-    case "7d": return { bins: 7, stepDays: 1 };
-    case "30d": return { bins: 4, stepDays: 7 };   // weekly
-    case "90d": return { bins: 6, stepDays: 14 };  // biweekly
-    case "180d": return { bins: 6, stepDays: 30 }; // monthly-ish
-  }
-}
-
-function baseAvgFor(metric: MetricKey, _exercise: string): number {
-  if (metric === "reps") return 10;
-  if (metric === "weight") return 135;
-  return 1200; // volume (reps × weight)
-}
-
-function randomNear(avg: number, spread: number) {
-  return Math.max(0, Math.round(avg + (Math.random() * 2 - 1) * spread));
-}
-
-type Pt = { x: number; y: number; date: Date };
-function makeSeries(metric: MetricKey, range: RangeKey, exercise: string): { data: Pt[]; avg: number } {
-  const { bins, stepDays } = binsFor(range);
-  const avg = baseAvgFor(metric, exercise);
-  const spread = Math.max(4, Math.round(avg * 0.15));
-  const data: Pt[] = Array.from({ length: bins }).map((_, i) => {
-    const daysBack = (bins - 1 - i) * stepDays;
-    const d = new Date();
-    d.setDate(d.getDate() - daysBack);
-    return { x: i + 1, y: randomNear(avg, spread), date: d };
-  });
-  return { data, avg };
+// Format date as YYYY-MM-DD in UTC (to match backend format)
+function formatDateUTC(date: Date): string {
+  const utcYear = date.getUTCFullYear();
+  const utcMonth = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const utcDay = String(date.getUTCDate()).padStart(2, '0');
+  return `${utcYear}-${utcMonth}-${utcDay}`;
 }
 
 function yTicksFrom(avg: number) {
@@ -137,22 +105,11 @@ function yTicksFrom(avg: number) {
 
 /* -------------------------------- Component -------------------------------- */
 export default function LiftingHome() {
-  const [geistLoaded] = useGeist({
-    Geist_400Regular,
-    Geist_500Medium,
-    Geist_600SemiBold,
-    Geist_700Bold,
-    Geist_800ExtraBold,
-  });
-  const [sgLoaded] = useSpaceGrotesk({
-    SpaceGrotesk_600SemiBold,
-    SpaceGrotesk_700Bold,
-  });
-  const fontsReady = geistLoaded && sgLoaded;
-
+  const insets = useSafeAreaInsets();
   const days = getCurrentWeekStartingSunday();
   const { user } = useAuth();
   const weekStart = getCurrentWeekStart();
+  const today = startOfDay(new Date());
 
   // Schedule state
   const [scheduleData, setScheduleData] = useState<Array<{
@@ -161,8 +118,17 @@ export default function LiftingHome() {
     status: 'completed' | 'missed' | 'rest' | 'empty';
     date: string;
   }> | null>(null);
+  
+  // Confetti and animation state
+  const [showConfetti, setShowConfetti] = useState(false);
+  const previousStatusRef = useRef<'completed' | 'missed' | 'rest' | 'empty' | null>(null);
+  const textScale = useSharedValue(1);
+  const textOpacity = useSharedValue(1);
+  
+  // Stats state
+  const [workoutStats, setWorkoutStats] = useState({ total: 0, streak: 0 });
 
-  // Load schedule on mount and when screen comes into focus
+  // Load schedule
   useEffect(() => {
     if (user) {
       loadSchedule();
@@ -173,9 +139,18 @@ export default function LiftingHome() {
     React.useCallback(() => {
       if (user) {
         loadSchedule();
+        loadWorkoutStats();
       }
     }, [user, weekStart])
   );
+  
+  const loadWorkoutStats = async () => {
+    if (!user) return;
+    const statsResult = await getHistoryStats({ kind: "workouts" });
+    if (!statsResult.error) {
+      setWorkoutStats(statsResult.data || { total: 0, streak: 0 });
+    }
+  };
 
   const loadSchedule = async () => {
     const { data } = await getScheduleWithStatus({
@@ -183,16 +158,100 @@ export default function LiftingHome() {
       weekStartDate: weekStart,
     });
     if (data) {
+      // Check if status changed to completed (trigger confetti)
+      const todayDayIndex = today.getDay();
+      const currentItem = data.find(item => item.dayIndex === todayDayIndex);
+      const currentStatus = currentItem?.status || 'empty';
+      
+      // Check if status changed to completed (trigger confetti)
+      const prevStatus = previousStatusRef.current;
+      
+      // Debug logging
+      console.log('Lifting Schedule Load:', {
+        previousStatus: prevStatus,
+        currentStatus,
+        hasLabel: !!currentItem?.label,
+        shouldTrigger: prevStatus !== null && prevStatus !== 'completed' && currentStatus === 'completed' && currentItem?.label
+      });
+      
+      // If we had a previous status and it wasn't completed, but now it is, trigger confetti
+      if (prevStatus !== null && prevStatus !== 'completed' && currentStatus === 'completed' && currentItem?.label) {
+        console.log('🎉 Triggering confetti animation!');
+        setShowConfetti(true);
+        // Animate text change with more visible animation
+        textScale.value = withSequence(
+          withSpring(1.3, { damping: 6, stiffness: 100 }),
+          withSpring(1, { damping: 10, stiffness: 100 })
+        );
+        textOpacity.value = withSequence(
+          withTiming(0, { duration: 150 }),
+          withTiming(1, { duration: 400 })
+        );
+      }
+      
+      // Update ref for next comparison
+      previousStatusRef.current = currentStatus;
       setScheduleData(data);
     }
   };
 
-  // Progress state -> now controlled by 2 dropdowns
+  // Get today's message - use same dayIndex logic as calendar
+  const todayScheduleItem = useMemo(() => {
+    if (!scheduleData) return null;
+    const todayDayIndex = today.getDay(); // 0 = Sunday, 6 = Saturday
+    return scheduleData.find(item => item.dayIndex === todayDayIndex) || null;
+  }, [scheduleData, today]);
+
+  const todayMessage = useMemo(() => {
+    if (!todayScheduleItem) {
+      return "Recovery matters too";
+    }
+    
+    const status = todayScheduleItem.status;
+    const label = todayScheduleItem.label?.trim() || '';
+    
+    // Check status first - if completed, show completion message
+    if (status === 'completed') {
+      return "Workout Completed!";
+    }
+    
+    // If missed, show waiting message
+    if (status === 'missed') {
+      return "Today's workout is still waiting";
+    }
+    
+    // Check if it's explicitly a rest day (status === 'rest' or label indicates rest)
+    const normalizedLabel = label.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    const isRest = status === 'rest' || 
+      normalizedLabel.startsWith('rest') ||
+      normalizedLabel.endsWith('rest') ||
+      normalizedLabel.includes(' rest ') ||
+      normalizedLabel === 'rest day' ||
+      normalizedLabel === 'restday' ||
+      normalizedLabel.startsWith('day off') ||
+      normalizedLabel.endsWith('off day');
+    
+    if (isRest) {
+      return "Recovery matters too";
+    }
+    
+    // If there's a label (workout scheduled) but status is 'empty', it's a scheduled workout
+    if (label && status === 'empty') {
+      return "Today's workout is still waiting";
+    }
+    
+    // Default: no schedule or empty label
+    return "Recovery matters too";
+  }, [todayScheduleItem]);
+
+  // Progress state
   const [metric, setMetric] = useState<MetricKey>("weight");
   const [range, setRange] = useState<RangeKey>("90d");
   const [exercise, setExercise] = useState("");
+  const [openMetric, setOpenMetric] = useState(false);
+  const [openRange, setOpenRange] = useState(false);
 
-  // Map frontend metric/range to backend
+  // Map to backend
   const backendMetric: ProgressMetric = 
     metric === "reps" ? "reps" :
     metric === "weight" ? "weight" :
@@ -205,22 +264,20 @@ export default function LiftingHome() {
     range === "180d" ? 180 :
     360;
 
-  // Fetch real progress data - using direct query to bypass RPC issues
-  const { data: progressData, loading: progressLoading } = useExerciseProgressGraphDirect({
+  // Fetch progress data
+  const { data: progressData } = useExerciseProgressGraphDirect({
     mode: 'lifting',
     query: exercise,
     metric: backendMetric,
     days: backendDays as 7 | 30 | 90 | 180 | 360,
   });
 
-  // Convert progress data to series format for graph
+  // Convert to graph series
   const { data: series, avg } = useMemo(() => {
     if (!progressData || progressData.length === 0 || !exercise.trim()) {
       return { data: [], avg: 0 };
     }
 
-    // Convert backend data to graph series
-    // Handle both camelCase (from Supabase) and snake_case (direct from DB)
     const graphSeries = progressData
       .filter(p => p.value !== null)
       .map(p => {
@@ -259,352 +316,710 @@ export default function LiftingHome() {
     return series.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.y)}`).join(" ");
   }, [series, w, yMin, yMax]);
 
-  // Dropdown menus
-  const [openMetric, setOpenMetric] = useState(false);
-  const [openRange, setOpenRange] = useState(false);
+  const { mode, setMode } = useMode();
+  const [showModeChooser, setShowModeChooser] = useState(false);
+  const [showAssistantCard, setShowAssistantCard] = useState(false);
 
-  if (!fontsReady) {
-    return (
-      <View style={{ flex: 1, backgroundColor: theme.colors.bg0, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
+  // Calculate header height
+  const headerTopHeight = 56; // Height for top actions row
+  const calendarContentHeight = 60;
+  const calendarPadding = 20; // Extra padding (4 top + 16 bottom) to prevent cut-off
+  const headerTotalHeight = headerTopHeight + calendarContentHeight + calendarPadding + insets.top;
+
+  // Get supporting message text
+  const supportingMessage = useMemo(() => {
+    if (!todayScheduleItem) {
+      return "Taking time to rest is key for your athletic goals. Keep up the good work!";
+    }
+    
+    const status = todayScheduleItem.status;
+    const label = todayScheduleItem.label?.trim() || '';
+    
+    // Check status first - if completed, show completion message
+    if (status === 'completed') {
+      return "Soak in that sense of accomplishment";
+    }
+    
+    // If missed, show waiting message
+    if (status === 'missed') {
+      return "Every workout contributes to your progress!";
+    }
+    
+    // Check if it's explicitly a rest day (status === 'rest' or label indicates rest)
+    const normalizedLabel = label.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    const isRest = status === 'rest' || 
+      normalizedLabel.startsWith('rest') ||
+      normalizedLabel.endsWith('rest') ||
+      normalizedLabel.includes(' rest ') ||
+      normalizedLabel === 'rest day' ||
+      normalizedLabel === 'restday' ||
+      normalizedLabel.startsWith('day off') ||
+      normalizedLabel.endsWith('off day');
+    
+    if (isRest) {
+      return "Taking time to rest is key for your athletic goals. Keep up the good work!";
+    }
+    
+    // If there's a label (workout scheduled) but status is 'empty', it's a scheduled workout
+    if (label && status === 'empty') {
+      return "Every workout contributes to your progress!";
+    }
+    
+    // Default: no schedule or empty label
+    return "Taking time to rest is key for your athletic goals. Keep up the good work!";
+  }, [todayScheduleItem]);
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.colors.bg0 }}
-      contentContainerStyle={{ padding: theme.layout.xl, gap: theme.layout.lg, paddingBottom: 24 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* ===== Header: "Home" (Font 3 + underline) ===== */}
-      <View style={{ alignItems: "center", marginTop: 32 }}>
-        <Text style={styles.header}>Home</Text>
-        <View style={styles.headerUnderline} />
-      </View>
+    <View style={styles.container}>
+      {/* FIX #1: HeaderShell with left actions, center brand, right actions, calendar inside */}
+      <View 
+        style={[
+          styles.headerShell, 
+          { 
+            height: headerTotalHeight,
+            paddingTop: insets.top,
+            top: 0,
+          }
+        ]}
+      >
+        {/* Top actions row */}
+        <View style={styles.headerTopRow}>
+          {/* Left: Notifications only (profile removed) */}
+          <View style={styles.headerLeft}>
+            <Pressable 
+              style={styles.headerIconButton}
+              onPress={() => {}}
+            >
+              <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
+            </Pressable>
+          </View>
 
-      {/* ================= SCHEDULE (Checklist) ================= */}
-      <View style={styles.card}>
-        <Text style={styles.scheduleTitle}>Schedule</Text>
+          {/* Center: Brand/Sport Mode Label */}
+          <Text style={styles.headerBrand}>Lifting</Text>
 
-        <View style={{ marginTop: 4 }}>
-          {days.map((d, idx) => {
-            const scheduleItem = scheduleData?.[idx];
-            const label = scheduleItem?.label || '';
-            const status = scheduleItem?.status || 'empty';
-            
-            // Map status to UI status
-            const uiStatus: DayStatus = 
-              status === 'completed' || status === 'rest' ? 'done' :
-              status === 'missed' ? 'missed' :
-              'future';
-            
-            const underlineColor =
-              uiStatus === "done" ? theme.colors.primary600 :
-              uiStatus === "missed" ? "#F14D4D" : "rgba(255,255,255,0.68)";
-            const markColor =
-              uiStatus === "done" ? theme.colors.primary600 :
-              uiStatus === "missed" ? "#F14D4D" : "rgba(255,255,255,0.45)";
+          {/* Right: Settings + Mode Switch */}
+          <View style={styles.headerRight}>
+            <Pressable 
+              style={styles.headerIconButton}
+              onPress={() => router.push("/(tabs)/settings")}
+            >
+              <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
+            </Pressable>
+            <Pressable 
+              style={styles.headerIconButton}
+              onPress={() => setShowModeChooser(true)}
+            >
+              <MaterialCommunityIcons name="dumbbell" size={22} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        </View>
 
-            return (
-              <View key={idx} style={styles.checkRow}>
-                {/* checkbox */}
-                <View style={[styles.checkbox, { borderColor: markColor }]}>
-                  {uiStatus === "done" && <Ionicons name="checkmark" size={12} color={markColor} />}
-                  {uiStatus === "missed" && <Ionicons name="close" size={12} color={markColor} />}
+        {/* Calendar strip inside header */}
+        <View style={styles.calendarContainer}>
+          <View style={styles.calendarContent}>
+            {days.map((day, index) => {
+              const isToday = day.getTime() === today.getTime();
+              // Find schedule status for this day - match by dayIndex (0=Sunday, 6=Saturday)
+              // This avoids timezone issues with date string comparison
+              const dayIndex = day.getDay(); // 0 = Sunday, 6 = Saturday
+              const scheduleItem = scheduleData?.find(item => item.dayIndex === dayIndex);
+              const status = scheduleItem?.status || 'empty';
+              
+              // Green if completed or rest, red if missed
+              const dayNameColor = status === 'completed' || status === 'rest' 
+                ? '#3eb489' // Green
+                : status === 'missed' 
+                ? '#FF4444' // Red
+                : '#9E9E9E'; // Default gray
+              
+              return (
+                <View key={index} style={styles.calendarDay}>
+                  <Text style={[styles.calendarDayName, { color: dayNameColor }]}>{getDayName(day)}</Text>
+                  <View style={[styles.calendarDateCircle, isToday && styles.calendarDateCircleActive]}>
+                    <Text style={[styles.calendarDate, isToday && styles.calendarDateActive]}>
+                      {day.getDate()}
+                    </Text>
+                  </View>
                 </View>
-
-                {/* name */}
-                <Text style={styles.checkName} numberOfLines={1}>
-                  {label || ''}
-                </Text>
-
-                {/* date */}
-                <Text style={styles.checkDate}>{md(d)}</Text>
-
-                {/* underline */}
-                <View style={[styles.underline, { backgroundColor: underlineColor }]} />
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
         </View>
       </View>
 
-      {/* Right-aligned CTA under the schedule card, with 8px margin top/bottom */}
-      <View style={{ alignItems: "flex-end", marginVertical: 8 }}>
-        <Pressable onPress={() => router.push("/(tabs)/(home)/schedule-week")} style={{ borderRadius: 999, overflow: "hidden" }}>
+      {/* Scrollable content */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingTop: headerTotalHeight, paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
+        {/* Extended gradient wrapper - extends upward behind calendar */}
+        <View style={styles.gradientWrapper}>
+          {/* Extended gradient for pull-down - extends behind calendar - EXACT same color as top of hero gradient */}
           <LinearGradient
-            colors={[theme.colors.primary600, "#3BAA6F"]}
+            colors={["#2D6A4F", "#2D6A4F"]}
+            locations={[0, 1]}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.scheduleBtn, { paddingVertical: 14 }]} // retains +4px inside
+            end={{ x: 0, y: 1 }}
+            style={styles.pullDownGradient}
+          />
+          
+          {/* Hero gradient background layer - OLD GRADIENT STRUCTURE with NEW GREEN SHADES: Replaced #2D5A4A with #2D6A4F, maintaining same structure */}
+          <LinearGradient
+            colors={["#2D6A4F", "#2C684E", "#2B664D", "#2A644C", "#29624B", "#28604A", "#275E49", "#265C48", "#255A47", "#245846", "#235645", "#225444", "#215243", "#205042", "#1F4E41", "#1E4C40", "#1D4A3F", "#1C483E", "#1B463D", "#1A443C", "#19423B", "#18403A", "#173E39", "#163C38", "#153A37", "#143836", "#133635", "#123434", "#0F1A1C", "#0B0E10", "#0B0E10"]}
+            locations={[0, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.24, 0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.45, 0.48, 0.51, 0.54, 0.57, 0.60, 0.63, 0.66, 0.69, 0.72, 0.75, 0.78, 0.81, 0.87, 0.93, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.heroGradient}
           >
-            <Ionicons name="add" size={18} color="#06160D" />
-            <Text style={styles.scheduleBtnText}>Schedule Next Week</Text>
-          </LinearGradient>
+          {/* FIX #3: Hero Module with icon, headline, supporting text */}
+          <View style={styles.heroModule}>
+            {/* Small hero icon/illustration */}
+            <View style={styles.heroIconContainer}>
+              <View style={styles.mascotCircles}>
+                <View style={styles.mascotCircle1} />
+                <View style={styles.mascotCircle2} />
+                <View style={styles.mascotCircle3} />
+              </View>
+            </View>
+            
+            {/* FIX #4: Typography hierarchy - headline 32-36px semibold */}
+            <AnimatedHeroHeadline 
+              message={todayMessage}
+              textScale={textScale}
+              textOpacity={textOpacity}
+            />
+            
+            {/* FIX #4: Supporting text 15-16px ~70% opacity */}
+            <Text style={styles.heroSupporting}>{supportingMessage}</Text>
+          </View>
+        </LinearGradient>
+        </View>
+
+        {/* FIX #6: Divider line between hero and content */}
+        <View style={styles.sectionDivider} />
+
+        {/* FIX #2: Content card with different surface */}
+        <View style={styles.progressCard}>
+          {/* FIX #4: Section heading with action on right */}
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <View style={styles.progressTick} />
+              <Text style={styles.sectionTitle}>Progress</Text>
+            </View>
+            <Pressable onPress={() => {}}>
+              <Text style={styles.sectionAction}>See all →</Text>
+            </Pressable>
+          </View>
+
+          <TextInput
+            placeholder="Search an Exercise (e.g. bench press)…"
+            placeholderTextColor="#6B7280"
+            value={exercise}
+            onChangeText={setExercise}
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+
+          <View style={styles.dropdownRow}>
+            <View style={styles.dropdownWrapper}>
+              <Pressable
+                onPress={() => {
+                  setOpenMetric(!openMetric);
+                  setOpenRange(false);
+                }}
+                style={[styles.dropdown, openMetric && styles.dropdownActive]}
+              >
+                <Text style={styles.dropdownText}>
+                  {metric === "volume" ? "Reps × Weight" : metric[0].toUpperCase() + metric.slice(1)}
+                </Text>
+                <Ionicons name="chevron-down" size={12} color={openMetric ? "#4A9EFF" : "#9E9E9E"} />
+              </Pressable>
+              {openMetric && (
+                <View style={styles.dropdownMenu}>
+                  {(["reps", "weight", "volume"] as MetricKey[]).map((k) => (
+                    <Pressable
+                      key={k}
+                      onPress={() => {
+                        setMetric(k);
+                        setOpenMetric(false);
+                      }}
+                      style={styles.dropdownMenuItem}
+                    >
+                      <Text style={styles.dropdownMenuText}>
+                        {k === "volume" ? "Reps × Weight" : k[0].toUpperCase() + k.slice(1)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.dropdownWrapper}>
+              <Pressable
+                onPress={() => {
+                  setOpenRange(!openRange);
+                  setOpenMetric(false);
+                }}
+                style={[styles.dropdown, openRange && styles.dropdownActive]}
+              >
+                <Text style={styles.dropdownText}>
+                  {range === "7d" ? "7 Days" : range === "30d" ? "30 Days" : range === "90d" ? "90 Days" : "180 Days"}
+                </Text>
+                <Ionicons name="chevron-down" size={12} color={openRange ? "#4A9EFF" : "#9E9E9E"} />
+              </Pressable>
+              {openRange && (
+                <View style={styles.dropdownMenu}>
+                  {(["7d", "30d", "90d", "180d"] as RangeKey[]).map((k) => (
+                    <Pressable
+                      key={k}
+                      onPress={() => {
+                        setRange(k);
+                        setOpenRange(false);
+                      }}
+                      style={styles.dropdownMenuItem}
+                    >
+                      <Text style={styles.dropdownMenuText}>
+                        {k === "7d" ? "7 Days" : k === "30d" ? "30 Days" : k === "90d" ? "90 Days" : "180 Days"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Chart */}
+          <View style={styles.chartContainer} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+            <Svg width="100%" height="100%">
+              <G>
+                {yTicks.map((t, i) => {
+                  const y = yFor(t);
+                  return (
+                    <React.Fragment key={`y-${i}`}>
+                      <SvgLine x1={M.left} x2={w - M.right} y1={y} y2={y} stroke="#2A2F38" strokeWidth={1} />
+                      <SvgText x={M.left - 6} y={y + 3} fill="#9E9E9E" fontSize={10} textAnchor="end">
+                        {String(t)}
+                      </SvgText>
+                    </React.Fragment>
+                  );
+                })}
+                {series.map((p, i) => {
+                  const x = xFor(i);
+                  const lbl = md(p.date);
+                  return (
+                    <SvgText key={`x-${i}`} x={x} y={H - 12} fill="#9E9E9E" fontSize={10} textAnchor="middle">
+                      {lbl}
+                    </SvgText>
+                  );
+                })}
+                <SvgLine x1={M.left} x2={w - M.right} y1={H - M.bottom} y2={H - M.bottom} stroke="#2A2F38" strokeWidth={1} />
+                <SvgLine x1={M.left} x2={M.left} y1={M.top} y2={H - M.bottom} stroke="#2A2F38" strokeWidth={1} />
+              </G>
+              {linePath ? <Path d={linePath} fill="none" stroke="#4A9EFF" strokeWidth={2} /> : null}
+              {series.map((p, i) => (
+                <Circle
+                  key={`pt-${i}`}
+                  cx={xFor(i)}
+                  cy={yFor(p.y)}
+                  r={4.5}
+                  stroke="#0F1419"
+                  strokeWidth={2}
+                  fill="#4A9EFF"
+                />
+              ))}
+            </Svg>
+          </View>
+        </View>
+        
+        {/* Workout Stats Section */}
+        <View style={styles.statsSection}>
+          <View style={styles.statCard}>
+            <View style={styles.statRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statKicker}>Total</Text>
+                <Text style={styles.statTitle}>Workouts</Text>
+              </View>
+              <Text style={styles.statValueRight}>{workoutStats.total}</Text>
+            </View>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={styles.statRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statKicker}>Workout</Text>
+                <Text style={styles.statTitle}>Streak</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={styles.statValueRight}>{workoutStats.streak}</Text>
+                <MaterialCommunityIcons name="fire" size={16} color="#4A9EFF" />
+              </View>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* FIX #5: Sticky bottom primary CTA */}
+      <View style={[styles.stickyCTA, { bottom: insets.bottom + 16 }]}>
+        {/* FIX #5: Expandable assistant card above CTA */}
+        <Pressable 
+          style={styles.assistantCard}
+          onPress={() => setShowAssistantCard(!showAssistantCard)}
+        >
+          <View style={styles.assistantCardContent}>
+            <Text style={styles.assistantCardText}>Today's Focus: Mobility + Core (12 min)</Text>
+            <Ionicons 
+              name={showAssistantCard ? "chevron-up" : "chevron-down"} 
+              size={16} 
+              color="#9E9E9E" 
+            />
+          </View>
+        </Pressable>
+
+        {/* Primary CTA Button - Edit Schedule */}
+        <Pressable 
+          style={styles.primaryCTA} 
+          onPress={() => router.push("/(tabs)/(home)/schedule-week")}
+        >
+          <Ionicons name="pencil" size={20} color="#000000" />
+          <Text style={styles.primaryCTAText}>Edit Schedule</Text>
         </Pressable>
       </View>
 
-      {/* ================= PROGRESS ================= */}
-      <View style={styles.card}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
-          <View style={styles.leftTick} />
-          <Text style={styles.progressTitle}>Progress</Text>
-        </View>
-
-        {/* Search first */}
-        <TextInput
-          placeholder="Search an Exercise (e.g. bench press)…"
-          placeholderTextColor={theme.colors.textLo}
-          value={exercise}
-          onChangeText={(t) => setExercise(t)}
-          style={styles.search}
-          autoCorrect={false}
-          autoCapitalize="none"
-          blurOnSubmit={false}
-        />
-
-        {/* Two dropdowns row (Font 2) */}
-        <View style={styles.dropRow}>
-          {/* Metric dropdown */}
-          <View style={{ flex: 1, position: "relative" }}>
-            <Pressable
-              onPress={() => {
-                setOpenMetric((v) => !v);
-                setOpenRange(false);
-              }}
-              style={[styles.dropdown, openMetric && styles.dropdownActive]}
-            >
-              <Text style={styles.dropdownText}>
-                {metric === "volume" ? "Reps × Weight" : metric[0].toUpperCase() + metric.slice(1)}
-              </Text>
-              <Ionicons name="chevron-down" size={12} color={openMetric ? theme.colors.primary600 : theme.colors.textHi} />
-            </Pressable>
-            {openMetric && (
-              <View style={styles.menu}>
-                {(["reps", "weight", "volume"] as MetricKey[]).map((k) => (
-                  <Pressable
-                    key={k}
-                    onPress={() => {
-                      setMetric(k);
-                      setOpenMetric(false);
-                    }}
-                    style={styles.menuItem}
-                  >
-                    <Text style={styles.menuText}>
-                      {k === "volume" ? "Reps × Weight" : k[0].toUpperCase() + k.slice(1)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* Range dropdown */}
-          <View style={{ flex: 1, position: "relative" }}>
-            <Pressable
-              onPress={() => {
-                setOpenRange((v) => !v);
-                setOpenMetric(false);
-              }}
-              style={[styles.dropdown, openRange && styles.dropdownActive]}
-            >
-              <Text style={styles.dropdownText}>
-                {range === "7d" ? "7 Days" : range === "30d" ? "30 Days" : range === "90d" ? "90 Days" : "180 Days"}
-              </Text>
-              <Ionicons name="chevron-down" size={12} color={openRange ? theme.colors.primary600 : theme.colors.textHi} />
-            </Pressable>
-            {openRange && (
-              <View style={styles.menu}>
-                {(["7d", "30d", "90d", "180d"] as RangeKey[]).map((k) => (
-                  <Pressable
-                    key={k}
-                    onPress={() => {
-                      setRange(k);
-                      setOpenRange(false);
-                    }}
-                    style={styles.menuItem}
-                  >
-                    <Text style={styles.menuText}>
-                      {k === "7d" ? "7 Days" : k === "30d" ? "30 Days" : k === "90d" ? "90 Days" : "180 Days"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* Chart (non-interactive) */}
-        <View
-          style={styles.chartWrap}
-          onLayout={(e) => setW(e.nativeEvent.layout.width)}
-        >
-          <Svg width="100%" height="100%">
-            {/* Grid + axes */}
-            <G>
-              {/* Y grid lines & labels */}
-              {yTicks.map((t, i) => {
-                const y = yFor(t);
-                return (
-                  <React.Fragment key={`y-${i}`}>
-                    <SvgLine x1={M.left} x2={w - M.right} y1={y} y2={y} stroke="#16222c" strokeWidth={1} />
-                    <SvgText x={M.left - 6} y={y + 3} fill="#8AA0B5" fontSize={10} textAnchor="end">
-                      {t}
-                    </SvgText>
-                  </React.Fragment>
-                );
-              })}
-              {/* X labels */}
-              {series.map((p, i) => {
-                const x = xFor(i);
-                const lbl = range === "180d" ? yearOnly(p.date) : md(p.date);
-                return (
-                  <SvgText key={`x-${i}`} x={x} y={H - 12} fill="#8AA0B5" fontSize={10} textAnchor="middle">
-                    {lbl}
-                  </SvgText>
-                );
-              })}
-              {/* Axes lines */}
-              <SvgLine x1={M.left} x2={w - M.right} y1={H - M.bottom} y2={H - M.bottom} stroke="#22303d" strokeWidth={1} />
-              <SvgLine x1={M.left} x2={M.left} y1={M.top} y2={H - M.bottom} stroke="#22303d" strokeWidth={1} />
-            </G>
-
-            {/* Line */}
-            {linePath ? <Path d={linePath} fill="none" stroke={theme.colors.primary600} strokeWidth={2} /> : null}
-
-            {/* Points */}
-            {series.map((p, i) => (
-              <Circle
-                key={`pt-${i}`}
-                cx={xFor(i)}
-                cy={yFor(p.y)}
-                r={4.5}
-                stroke="#0a1a13"
-                strokeWidth={2}
-                fill={theme.colors.primary600}
-              />
+      {/* Mode Chooser Modal */}
+      <Modal
+        visible={showModeChooser}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowModeChooser(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowModeChooser(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Switch mode</Text>
+            {[
+              { key: "lifting", label: "Lifting", icon: "dumbbell" },
+              { key: "basketball", label: "Basketball", icon: "basketball-outline" },
+              { key: "football", label: "Football", icon: "american-football-outline" },
+              { key: "baseball", label: "Baseball", icon: "baseball" },
+              { key: "soccer", label: "Soccer", icon: "football-outline" },
+              { key: "hockey", label: "Hockey", icon: "hockey-sticks" },
+              { key: "tennis", label: "Tennis", icon: "tennisball-outline" },
+            ].map((m) => (
+              <Pressable
+                key={m.key}
+                style={styles.modalItem}
+                onPress={() => {
+                  setMode(m.key as any);
+                  setShowModeChooser(false);
+                }}
+              >
+                {m.icon.includes("-") ? (
+                  <Ionicons name={m.icon as any} size={18} color="#FFFFFF" />
+                ) : (
+                  <MaterialCommunityIcons name={m.icon as any} size={18} color="#FFFFFF" />
+                )}
+                <Text style={styles.modalItemText}>{m.label}</Text>
+              </Pressable>
             ))}
-          </Svg>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Confetti Animation - High z-index to appear above everything */}
+      {showConfetti && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, elevation: 10000, pointerEvents: 'none' }}>
+          <Confetti 
+            active={showConfetti} 
+            onComplete={() => {
+              console.log('Confetti animation completed');
+              setShowConfetti(false);
+            }}
+          />
         </View>
-      </View>
-    </ScrollView>
+      )}
+    </View>
   );
 }
 
 /* -------------------------------- Styles -------------------------------- */
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 18,
-    backgroundColor: "#0E1216",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    padding: 14,
+  container: {
+    flex: 1,
+    backgroundColor: "#0B0E10",
   },
-
-  /* Top Header ("Home") */
-  header: {
-    color: theme.colors.textHi,
-    fontSize: 28,
-    letterSpacing: 0.2,
-    fontFamily: "Geist_800ExtraBold", // Space Grotesk
+  
+  // FIX #1 & #2: HeaderShell with depth layering - IN FRONT of gradient
+  headerShell: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    backgroundColor: "#22272d", // FIX #7: Exact hex color
+    zIndex: 2000, // Increased to be clearly in front
+    elevation: 2000, // Increased for Android
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, // Increased shadow for more depth
+    shadowRadius: 12, // Increased blur radius
+    borderBottomLeftRadius: 16, // FIX #7: Rounded container
+    borderBottomRightRadius: 16,
+    overflow: "visible", // Changed to visible to allow shadow to show
   },
-  headerUnderline: {
-    height: 3,
-    alignSelf: "stretch",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 999,
-    marginTop: 6,
-  },
-
-  /* Schedule title: Font 2 centered */
-  scheduleTitle: {
-    color: theme.colors.textHi,
-    fontSize: 26,
-    textAlign: "center",
-    fontFamily: FONT.uiXBold,
-    marginBottom: 6,
-    letterSpacing: 0.2,
-  },
-
-  /* Checklist rows */
-  checkRow: {
-    position: "relative",
+  headerTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingLeft: 4,
-    marginHorizontal: 6,
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    height: 56,
   },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 2,
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  headerBrand: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF", // FIX #7: Near-white, not pure white
+    textAlign: "center",
+    flex: 1,
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
-  checkName: {
-    flex: 1,
-    color: theme.colors.textHi,
-    fontSize: 16,
-    fontFamily: FONT.uiXBold, // Font 2
+  
+  // FIX #7: Calendar inside rounded container with notch - shadow under calendar
+  calendarContainer: {
+    position: "relative",
+    paddingBottom: 16, // Extended padding to prevent cut-off
+    paddingTop: 4, // Extra top padding
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2, // Android shadow
   },
-  checkDate: {
-    color: "#A9B7C4",
-    fontSize: 14,
-    fontFamily: FONT.uiBold,
-    marginLeft: 10,
+  calendarContent: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8, // Reduced since container has padding
   },
-  underline: {
-    position: "absolute",
-    left: 32,
-    right: 6,
-    bottom: 2,
-    height: 3,
-    borderRadius: 999,
+  calendarDay: {
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 40,
+  },
+  calendarDayName: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#9E9E9E", // FIX #7: Muted text
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    marginBottom: 6,
+  },
+  calendarDateCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  calendarDateCircleActive: {
+    backgroundColor: "#FFFFFF", // White circle for current day
+  },
+  calendarDate: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#9E9E9E", // FIX #7: Muted text
+  },
+  calendarDateActive: {
+    color: "#000000", // Black text in white circle
   },
 
-  // right-aligned CTA
-  scheduleBtn: {
+  // ScrollView
+  scrollView: {
+    flex: 1,
+    backgroundColor: "#0B0E10",
+  },
+
+  // Gradient wrapper - extends upward behind calendar
+  gradientWrapper: {
+    position: "relative",
+    marginTop: -600, // Extend upward behind calendar
+    paddingTop: 600, // Compensate for negative margin
+  },
+
+  // Extended gradient for pull-down - extends behind calendar
+  pullDownGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 600, // Tall enough to cover scroll distance
+    zIndex: 0, // Behind hero gradient
+  },
+
+  // FIX #2: Hero gradient background layer
+  heroGradient: {
+    paddingHorizontal: 24,
+    paddingTop: 52, // Increased more to move gradient and content down
+    paddingBottom: 40, // Increased to extend green gradient further down
+    minHeight: 400, // Increased to allow more green gradient space
+    position: "relative",
+    zIndex: 1, // Above pull-down gradient
+  },
+  
+  // FIX #3: Hero Module
+  heroModule: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8, // Add a bit more space to push circles and text down
+  },
+  heroIconContainer: {
+    marginBottom: 20,
+  },
+  mascotCircles: {
+    width: 120, // FIX #3: Smaller icon
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  mascotCircle1: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(62, 180, 137, 0.2)", // Green based on #3eb489
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+  mascotCircle2: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(62, 180, 137, 0.3)", // Green based on #3eb489
+    position: "absolute",
+    top: 15,
+    left: 15,
+  },
+  mascotCircle3: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(62, 180, 137, 0.4)", // Green based on #3eb489
+    position: "absolute",
+    top: 30,
+    left: 30,
+  },
+  
+  // FIX #4: Typography hierarchy
+  heroHeadline: {
+    fontSize: 18, // Reduced by 12px from 30
+    fontWeight: "600", // semibold
+    color: "#FFFFFF", // FIX #7: Near-white, not pure white
+    textAlign: "center",
+    lineHeight: 24, // Adjusted proportionally
+    marginBottom: 12,
+  },
+  heroSupporting: {
+    fontSize: 13, // Increased by 2px from 11
+    fontWeight: "400",
+    color: "rgba(255, 255, 255, 0.7)", // FIX #4 & #7: ~70% opacity, muted
+    textAlign: "center",
+    lineHeight: 18, // Adjusted proportionally
+    paddingHorizontal: 16,
+  },
+
+  // FIX #6: Divider
+  sectionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)", // Low opacity
+    marginHorizontal: 24,
+    marginTop: 20, // FIX #6: 20-28px spacing
+    marginBottom: 24, // FIX #6: 18-24px spacing to section title
+  },
+
+  // FIX #2: Content card with different surface
+  progressCard: {
+    marginHorizontal: 16,
+    marginTop: 0, // FIX #6: Proper spacing after divider
+    padding: 20,
+    backgroundColor: "#1A1F28", // Different surface
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  
+  // FIX #4: Section header with action on right
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    borderRadius: 999,
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
-  scheduleBtnText: { color: "#06160D", fontFamily: FONT.uiXBold },
-
-  /* Progress */
-  leftTick: {
+  sectionHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  progressTick: {
     width: 3,
-    height: 16,
+    height: 18,
     borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "#4A9EFF",
     marginRight: 10,
   },
-  progressTitle: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontFamily: FONT.uiXBold, // Font 2
+  sectionTitle: {
+    fontSize: 19, // FIX #4: 18-20px semibold
+    fontWeight: "600", // semibold
+    color: "#FFFFFF", // FIX #7: Near-white
   },
-
-  search: {
-    backgroundColor: "#0C1014",
-    color: theme.colors.textHi,
+  sectionAction: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#4A9EFF",
+  },
+  
+  searchInput: {
+    backgroundColor: "#0F1419",
+    color: "#FFFFFF",
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    marginTop: 2,
-    marginBottom: 10,
-    fontFamily: FONT.uiRegular,
+    borderColor: "#2A2F38",
+    marginBottom: 12,
+    fontSize: 14,
   },
-
-  /* Dropdowns */
-  dropRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  dropdownRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  dropdownWrapper: {
+    flex: 1,
+    position: "relative",
+  },
   dropdown: {
     flexDirection: "row",
     alignItems: "center",
@@ -612,55 +1027,177 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: "#0A0F12",
+    borderRadius: 8,
+    backgroundColor: "#0F1419",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "#2A2F38",
   },
   dropdownActive: {
-    borderColor: theme.colors.primary600,
-    backgroundColor: "#0E1316",
+    borderColor: "#4A9EFF",
+    backgroundColor: "#1A2332",
   },
   dropdownText: {
-    color: theme.colors.textHi,
+    color: "#FFFFFF", // FIX #7: Near-white
     fontSize: 12,
-    letterSpacing: 0.2,
-    fontFamily: FONT.uiSemi, // Font 2
+    fontWeight: "600",
   },
-  menu: {
+  dropdownMenu: {
     position: "absolute",
     top: 42,
     left: 0,
     right: 0,
-    backgroundColor: "#0E1216",
-    borderRadius: 12,
+    backgroundColor: "#1A1F28",
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    overflow: "hidden",
+    borderColor: "#2A2F38",
     zIndex: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  menuItem: {
+  dropdownMenuItem: {
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
+    borderBottomColor: "#2A2F38",
   },
-  menuText: {
-    color: theme.colors.textHi,
+  dropdownMenuText: {
+    color: "#FFFFFF",
     fontSize: 12,
-    fontFamily: FONT.uiSemi,
+    fontWeight: "600",
   },
-
-  chartWrap: {
+  chartContainer: {
     height: 220,
-    backgroundColor: "#0B121A",
-    borderRadius: 14,
+    backgroundColor: "#0F1419",
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#1a2230",
+    borderColor: "#2A2F38",
     overflow: "hidden",
   },
+  
+  // FIX #5: Sticky bottom CTA
+  stickyCTA: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    zIndex: 100,
+  },
+  assistantCard: {
+    backgroundColor: "#1A1F28",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#2A2F38",
+  },
+  assistantCardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  assistantCardText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#9E9E9E", // FIX #7: Muted text
+    flex: 1,
+  },
+  primaryCTA: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  primaryCTAText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#000000",
+  },
+  
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    paddingTop: 100,
+    paddingRight: 12,
+  },
+  modalContent: {
+    backgroundColor: "#1A1F28",
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    minWidth: 220,
+    borderWidth: 1,
+    borderColor: "#2A2F38",
+  },
+  modalTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#9E9E9E",
+    marginBottom: 6,
+    marginLeft: 6,
+  },
+  modalItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  modalItemText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    flex: 1,
+  },
+  
+  // Stats Section
+  statsSection: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 24,
+    marginBottom: 24,
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: "#1A1F28",
+    borderColor: "#2A2F38",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+  },
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  statKicker: {
+    color: "#9E9E9E",
+    fontSize: 11,
+    marginBottom: 4,
+    fontWeight: "600",
+  },
+  statTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  statValueRight: {
+    color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: "700",
+  },
 });
-
-
- 
-

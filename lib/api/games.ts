@@ -19,8 +19,7 @@ export interface GameData {
  */
 export async function createGame(params: {
   mode: SportMode | string;
-  playedAt: string; // ISO date string
-  result: 'win' | 'loss' | 'tie';
+  playedAt: string; // ISO date string (YYYY-MM-DD)
   title?: string;
   stats: Record<string, number | string>;
   notes?: string;
@@ -40,7 +39,7 @@ export async function createGame(params: {
       user_id: user.id,
       mode: sportMode,
       played_at: params.playedAt,
-      result: params.result,
+      result: null, // No longer tracking result - user can note it in notes
       stats: params.stats,
       notes: params.notes || null,
     };

@@ -8,6 +8,7 @@ export interface PracticeData {
   id: string;
   mode: SportMode;
   practicedAt: string;
+  title: string | null;
   drill: string | null;
   notes: string | null;
 }
@@ -18,6 +19,7 @@ export interface PracticeData {
 export async function createPractice(params: {
   mode: SportMode | string;
   practicedAt: string; // ISO date string
+  title?: string;
   drill: string;
   notes?: string;
 }): Promise<{ data: string | null; error: any }> {
@@ -37,6 +39,7 @@ export async function createPractice(params: {
         user_id: user.id,
         mode: sportMode,
         practiced_at: params.practicedAt,
+        title: params.title?.trim() || null,
         drill: params.drill.trim(),
         notes: params.notes?.trim() || null,
       })
@@ -60,7 +63,7 @@ export async function getPractice(practiceId: string): Promise<{ data: PracticeD
   try {
     const { data, error } = await supabase
       .from('practices')
-      .select('id, mode, practiced_at, drill, notes')
+      .select('id, mode, practiced_at, title, drill, notes')
       .eq('id', practiceId)
       .single();
 
@@ -73,6 +76,7 @@ export async function getPractice(practiceId: string): Promise<{ data: PracticeD
         id: data.id,
         mode: data.mode as SportMode,
         practicedAt: data.practiced_at,
+        title: data.title,
         drill: data.drill,
         notes: data.notes,
       },

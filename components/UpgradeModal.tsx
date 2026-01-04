@@ -98,10 +98,6 @@ export default function UpgradeModal({
             </View>
             <View style={styles.benefitRow}>
               <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary600} />
-              <Text style={styles.benefitText}>Meals Progress Graph</Text>
-            </View>
-            <View style={styles.benefitRow}>
-              <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary600} />
               <Text style={styles.benefitText}>View Creator Workouts</Text>
             </View>
             <View style={styles.benefitRow}>

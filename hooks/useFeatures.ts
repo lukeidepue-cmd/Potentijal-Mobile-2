@@ -14,7 +14,6 @@ export interface FeatureAccess {
   canLogPractices: boolean;
   canUseAITrainer: boolean;
   canAddHighlights: boolean;
-  canSeeMealsGraph: boolean;
   canViewCreatorWorkouts: boolean;
   canAddMoreSports: boolean;
 }
@@ -85,7 +84,6 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
     canLogPractices: isPremium,
     canUseAITrainer: isPremium,
     canAddHighlights: isPremium,
-    canSeeMealsGraph: isPremium,
     canViewCreatorWorkouts: isPremium,
     canAddMoreSports: isPremium,
     loading,

@@ -126,11 +126,6 @@ export default function PurchasePremium() {
             description="Showcase your best moments on your profile"
           />
           <FeatureItem
-            icon="stats-chart"
-            title="Meals Progress Graph"
-            description="Visualize your nutrition progress over time"
-          />
-          <FeatureItem
             icon="people"
             title="View Creator Workouts"
             description="Learn from top athletes and trainers"

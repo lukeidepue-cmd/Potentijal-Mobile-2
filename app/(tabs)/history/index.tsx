@@ -11,12 +11,22 @@ import {
   Platform,
   LayoutChangeEvent,
   ActivityIndicator,
+  Image,
+  ImageBackground,
+  Dimensions,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 
 import { Card } from "../../../components/Card";
 import { theme } from "../../../constants/theme";
@@ -56,7 +66,6 @@ type HistoryType = "workouts" | "practices" | "games";
 type ModeKey =
   | "lifting"
   | "basketball"
-  | "running"
   | "football"
   | "soccer"
   | "baseball"
@@ -66,7 +75,6 @@ type ModeKey =
 const iconFor: Record<ModeKey, React.ReactNode> = {
   lifting: <MaterialCommunityIcons name="dumbbell" size={16} color="#111" />,
   basketball: <Ionicons name="basketball-outline" size={16} color="#111" />,
-  running: <MaterialCommunityIcons name="run" size={16} color="#111" />,
   football: <Ionicons name="american-football-outline" size={16} color="#111" />,
   soccer: <Ionicons name="football-outline" size={16} color="#111" />,
   baseball: <MaterialCommunityIcons name="baseball" size={16} color="#111" />,
@@ -99,7 +107,6 @@ function getModeKey(mode: string): ModeKey {
   const modeMap: Record<string, ModeKey> = {
     workout: "lifting",
     basketball: "basketball",
-    running: "running",
     football: "football",
     soccer: "soccer",
     baseball: "baseball",
@@ -114,7 +121,6 @@ export default function HistoryIndex() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { canLogPractices, canLogGames } = useFeatures();
-  const [barH, setBarH] = useState(0);
 
   // Load fonts
   useGeist({ Geist_500Medium, Geist_600SemiBold });
@@ -123,6 +129,13 @@ export default function HistoryIndex() {
   const [historyType, setHistoryType] = useState<HistoryType>("workouts");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [searchFocused, setSearchFocused] = useState(false);
+  
+  // Animation for sliding underline
+  const underlinePosition = useSharedValue(0);
+  const underlineWidth = useSharedValue(0);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const screenWidth = Dimensions.get("window").width;
 
   // Data state
   const [workouts, setWorkouts] = useState<HistoryWorkout[]>([]);
@@ -199,7 +212,7 @@ export default function HistoryIndex() {
             filtered = filtered.filter((g) => {
               const dateStr = fmtDate(g.played_at).toLowerCase();
               const modeStr = g.mode.toLowerCase();
-              const resultStr = g.result.toLowerCase();
+              const resultStr = (g.result || '').toLowerCase(); // Handle null result
               const titleStr = (g.title || '').toLowerCase();
               // For date search, be more precise
               if (q.match(/^\d{1,2}\/\d{1,2}/)) {
@@ -258,55 +271,121 @@ export default function HistoryIndex() {
     return "Search games";
   }, [historyType]);
 
-  // Get stat labels based on type
-  const statLabels = useMemo(() => {
-    if (historyType === "workouts") {
-      return { left: "Total Workouts", right: "Workout Streak" };
-    } else if (historyType === "practices") {
-      return { left: "Total Practices", right: "Practice Streak" };
-    } else {
-      return { left: "Total Games", right: "Win Streak" };
+
+  // Get available tabs (always show all 3, but conditionally enable)
+  const availableTabs = useMemo(() => {
+    return ["workouts", "practices", "games"] as HistoryType[];
+  }, []);
+
+  // Update underline position when historyType changes
+  useEffect(() => {
+    const index = availableTabs.indexOf(historyType);
+    if (index >= 0 && containerWidth > 0) {
+      const tabWidth = containerWidth / 3;
+      const screenTabWidth = screenWidth / 3;
+      const padding = 16; // controlArea paddingHorizontal
+      
+      let position: number;
+      let width: number;
+      
+      if (index === 0) {
+        // Workouts: extend to left edge of screen
+        position = -padding; // Move left by padding amount
+        width = screenTabWidth + padding; // Extend to cover padding + 1/3 screen
+      } else if (index === 2) {
+        // Games: extend to right edge of screen
+        position = index * tabWidth - padding; // Start earlier to extend right
+        width = screenTabWidth + padding; // Extend to cover padding + 1/3 screen
+      } else {
+        // Practices: centered in its section
+        position = index * tabWidth;
+        width = tabWidth;
+      }
+      
+      underlinePosition.value = withTiming(position, {
+        duration: 250,
+      });
+      underlineWidth.value = withTiming(width, {
+        duration: 250,
+      });
     }
-  }, [historyType]);
+  }, [historyType, containerWidth, availableTabs, screenWidth]);
+
+  // Animated style for sliding underline
+  const underlineStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: underlinePosition.value }],
+      width: underlineWidth.value,
+    };
+  });
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.color.bg }}>
-      {/* Header */}
-      <View style={{ alignItems: "center", paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={styles.header}>History</Text>
-        <View style={styles.headerUnderline} />
-      </View>
+      {/* Control Area - Segmented Control + Search */}
+      <View style={styles.controlArea}>
+        {/* Segmented Control with Underlines */}
+        <View style={styles.segmentWrapper}>
+          <View
+            style={styles.segmentContainer}
+            onLayout={(e) => {
+              setContainerWidth(e.nativeEvent.layout.width);
+            }}
+          >
+            {availableTabs.map((tab) => {
+              const isActive = historyType === tab;
+              const isDisabled = (tab === "practices" && !canLogPractices) || (tab === "games" && !canLogGames);
+              
+              return (
+                <Pressable
+                  key={tab}
+                  onPress={() => {
+                    if (!isDisabled) {
+                      Haptics.selectionAsync();
+                      setHistoryType(tab);
+                    }
+                  }}
+                  style={[styles.segmentTab, isDisabled && styles.segmentTabDisabled]}
+                  disabled={isDisabled}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      isActive && styles.segmentTextActive,
+                      isDisabled && styles.segmentTextDisabled,
+                    ]}
+                  >
+                    {tab === "workouts" ? "Workouts" : tab === "practices" ? "Practices" : "Games"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {/* Sliding underline - positioned relative to segmentWrapper to extend to edges */}
+          <Animated.View style={[styles.segmentUnderline, underlineStyle]} />
+        </View>
 
-      {/* Search + dropdown row */}
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, gap: 10, marginTop: 10 }}>
-        <View style={{ flex: 13 }}>
-          <View style={styles.searchWrap}>
-            <Ionicons name="search" size={16} color={theme.color.dim} />
+        {/* Search bar - surfaced tool */}
+        <View style={styles.searchContainer}>
+          <View style={[styles.searchWrap, searchFocused && styles.searchWrapFocused]}>
+            <Ionicons name="search" size={20} color={theme.color.dim} style={styles.searchIcon} />
             <TextInput
               value={query}
               onChangeText={setQuery}
               placeholder={searchPlaceholder}
               placeholderTextColor={theme.color.dim}
               style={styles.searchInput}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
             />
           </View>
-        </View>
-        <View style={{ flex: 7 }}>
-          <HistoryTypeDropdown 
-            value={historyType} 
-            onChange={setHistoryType}
-            canLogPractices={canLogPractices}
-            canLogGames={canLogGames}
-          />
         </View>
       </View>
 
       {/* Scrollable list */}
       <ScrollView
-        style={{ flex: 1 }}
+        style={[styles.scrollView, searchFocused && styles.scrollViewDimmed]}
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: Math.max(0, barH - GAP),
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -323,6 +402,563 @@ export default function HistoryIndex() {
           items.map((item) => {
             if (historyType === "workouts") {
               const workout = item as HistoryWorkout;
+              const modeKey = getModeKey(workout.mode);
+              
+              // Use new card design for all sport modes
+              if (modeKey === "basketball") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.basketballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#C84B25", "#FF6A2A"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/basketball-hoop.png")}
+                          style={styles.backgroundHoop}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/basketball.png")}
+                          style={styles.backgroundBall1}
+                          resizeMode="cover"
+                        />
+                        {/* Right-side fade mask for artwork - lighter so images show through */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(200, 75, 37, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Basketball
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Hockey card with Panera-style design
+              if (modeKey === "hockey") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.hockeyCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#66CCCC", "#99FFFF"]} // Darker cyan → lighter cyan
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/hockey-net.png")}
+                          style={styles.backgroundHockeyNet}
+                          resizeMode="cover"
+                        />
+                        {/* Right-side fade mask for artwork */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(102, 204, 204, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Hockey
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Football card with Panera-style design
+              if (modeKey === "football") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.footballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#6B3410", "#A0522D"]} // Darker brown → lighter brown
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/football-field.png")}
+                          style={styles.backgroundFootballField}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/football.png")}
+                          style={styles.backgroundFootball}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(107, 52, 16, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Football
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Tennis card with Panera-style design
+              if (modeKey === "tennis") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.tennisCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#8FA020", "#C8D844"]} // Darker yellow-green → darker but still bright tennis ball yellow-green
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/tennis-racket.png")}
+                          style={styles.backgroundTennisRacket}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/tennis-ball.png")}
+                          style={styles.backgroundTennisBall}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(143, 160, 32, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Tennis
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Lifting card with Panera-style design
+              if (modeKey === "lifting") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.liftingCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#4A4A4A", "#6B6B6B"]} // Darker gray → lighter gray
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/dumbell.png")}
+                          style={styles.backgroundDumbbell}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(74, 74, 74, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Lifting
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Baseball card with Panera-style design
+              if (modeKey === "baseball") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.baseballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#B91C1C", "#E63946"]} // Darker red → lighter but still vibrant red
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/baseball-bat.png")}
+                          style={styles.backgroundBaseballBat}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/baseball.png")}
+                          style={styles.backgroundBaseball}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(185, 28, 28, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Baseball
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Soccer card with Panera-style design
+              if (modeKey === "soccer") {
+                return (
+                  <Pressable
+                    key={workout.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: workout.id,
+                          type: "workout",
+                          name: workout.name,
+                          when: workout.performed_at,
+                          mode: workout.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.soccerCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#1E3A8A", "#3B82F6"]} // Darker night sky blue → lighter night sky blue
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/soccer-goal.png")}
+                          style={styles.backgroundSoccerGoal}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(30, 58, 138, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {workout.name}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(workout.performed_at)} • Soccer
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Old design for other modes (for now)
               return (
                 <Pressable
                   key={workout.id}
@@ -347,13 +983,563 @@ export default function HistoryIndex() {
                       <Text style={styles.itemName} numberOfLines={1}>
                         {workout.name}
                       </Text>
-                      <View style={styles.sportPill}>{iconFor[getModeKey(workout.mode)]}</View>
+                      <View style={styles.sportPill}>{iconFor[modeKey]}</View>
                     </View>
                   </Card>
                 </Pressable>
               );
             } else if (historyType === "practices") {
               const practice = item as HistoryPractice;
+              const modeKey = getModeKey(practice.mode);
+              
+              // Use new card design for all sport modes
+              if (modeKey === "basketball") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.basketballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#C84B25", "#FF6A2A"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/basketball-hoop.png")}
+                          style={styles.backgroundHoop}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/basketball.png")}
+                          style={styles.backgroundBall1}
+                          resizeMode="cover"
+                        />
+                        {/* Right-side fade mask for artwork - lighter so images show through */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(200, 75, 37, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Basketball
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Hockey card with Panera-style design
+              if (modeKey === "hockey") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.hockeyCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#66CCCC", "#99FFFF"]} // Darker cyan → lighter cyan
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/hockey-net.png")}
+                          style={styles.backgroundHockeyNet}
+                          resizeMode="cover"
+                        />
+                        {/* Right-side fade mask for artwork */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(102, 204, 204, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Hockey
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Football card with Panera-style design
+              if (modeKey === "football") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.footballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#6B3410", "#A0522D"]} // Darker brown → lighter brown
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/football-field.png")}
+                          style={styles.backgroundFootballField}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/football.png")}
+                          style={styles.backgroundFootball}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(107, 52, 16, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Football
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Tennis card with Panera-style design
+              if (modeKey === "tennis") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.tennisCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#8FA020", "#C8D844"]} // Darker yellow-green → darker but still bright tennis ball yellow-green
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/tennis-racket.png")}
+                          style={styles.backgroundTennisRacket}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/tennis-ball.png")}
+                          style={styles.backgroundTennisBall}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(143, 160, 32, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Tennis
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Lifting card with Panera-style design
+              if (modeKey === "lifting") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.liftingCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#4A4A4A", "#6B6B6B"]} // Darker gray → lighter gray
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/dumbell.png")}
+                          style={styles.backgroundDumbbell}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(74, 74, 74, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Lifting
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Baseball card with Panera-style design
+              if (modeKey === "baseball") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.baseballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#B91C1C", "#E63946"]} // Darker red → lighter but still vibrant red
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/baseball-bat.png")}
+                          style={styles.backgroundBaseballBat}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/baseball.png")}
+                          style={styles.backgroundBaseball}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(185, 28, 28, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Baseball
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Soccer card with Panera-style design
+              if (modeKey === "soccer") {
+                return (
+                  <Pressable
+                    key={practice.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: practice.id,
+                          type: "practice",
+                          when: practice.practiced_at,
+                          mode: practice.mode,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.soccerCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#1E3A8A", "#3B82F6"]} // Darker night sky blue → lighter night sky blue
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/soccer-goal.png")}
+                          style={styles.backgroundSoccerGoal}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(30, 58, 138, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {practice.title || "Practice"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(practice.practiced_at)} • Soccer
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Old design for other modes (for now)
               return (
                 <Pressable
                   key={practice.id}
@@ -375,13 +1561,577 @@ export default function HistoryIndex() {
                     <View style={{ flexDirection: "row", alignItems: "center" }}>
                       <Text style={styles.dateText}>{fmtDate(practice.practiced_at)}</Text>
                       <View style={{ flex: 1 }} />
-                      <View style={styles.sportPill}>{iconFor[getModeKey(practice.mode)]}</View>
+                      <View style={styles.sportPill}>{iconFor[modeKey]}</View>
                     </View>
                   </Card>
                 </Pressable>
               );
             } else {
               const game = item as HistoryGame;
+              const modeKey = getModeKey(game.mode);
+              
+              // Use new card design for all sport modes
+              if (modeKey === "basketball") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.basketballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#C84B25", "#FF6A2A"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/basketball-hoop.png")}
+                          style={styles.backgroundHoop}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/basketball.png")}
+                          style={styles.backgroundBall1}
+                          resizeMode="cover"
+                        />
+                        {/* Right-side fade mask for artwork - lighter so images show through */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(200, 75, 37, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Basketball
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Hockey card with Panera-style design
+              if (modeKey === "hockey") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.hockeyCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#66CCCC", "#99FFFF"]} // Darker cyan → lighter cyan
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/hockey-net.png")}
+                          style={styles.backgroundHockeyNet}
+                          resizeMode="cover"
+                        />
+                        {/* Right-side fade mask for artwork */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(102, 204, 204, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Hockey
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Football card with Panera-style design
+              if (modeKey === "football") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.footballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#6B3410", "#A0522D"]} // Darker brown → lighter brown
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/football-field.png")}
+                          style={styles.backgroundFootballField}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/football.png")}
+                          style={styles.backgroundFootball}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(107, 52, 16, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Football
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Tennis card with Panera-style design
+              if (modeKey === "tennis") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.tennisCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#8FA020", "#C8D844"]} // Darker yellow-green → darker but still bright tennis ball yellow-green
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/tennis-racket.png")}
+                          style={styles.backgroundTennisRacket}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/tennis-ball.png")}
+                          style={styles.backgroundTennisBall}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(143, 160, 32, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Tennis
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Lifting card with Panera-style design
+              if (modeKey === "lifting") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.liftingCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#4A4A4A", "#6B6B6B"]} // Darker gray → lighter gray
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/dumbell.png")}
+                          style={styles.backgroundDumbbell}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(74, 74, 74, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Lifting
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Baseball card with Panera-style design
+              if (modeKey === "baseball") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.baseballCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#B91C1C", "#E63946"]} // Darker red → lighter but still vibrant red
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/baseball-bat.png")}
+                          style={styles.backgroundBaseballBat}
+                          resizeMode="cover"
+                        />
+                        <Image
+                          source={require("../../../assets/history/baseball.png")}
+                          style={styles.backgroundBaseball}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(185, 28, 28, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Baseball
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Soccer card with Panera-style design
+              if (modeKey === "soccer") {
+                return (
+                  <Pressable
+                    key={game.id}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push({
+                        pathname: "/(tabs)/history/[id]",
+                        params: {
+                          id: game.id,
+                          type: "game",
+                          when: game.played_at,
+                          mode: game.mode,
+                          result: game.result,
+                          title: game.title || undefined,
+                        },
+                      });
+                    }}
+                    style={styles.newCardContainer}
+                  >
+                    <View style={styles.soccerCard}>
+                      {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
+                      <LinearGradient
+                        colors={["#1E3A8A", "#3B82F6"]} // Darker night sky blue → lighter night sky blue
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 2: Dark overlay at bottom for depth */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.18)"]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      
+                      {/* Layer 3: Artwork - top-right, embedded feel */}
+                      <View style={styles.cardBackgroundImages}>
+                        <Image
+                          source={require("../../../assets/history/soccer-goal.png")}
+                          style={styles.backgroundSoccerGoal}
+                          resizeMode="cover"
+                        />
+                        <LinearGradient
+                          colors={["transparent", "rgba(30, 58, 138, 0.15)"]}
+                          start={{ x: 0.6, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      
+                      {/* Layer 4: Top sheen highlight (premium coating effect) */}
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.10)", "transparent"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 0.4 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                      />
+                      
+                      {/* Layer 5: Text content */}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.newCardName} numberOfLines={2}>
+                          {game.title || "Game"}
+                        </Text>
+                        <Text style={styles.newCardDate}>
+                          {fmtDate(game.played_at)} • Soccer
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }
+              
+              // Old design for other modes (for now)
               return (
                 <Pressable
                   key={game.id}
@@ -405,9 +2155,9 @@ export default function HistoryIndex() {
                     <View style={{ flexDirection: "row", alignItems: "center" }}>
                       <Text style={styles.dateText}>{fmtDate(game.played_at)}</Text>
                       <Text style={styles.itemName} numberOfLines={1}>
-                        {game.title || game.result.charAt(0).toUpperCase() + game.result.slice(1)}
+                        {game.title || "Game"}
                       </Text>
-                      <View style={styles.sportPill}>{iconFor[getModeKey(game.mode)]}</View>
+                      <View style={styles.sportPill}>{iconFor[modeKey]}</View>
                     </View>
                   </Card>
                 </Pressable>
@@ -416,41 +2166,6 @@ export default function HistoryIndex() {
           })
         )}
       </ScrollView>
-
-      {/* Sticky bottom stats */}
-      <View
-        style={[
-          styles.stickyBar,
-          {
-            paddingBottom: Math.max(4, insets.bottom - 16),
-            paddingTop: GAP,
-          },
-        ]}
-        onLayout={(e: LayoutChangeEvent) => setBarH(e.nativeEvent.layout.height)}
-      >
-        <View style={[styles.statCard, { marginRight: 8 }]}>
-          <View style={styles.statRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.statKicker}>Total</Text>
-              <Text style={styles.statTitle}>{statLabels.left.replace("Total ", "")}</Text>
-            </View>
-            <Text style={styles.statValueRight}>{stats.total}</Text>
-          </View>
-        </View>
-
-        <View style={[styles.statCard, { marginLeft: 8 }]}>
-          <View style={styles.statRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.statKicker}>{statLabels.right.split(" ")[0]}</Text>
-              <Text style={styles.statTitle}>{statLabels.right.split(" ").slice(1).join(" ")}</Text>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={styles.statValueRight}>{stats.streak}</Text>
-              <MaterialCommunityIcons name="fire" size={16} color={theme.color.brand} />
-            </View>
-          </View>
-        </View>
-      </View>
     </SafeAreaView>
   );
 }
@@ -538,37 +2253,103 @@ function HistoryTypeDropdown({
 
 /* ----------------------------- Styles ----------------------------- */
 const styles = StyleSheet.create({
-  header: {
-    color: theme.color.text,
-    fontSize: 28,
-    letterSpacing: 0.2,
-    fontWeight: Platform.select({ ios: "900", android: "700" }) as any,
-    fontFamily: "Geist_800ExtraBold",
-  },
-  headerUnderline: {
-    height: 3,
-    alignSelf: "stretch",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 999,
-    marginTop: 6,
+  /* Control Area - Segmented Control + Search */
+  controlArea: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 16, // Increased from 12 to add 4px padding between underline and search bar
   },
 
-  /* search + dropdown */
+  /* Segmented Control with Underlines */
+  segmentWrapper: {
+    position: "relative",
+    width: "100%",
+  },
+  segmentContainer: {
+    flexDirection: "row",
+    width: "100%",
+  },
+  segmentTab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    position: "relative",
+  },
+  segmentTabDisabled: {
+    opacity: 0.4,
+  },
+  segmentText: {
+    color: theme.color.dim,
+    fontSize: 17,
+    fontWeight: "700",
+    fontFamily: FONT.uiMedium,
+    letterSpacing: 0.2,
+  },
+  segmentTextActive: {
+    color: theme.color.text,
+    fontWeight: "800",
+    fontSize: 18,
+  },
+  segmentTextDisabled: {
+    color: theme.color.dim,
+  },
+  segmentUnderline: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    height: 3, // Thicker underline
+    backgroundColor: theme.color.brand,
+    borderRadius: 1.5,
+  },
+
+  /* Search bar - surfaced tool */
+  searchContainer: {
+    // Container for spacing
+  },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#0f1317",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.07)",
     borderWidth: 1,
-    borderColor: "#1a222b",
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    // Subtle shadow for depth
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.15,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  searchWrapFocused: {
+    backgroundColor: "rgba(255, 255, 255, 0.09)",
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  searchIcon: {
+    marginRight: 10,
+    opacity: 0.7,
   },
   searchInput: {
     color: theme.color.text,
     flex: 1,
     fontFamily: FONT.uiMedium,
+    fontSize: 15,
+    padding: 0, // Remove default padding
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollViewDimmed: {
+    opacity: 0.6,
   },
 
   ddTrigger: {
@@ -680,5 +2461,280 @@ const styles = StyleSheet.create({
   statRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+
+  /* New card design - Panera-style */
+  newCardContainer: {
+    marginBottom: 20, // More spacing between cards
+  },
+  basketballCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  cardBackgroundImages: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    // No container opacity - let individual images control their own
+  },
+  backgroundHoop: {
+    position: "absolute",
+    right: -30, // Push to top-right, crop off edge
+    top: -20,
+    width: 240, // Scale up to crop edges
+    height: 240,
+    opacity: 0.35, // Increased visibility
+  },
+  backgroundBall1: {
+    position: "absolute",
+    right: 128, // Moved 10px more to the left (from 118)
+    bottom: 39,
+    width: 86, // Increased by 4px (from 82)
+    height: 86, // Increased by 4px (from 82)
+    opacity: 0.30, // Increased visibility
+  },
+  cardContent: {
+    position: "absolute",
+    left: 18, // Padding 16-18px
+    top: 18,
+    bottom: 18,
+    right: 18,
+    justifyContent: "center", // Vertically centered
+    zIndex: 10,
+  },
+  newCardName: {
+    fontSize: 22, // Slightly reduced from 24
+    fontWeight: "800",
+    color: "#FFFFFF",
+    marginBottom: 6,
+    fontFamily: FONT.displayBold,
+    lineHeight: 26,
+  },
+  newCardDate: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.75)", // Slightly brighter for readability
+    fontFamily: FONT.uiMedium,
+  },
+  
+  /* Hockey card - same structure as basketball */
+  hockeyCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  backgroundHockeyNet: {
+    position: "absolute",
+    right: -30, // Push to top-right, crop off edge
+    top: -30, // Moved down 2px (from -32)
+    width: 240, // Scale up to crop edges
+    height: 240,
+    opacity: 0.35, // Increased visibility
+  },
+  backgroundHockeyPuck: {
+    position: "absolute",
+    right: 130, // Moved to the right by 4px (from 134)
+    bottom: 27, // Moved down by 4px (from 31)
+    width: 44, // Shrunk by 4px (from 48)
+    height: 44, // Shrunk by 4px (from 48)
+    opacity: 0.65, // Less transparent (increased from 0.55)
+  },
+  
+  /* Football card - same structure as basketball and hockey */
+  footballCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  backgroundFootballField: {
+    position: "absolute",
+    right: 76, // Moved 52px to the left (from 24)
+    top: 13, // Moved down 4px more (from 9)
+    width: 152, // Increased by 8px (from 144)
+    height: 152, // Increased by 8px (from 144)
+    opacity: 0.45, // Increased visibility (from 0.35)
+    transform: [{ scaleX: -1 }, { translateX: -76 }], // Flip horizontally and shift left by half width (76 = 152/2) to account for flip
+  },
+  backgroundFootball: {
+    position: "absolute",
+    right: 134, // Moved 8px to the right (from 142)
+    bottom: 33, // Moved down 10px more (from 43)
+    width: 62, // Increased by 8px (from 54)
+    height: 62, // Increased by 8px (from 54)
+    opacity: 0.30, // Slightly more subtle than primary
+    transform: [{ scaleX: -1 }], // Flip horizontally to match the field
+  },
+  
+  /* Tennis card - same structure as other sport cards */
+  tennisCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  backgroundTennisRacket: {
+    position: "absolute",
+    right: -30, // Push to top-right, crop off edge
+    top: -20,
+    width: 240, // Scale up to crop edges
+    height: 240,
+    opacity: 0.35, // Increased visibility
+  },
+  backgroundTennisBall: {
+    position: "absolute",
+    right: 4, // Moved right by 12px more (from 16)
+    bottom: 39,
+    width: 86, // Sized appropriately (same as basketball)
+    height: 86,
+    opacity: 0.30, // Slightly more subtle than primary
+  },
+  
+  /* Lifting card - same structure as other sport cards */
+  liftingCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  backgroundSmithMachine: {
+    position: "absolute",
+    right: -30, // Push to top-right, crop off edge
+    top: -20,
+    width: 240, // Scale up to crop edges
+    height: 240,
+    opacity: 0.35, // Increased visibility
+  },
+  backgroundDumbbell: {
+    position: "absolute",
+    left: "50%", // Center horizontally
+    top: "50%", // Center vertically
+    width: 208, // Increased by 8px (from 200)
+    height: 208, // Increased by 8px (from 200)
+    opacity: 0.30, // Slightly more subtle than primary
+    transform: [{ translateX: -25 }, { translateY: -83 }], // Moved up 4px more (from -79) and left 12px more (from -13)
+  },
+  
+  /* Baseball card - same structure as other sport cards */
+  baseballCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  backgroundBaseballBat: {
+    position: "absolute",
+    right: -14, // Moved right by 10px more (from -24)
+    top: 2, // Moved down by 8px (from -6)
+    width: 192, // Shrunk by 6px (from 198)
+    height: 192, // Shrunk by 6px (from 198)
+    opacity: 0.35, // Increased visibility
+  },
+  backgroundBaseball: {
+    position: "absolute",
+    right: 72, // Moved right by 18px (from 90)
+    bottom: 39, // Moved up by 8px (from 31)
+    width: 60, // Shrunk by 14px (from 74)
+    height: 60, // Shrunk by 14px (from 74)
+    opacity: 0.30, // Slightly more subtle than primary
+  },
+  
+  /* Soccer card - same structure as other sport cards */
+  soccerCard: {
+    height: 120, // Reduced height to match list rhythm
+    borderRadius: 24, // 22-28 range, using 24
+    overflow: "hidden",
+    position: "relative",
+    // Border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    // Shadow (iOS)
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    // Elevation (Android)
+    elevation: 12,
+  },
+  backgroundSoccerGoal: {
+    position: "absolute",
+    right: -30, // Push to top-right, crop off edge
+    top: -20,
+    width: 240, // Scale up to crop edges
+    height: 240,
+    opacity: 0.35, // Increased visibility
+  },
+  backgroundSoccerBall: {
+    position: "absolute",
+    right: 128, // Positioned to complement primary artwork (same as basketball)
+    bottom: 39,
+    width: 86, // Sized appropriately (same as basketball)
+    height: 86,
+    opacity: 0.30, // Slightly more subtle than primary
   },
 });

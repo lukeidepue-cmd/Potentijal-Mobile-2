@@ -43,8 +43,16 @@ export async function getWeeklyGoalProgressDirect(goalId: string): Promise<{
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
 
-    const weekStartStr = weekStart.toISOString().split('T')[0];
-    const weekEndStr = weekEnd.toISOString().split('T')[0];
+    // Format as local dates (YYYY-MM-DD) to avoid timezone shifts
+    const weekStartYear = weekStart.getFullYear();
+    const weekStartMonth = String(weekStart.getMonth() + 1).padStart(2, '0');
+    const weekStartDay = String(weekStart.getDate()).padStart(2, '0');
+    const weekStartStr = `${weekStartYear}-${weekStartMonth}-${weekStartDay}`;
+    
+    const weekEndYear = weekEnd.getFullYear();
+    const weekEndMonth = String(weekEnd.getMonth() + 1).padStart(2, '0');
+    const weekEndDay = String(weekEnd.getDate()).padStart(2, '0');
+    const weekEndStr = `${weekEndYear}-${weekEndMonth}-${weekEndDay}`;
 
     // Check if this is a "Workouts" goal
     const goalNameLower = goalName.toLowerCase().trim();

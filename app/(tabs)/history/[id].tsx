@@ -16,13 +16,14 @@ import {
 import { type WorkoutDetails, copyWorkoutSkeleton } from "../../../lib/api/workouts";
 import { type ExerciseType } from "../../../lib/types";
 import { useAuth } from "../../../providers/AuthProvider";
+import { useSettings } from "../../../providers/SettingsContext";
 import { getMyProfile } from "../../../lib/api/profile";
 import { Alert } from "react-native";
+import { PROFILE_FEATURES_ENABLED } from "../../../constants/features";
 
 const iconFor: Record<string, React.ReactNode> = {
   workout: <MaterialCommunityIcons name="dumbbell" size={16} color="#111" />,
   basketball: <Ionicons name="basketball-outline" size={16} color="#111" />,
-  running: <MaterialCommunityIcons name="run" size={16} color="#111" />,
   football: <Ionicons name="american-football-outline" size={16} color="#111" />,
   soccer: <Ionicons name="football-outline" size={16} color="#111" />,
   baseball: <MaterialCommunityIcons name="baseball" size={16} color="#111" />,
@@ -75,6 +76,7 @@ export default function HistoryDetail() {
   }>();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { unitsWeight } = useSettings();
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<WorkoutDetails | null>(null);
@@ -102,13 +104,6 @@ export default function HistoryDetail() {
     console.log(`📋 [Copy Workout] Workout mode (DB): ${workout.mode}`);
     console.log(`📋 [Copy Workout] From creator: ${params.fromCreator}`);
 
-    // Don't allow copying running mode workouts
-    if (workout.mode === "running") {
-      console.log(`📋 [Copy Workout] Running mode workouts cannot be copied`);
-      setCanCopy(false);
-      setCopyError("Cannot copy Running mode workouts");
-      return;
-    }
 
     // If viewing a creator workout, allow copying regardless of user's sports preferences
     // This allows users to discover and copy workouts from creators even if they haven't set up that sport yet
@@ -136,7 +131,6 @@ export default function HistoryDetail() {
       'soccer': 'soccer',
       'hockey': 'hockey',
       'tennis': 'tennis',
-      'running': 'running',
     };
     
     const frontendMode = modeMapping[workout.mode] || workout.mode;
@@ -279,8 +273,8 @@ export default function HistoryDetail() {
       <View style={{ flexDirection: "row", alignItems: "center", padding: 16, gap: 8 }}>
         <Pressable
           onPress={() => {
-            // If from creator workouts, go back to creator workouts screen
-            if (params.fromCreator === "true") {
+            // If from creator workouts, go back to creator workouts screen (only if profile features enabled)
+            if (params.fromCreator === "true" && PROFILE_FEATURES_ENABLED) {
               router.replace("/(tabs)/profile/creator-workouts");
             } else {
               router.back();
@@ -357,7 +351,9 @@ export default function HistoryDetail() {
                               <Text style={styles.setValue}>{set.reps} reps</Text>
                             )}
                             {set.weight != null && (
-                              <Text style={styles.setValue}>{set.weight} lbs</Text>
+                              <Text style={styles.setValue}>
+                                {set.weight} {unitsWeight === 'kg' ? 'kg' : 'lbs'}
+                              </Text>
                             )}
                           </>
                         )}
@@ -444,7 +440,7 @@ export default function HistoryDetail() {
                             )}
                           </>
                         )}
-                        {exercise.type === "running" && (
+                        {false && exercise.type === "running" && (
                           <>
                             {set.distance != null && (
                               <Text style={styles.setValue}>{set.distance} mi</Text>

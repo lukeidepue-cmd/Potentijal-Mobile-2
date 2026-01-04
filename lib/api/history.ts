@@ -17,6 +17,7 @@ export interface HistoryPractice {
   id: string;
   mode: string;
   practiced_at: string;
+  title?: string | null;
   drill?: string | null;
   notes?: string | null;
 }
@@ -289,7 +290,7 @@ export async function listPractices(params: {
 
     let query = supabase
       .from('practices')
-      .select('id, mode, practiced_at, drill, notes, created_at')
+      .select('id, mode, practiced_at, title, drill, notes, created_at')
       .eq('user_id', user.id)
       .order('practiced_at', { ascending: false })
       .order('created_at', { ascending: false }); // Secondary sort: newest first when same date
@@ -322,7 +323,7 @@ export async function getPracticeDetail(practiceId: string): Promise<{ data: His
 
     const { data, error } = await supabase
       .from('practices')
-      .select('id, mode, practiced_at, drill, notes')
+      .select('id, mode, practiced_at, title, drill, notes')
       .eq('id', practiceId)
       .eq('user_id', user.id)
       .single();
@@ -581,7 +582,11 @@ export async function getHistoryStats(params: {
         // Count consecutive days from today backward
         let currentDate = new Date(localToday);
         while (true) {
-          const dayStr = currentDate.toISOString().split('T')[0];
+          // Format as local date (YYYY-MM-DD) to avoid timezone shifts
+          const year = currentDate.getFullYear();
+          const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+          const day = String(currentDate.getDate()).padStart(2, '0');
+          const dayStr = `${year}-${month}-${day}`;
           if (datesByDay.has(dayStr)) {
             streak++;
             currentDate = new Date(currentDate.getTime() - oneDay);

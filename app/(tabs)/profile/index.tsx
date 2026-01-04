@@ -25,6 +25,8 @@ import { Alert } from "react-native";
 import { supabase } from "../../../lib/supabase";
 import { useFeatures } from "../../../hooks/useFeatures";
 import UpgradeModal from "../../../components/UpgradeModal";
+import { blockUser, isUserBlocked } from "../../../lib/api/settings";
+import { theme } from "../../../constants/theme";
 
 /* ---- Fonts ---- */
 import {
@@ -143,6 +145,113 @@ export default function Profile() {
       }
     } else {
       // Viewing another user's profile
+      // First check if user is blocked
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { data: isBlocked } = await supabase
+          .from('blocked_users')
+          .select('id')
+          .eq('blocker_id', viewingProfileId)
+          .eq('blocked_id', currentUser.id)
+          .single();
+        
+        if (isBlocked) {
+          Alert.alert("Blocked", "You cannot view this profile");
+          router.back();
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check privacy settings - MUST check before loading profile
+      console.log(`🔒 [Profile] ===== START Privacy Check for profile: ${viewingProfileId} =====`);
+      console.log(`🔒 [Profile] Current user ID: ${currentUser?.id || 'none'}`);
+      console.log(`🔒 [Profile] Viewing profile ID: ${viewingProfileId}`);
+      
+      const { data: privacySettings, error: privacyError } = await supabase
+        .from('user_privacy_settings')
+        .select('*')
+        .eq('user_id', viewingProfileId)
+        .maybeSingle(); // Use maybeSingle to handle case where no settings exist
+
+      if (privacyError) {
+        if (privacyError.code === 'PGRST116') {
+          console.log(`🔒 [Profile] No privacy settings found (PGRST116) - defaulting to public`);
+        } else {
+          console.error('❌ [Profile] Error fetching privacy settings:', privacyError);
+          console.error('❌ [Profile] Error code:', privacyError.code);
+          console.error('❌ [Profile] Error message:', privacyError.message);
+          // If RLS is blocking, we might get an error or empty result
+          // Check if it's an RLS issue
+          if (privacyError.code === '42501' || privacyError.message?.includes('permission') || privacyError.message?.includes('policy')) {
+            console.warn('⚠️ [Profile] WARNING: This might be an RLS policy issue preventing access to privacy settings');
+          }
+        }
+      }
+
+      console.log(`🔒 [Profile] Privacy settings data:`, privacySettings ? JSON.stringify(privacySettings, null, 2) : 'null');
+      
+      // If privacySettings is null and no error, it means no settings exist (default to public)
+      // But log it for debugging
+      if (!privacySettings && !privacyError) {
+        console.log(`🔒 [Profile] No privacy settings row exists for user ${viewingProfileId} - defaulting to public`);
+      }
+
+      // Check if current user is following the profile
+      let isFollowing = false;
+      if (currentUser) {
+        // follows table has composite primary key (follower_id, following_id), no 'id' column
+        const { data: followData, error: followError } = await supabase
+          .from('follows')
+          .select('follower_id') // Select any column that exists, we just need to check if row exists
+          .eq('follower_id', currentUser.id)
+          .eq('following_id', viewingProfileId)
+          .maybeSingle(); // Use maybeSingle
+        isFollowing = !!followData;
+        console.log(`🔒 [Profile] Current user ${currentUser.id} is following ${viewingProfileId}: ${isFollowing}`);
+        if (followError && followError.code !== 'PGRST116') {
+          console.error('❌ [Profile] Error checking follow status:', followError);
+        }
+      }
+
+      // Apply privacy checks - if settings exist, enforce them strictly
+      if (privacySettings) {
+        // Get visibility setting - handle both string and potential null/undefined
+        const profileVisibility = privacySettings.who_can_see_profile?.toLowerCase() || 'everyone';
+        console.log(`🔒 [Profile] Privacy settings found: who_can_see_profile="${profileVisibility}" (type: ${typeof profileVisibility}), isFollowing=${isFollowing}`);
+        
+        // If set to 'none', no one can view (except self, but we're already checking that)
+        if (profileVisibility === 'none') {
+          console.log(`🚫 [Profile] BLOCKING ACCESS - profile visibility is 'none'`);
+          Alert.alert("Private Profile", "This profile is private.");
+          router.back();
+          setLoading(false);
+          return;
+        }
+        
+        // If set to 'followers', only followers can view
+        if (profileVisibility === 'followers') {
+          if (!isFollowing) {
+            console.log(`🚫 [Profile] BLOCKING ACCESS - profile visibility is 'followers' and user is NOT following`);
+            Alert.alert("Private Profile", "This profile is private. Follow to view.");
+            router.back();
+            setLoading(false);
+            return;
+          } else {
+            console.log(`✅ [Profile] ALLOWING ACCESS - profile visibility is 'followers' and user IS following`);
+          }
+        }
+        
+        // If set to 'everyone', allow viewing (continue below)
+        if (profileVisibility === 'everyone') {
+          console.log(`✅ [Profile] ALLOWING ACCESS - profile visibility is 'everyone'`);
+        }
+      } else {
+        console.log(`✅ [Profile] No privacy settings found - defaulting to public (allowing access)`);
+      }
+      console.log(`🔒 [Profile] ===== END Privacy Check - PROCEEDING TO LOAD PROFILE =====`);
+      // If no privacy settings exist, default to public (allow viewing)
+
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, username, display_name, bio, profile_image_url, is_premium, is_creator, plan, sports, primary_sport')
@@ -177,12 +286,19 @@ export default function Profile() {
   }, [loadProfile]);
 
   // Reload profile when screen comes into focus (e.g., after editing)
+  // Also ensure we're on the index screen, not edit screen
   useFocusEffect(
     useCallback(() => {
+      // If we're viewing own profile and somehow on edit screen, navigate to index
+      if (isViewingOwnProfile && !params.profileId) {
+        // Ensure we're on the profile index, not edit
+        const currentRoute = router;
+        // This will be handled by the Stack navigator
+      }
       if (viewingProfileId) {
         loadProfile();
       }
-    }, [viewingProfileId, loadProfile])
+    }, [viewingProfileId, loadProfile, isViewingOwnProfile, params.profileId])
   );
 
   /* -------- Load highlights -------- */
@@ -193,6 +309,58 @@ export default function Profile() {
     if (!viewingProfileId) return;
 
     const loadHighlights = async () => {
+      // Check highlights visibility privacy setting - MUST check before loading
+      if (!isViewingOwnProfile) {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) {
+          console.log(`🔒 [Highlights] Checking privacy for profile: ${viewingProfileId}`);
+          const { data: privacySettings, error: privacyError } = await supabase
+            .from('user_privacy_settings')
+            .select('who_can_see_highlights')
+            .eq('user_id', viewingProfileId)
+            .maybeSingle(); // Use maybeSingle
+
+          if (privacyError && privacyError.code !== 'PGRST116') {
+            console.error('❌ [Highlights] Error fetching privacy settings:', privacyError);
+          }
+
+          if (privacySettings) {
+            const highlightsVisibility = privacySettings.who_can_see_highlights;
+            console.log(`🔒 [Highlights] Privacy settings found: who_can_see_highlights=${highlightsVisibility}`);
+            
+            // If set to 'none', no one can view highlights
+            if (highlightsVisibility === 'none') {
+              console.log(`🚫 [Highlights] Blocking access - highlights visibility is 'none'`);
+              setClips([]);
+              return;
+            }
+            
+            // If set to 'followers', only followers can view
+            if (highlightsVisibility === 'followers') {
+              const { data: followData, error: followError } = await supabase
+                .from('follows')
+                .select('follower_id') // follows table has composite primary key, no 'id' column
+                .eq('follower_id', currentUser.id)
+                .eq('following_id', viewingProfileId)
+                .maybeSingle(); // Use maybeSingle
+              
+              if (!followData) {
+                // Not following, can't view highlights
+                console.log(`🚫 [Highlights] Blocking access - highlights visibility is 'followers' and user is not following`);
+                setClips([]);
+                return;
+              }
+              console.log(`✅ [Highlights] User is following - allowing highlights`);
+            }
+            // If 'everyone' or user is following, continue to load highlights below
+            console.log(`✅ [Highlights] Privacy check passed - loading highlights`);
+          } else {
+            console.log(`✅ [Highlights] No privacy settings found - defaulting to public`);
+          }
+          // If no privacy settings exist, default to public (load highlights)
+        }
+      }
+
       console.log(`📹 [Highlights] ===== START Loading highlights for profile: ${viewingProfileId} =====`);
       const { data, error } = await listHighlights(viewingProfileId);
       if (data) {
@@ -224,7 +392,7 @@ export default function Profile() {
     };
 
     loadHighlights();
-  }, [viewingProfileId, stats.highlights]);
+  }, [viewingProfileId, stats.highlights, isViewingOwnProfile]);
 
   /* -------- Avatar -------- */
   const pickPfp = async () => {
@@ -590,6 +758,42 @@ export default function Profile() {
               )}
               <Text style={[styles.pillText, { color: "#000" }]}>View Creator Workouts</Text>
             </View>
+          </Pressable>
+        )}
+
+        {/* Block User button (only when viewing other users' profiles) */}
+        {!isViewingOwnProfile && profile && (
+          <Pressable
+            style={[
+              styles.pillBtn,
+              styles.pillSolid,
+              { marginTop: 12, backgroundColor: theme.colors.danger + "20", borderColor: theme.colors.danger + "40" }
+            ]}
+            onPress={async () => {
+              Alert.alert(
+                "Block User",
+                `Are you sure you want to block @${profile.username}? You won't be able to see their profile or content.`,
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Block",
+                    style: "destructive",
+                    onPress: async () => {
+                      const { error } = await blockUser(profile.id);
+                      if (error) {
+                        Alert.alert("Error", error.message || "Failed to block user");
+                      } else {
+                        Alert.alert("Blocked", "User has been blocked");
+                        router.back();
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="ban-outline" size={16} color={theme.colors.danger} />
+            <Text style={[styles.pillText, { color: theme.colors.danger, marginLeft: 8 }]}>Block User</Text>
           </Pressable>
         )}
 

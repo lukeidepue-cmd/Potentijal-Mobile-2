@@ -1,10 +1,10 @@
 // app/(tabs)/(home)/index.tsx
 import React, { useState } from "react";
-import { SafeAreaView, View, Text, Pressable, Modal, ScrollView } from "react-native";
+import { SafeAreaView, View, Text, Pressable, Modal, ScrollView, StyleSheet } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useMode } from "../../../providers/ModeContext";
 import { theme } from "../../../constants/theme";
@@ -30,7 +30,6 @@ type ModeKey =
   | "lifting"
   | "basketball"
   | "football"
-  | "running"
   | "baseball"
   | "soccer"
   | "hockey"
@@ -63,11 +62,6 @@ const ALL_MODES: { key: ModeKey; label: string; icon: React.ReactNode }[] = [
     key: "football",
     label: "Football",
     icon: <Ionicons name="american-football-outline" size={18} color={theme.colors.textHi} />,
-  },
-  {
-    key: "running",
-    label: "Running",
-    icon: <MaterialCommunityIcons name="run" size={18} color={theme.colors.textHi} />,
   },
   {
     key: "baseball",
@@ -103,7 +97,22 @@ export default function HomeIndex() {
   const m = (mode || "lifting").toLowerCase() as ModeKey;
   const isDedicated = DEDICATED.includes(m);
 
-  // Inline header only for inline pages (right now: running)
+  // Inline header only for inline pages (right now: none)
+  // For lifting, basketball, football, soccer, baseball, hockey, and tennis modes, use View instead of SafeAreaView to allow calendar to extend to top
+  if (isDedicated && (m === "lifting" || m === "basketball" || m === "football" || m === "soccer" || m === "baseball" || m === "hockey" || m === "tennis")) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0B0E10" }}>
+        {m === "lifting" ? <LiftingHomeScreen /> : 
+         m === "basketball" ? <BasketballHomeScreen /> : 
+         m === "football" ? <FootballHomeScreen /> : 
+         m === "soccer" ? <SoccerHomeScreen /> :
+         m === "baseball" ? <BaseballHomeScreen /> :
+         m === "hockey" ? <HockeyHomeScreen /> :
+         <TennisHomeScreen />}
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg0 }}>
       {!isDedicated && (
@@ -153,27 +162,14 @@ export default function HomeIndex() {
 
       {/* Body */}
       {isDedicated ? (
-        m === "lifting" ? (
-          <LiftingHomeScreen />
-        ) : m === "basketball" ? (
-          <BasketballHomeScreen />
-        ) : m === "football" ? (
-          <FootballHomeScreen />
-        ) : m === "baseball" ? (
-          <BaseballHomeScreen />
-        ) : m === "soccer" ? (
-          <SoccerHomeScreen />
-        ) : m === "hockey" ? (
-          <HockeyHomeScreen />
-        ) : (
-          <TennisHomeScreen />
-        )
-      ) : (
-        <RunningHome />
-      )}
+        m === "lifting" || m === "basketball" || m === "football" || m === "soccer" || m === "baseball" || m === "hockey" || m === "tennis" ? (
+          // Lifting, basketball, football, soccer, baseball, hockey, and tennis are handled in early return above
+          null
+        ) : null
+      ) : null}
 
-      {/* Floating mode switcher (kept for dedicated pages) */}
-      {isDedicated && (
+      {/* Floating mode switcher (kept for dedicated pages, but NOT for lifting, basketball, football, soccer, baseball, hockey, or tennis mode) */}
+      {isDedicated && m !== "lifting" && m !== "basketball" && m !== "football" && m !== "soccer" && m !== "baseball" && m !== "hockey" && m !== "tennis" && (
         <View
           pointerEvents="box-none"
           style={{
@@ -246,47 +242,49 @@ export default function HomeIndex() {
         </View>
       )}
 
-      {/* AI Trainer Button - Sticky bottom left */}
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          if (canUseAITrainer) {
-            setShowAITrainer(true);
-          } else {
-            setShowUpgradeModal(true);
-          }
-        }}
-        style={({ pressed }) => ({
-          position: "absolute",
-          left: 16,
-          bottom: insets.bottom + 16,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: canUseAITrainer
-            ? pressed
-              ? theme.colors.primary700
-              : theme.colors.primary600
-            : pressed
-            ? "#4A4A4A"
-            : "#2A2A2A",
-          alignItems: "center",
-          justifyContent: "center",
-          shadowColor: "#000",
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: 8,
-          zIndex: 100,
-          opacity: canUseAITrainer ? 1 : 0.6,
-        })}
-      >
-        {canUseAITrainer ? (
-          <Ionicons name="sparkles" size={28} color="#fff" />
-        ) : (
-          <Ionicons name="lock-closed" size={24} color="#fff" />
-        )}
-      </Pressable>
+      {/* AI Trainer Button - Sticky bottom left (hidden for lifting, basketball, football, soccer, baseball, hockey, and tennis mode) */}
+      {m !== "lifting" && m !== "basketball" && m !== "football" && m !== "soccer" && m !== "baseball" && m !== "hockey" && m !== "tennis" && (
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (canUseAITrainer) {
+              setShowAITrainer(true);
+            } else {
+              setShowUpgradeModal(true);
+            }
+          }}
+          style={({ pressed }) => ({
+            position: "absolute",
+            left: 16,
+            bottom: insets.bottom + 16,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: canUseAITrainer
+              ? pressed
+                ? theme.colors.primary700
+                : theme.colors.primary600
+              : pressed
+              ? "#4A4A4A"
+              : "#2A2A2A",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: "#000",
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 8,
+            zIndex: 100,
+            opacity: canUseAITrainer ? 1 : 0.6,
+          })}
+        >
+          {canUseAITrainer ? (
+            <Ionicons name="sparkles" size={28} color="#fff" />
+          ) : (
+            <Ionicons name="lock-closed" size={24} color="#fff" />
+          )}
+        </Pressable>
+      )}
 
       {/* Upgrade Modal for AI Trainer */}
       <UpgradeModal
@@ -343,167 +341,7 @@ export default function HomeIndex() {
   );
 }
 
-/* ======================= RUNNING (inline, unchanged) ======================= */
-function RunningHome() {
-  const weekly = { milesGoal: 10, milesDone: 2, paceGoal: "7:50" };
-  const progressMiles = weekly.milesGoal > 0 ? Math.min(1, weekly.milesDone / weekly.milesGoal) : 0;
-
-  const runs: Array<{ dateISO: string; miles: number; minutes: number; where: string }> = [
-    { dateISO: new Date().toISOString(), miles: 4.8, minutes: 70, where: "Central Park" },
-    { dateISO: new Date(Date.now() - 86400000).toISOString(), miles: 2.2, minutes: 40, where: "Times Square" },
-  ];
-
-  const fmtDate = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  };
-
-  return (
-    <>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingBottom: 120,
-          paddingTop: 26,
-          gap: 16,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        <Card>
-          <Text
-            style={{
-              ...theme.text.h1,
-              color: theme.colors.textHi,
-              textAlign: "center",
-              marginBottom: theme.layout.lg,
-            }}
-          >
-            Weekly Goals
-          </Text>
-
-          <View style={{ marginBottom: 12 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 10 }}>
-              <Text style={{ color: "#111", fontWeight: "900", flex: 1 }}>{weekly.milesGoal} miles</Text>
-              <Text style={{ color: "#111", fontWeight: "900" }}>{Math.round(progressMiles * 100)}%</Text>
-            </View>
-            <ProgressBar value={progressMiles} />
-          </View>
-
-          <View>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 10 }}>
-              <Text style={{ color: "#111", fontWeight: "900", flex: 1 }}>{`Better than ${weekly.paceGoal} pace`}</Text>
-              <Text style={{ color: "#111", fontWeight: "900" }}>{weekly.paceGoal}</Text>
-            </View>
-            <ProgressBar value={0} />
-          </View>
-
-          <View style={{ alignItems: "flex-end", marginTop: 12 }}>
-            <PrimaryButton label="+ Add Weekly Goal" onPress={() => router.push("/(tabs)/(home)/running/weekly-goals")} />
-          </View>
-        </Card>
-
-        <Card>
-          <CardTitle>Weekly Progress</CardTitle>
-          <Muted>PRs and improvements (e.g., fastest 5K, best weekly distance) will appear here.</Muted>
-        </Card>
-
-        <Card>
-          <CardTitle>Runs this week</CardTitle>
-          <View style={{ gap: 10 }}>
-            {runs.map((r, i) => (
-              <View
-                key={i}
-                style={{
-                  borderWidth: 1,
-                  borderColor: "#e8e8e8",
-                  backgroundColor: "#fff",
-                  borderRadius: 12,
-                  padding: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <View
-                  style={{
-                    minWidth: 60,
-                    paddingVertical: 8,
-                    paddingHorizontal: 10,
-                    borderRadius: 999,
-                    backgroundColor: "#0b0b0c",
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "900", textAlign: "center" }}>{fmtDate(r.dateISO)}</Text>
-                </View>
-                <Text style={{ color: "#111", fontWeight: "700", flexShrink: 1 }} numberOfLines={2}>
-                  {`${r.miles.toFixed(1)} miles in ${Math.floor(r.minutes / 60)} hr ${r.minutes % 60} min at ${r.where}`}
-                </Text>
-              </View>
-            ))}
-            {runs.length === 0 && <Text style={{ color: "#666", fontWeight: "700" }}>No runs logged this week yet.</Text>}
-          </View>
-        </Card>
-      </ScrollView>
-
-      <Fab
-        label="Log run"
-        onPress={() => {
-          Haptics.selectionAsync();
-        }}
-      />
-    </>
-  );
-}
-
 /* ------------------------ Small shared helpers ------------------------ */
-function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <View
-      style={{
-        borderRadius: 16,
-        backgroundColor: "#0E1216",
-        padding: 16,
-        borderWidth: (StyleSheet as any).hairlineWidth,
-        borderColor: "rgba(255,255,255,0.06)",
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-function CardTitle({ children }: { children: React.ReactNode }) {
-  return <Text style={{ ...theme.text.h2, color: theme.colors.textHi, marginBottom: theme.layout.sm }}>{children}</Text>;
-}
-function Muted({ children }: { children: React.ReactNode }) {
-  return <Text style={{ ...theme.text.muted, color: theme.colors.textLo }}>{children}</Text>;
-}
-function Fab({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        position: "absolute",
-        right: 16,
-        bottom: 20,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        borderRadius: 999,
-        backgroundColor: pressed ? theme.colors.brandDim : theme.colors.brand,
-        shadowColor: "#000",
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        elevation: 4,
-      })}
-    >
-      <Ionicons name="add" size={18} color="#fff" />
-      <Text style={{ color: "#fff", fontWeight: "900" }}>{label}</Text>
-    </Pressable>
-  );
-}
 function ModeItem({ icon, label, onPress }: { icon: React.ReactNode; label: string; onPress: () => void }) {
   return (
     <Pressable

@@ -57,7 +57,7 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
     {
       id: '1',
       role: 'assistant',
-      content: "Hi! I'm your AI Trainer. I have access to all your workouts, games, practices, and meals. How can I help you improve today?",
+      content: "Hi! I'm your AI Trainer. I have access to all your workouts, games, and practices. How can I help you improve today?",
       timestamp: new Date(),
     },
   ]);

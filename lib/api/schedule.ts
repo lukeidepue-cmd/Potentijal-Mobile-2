@@ -130,30 +130,58 @@ export async function getScheduleWithStatus(params: {
       ? mapModeKeyToSportMode(params.mode) 
       : params.mode;
 
+    // Debug: Log the mode being used
+    console.log(`[Schedule] Checking schedule for mode: ${params.mode} -> ${sportMode}`);
+
     // Get schedule
     const { data: schedule, error: scheduleError } = await getWeeklySchedule(params);
     if (scheduleError) {
       return { data: null, error: scheduleError };
     }
 
-    // Calculate week dates
-    const weekStart = new Date(params.weekStartDate);
+    // Calculate week dates - use local date format to match how workouts are stored
+    const weekStart = new Date(params.weekStartDate + 'T00:00:00'); // Parse as local midnight
     const weekDates: string[] = [];
     for (let i = 0; i < 7; i++) {
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + i);
-      weekDates.push(date.toISOString().split('T')[0]);
+      // Format as local date (YYYY-MM-DD) to match workout performed_at format
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      weekDates.push(`${year}-${month}-${day}`);
     }
 
-    // Get workouts for this week
-    const { data: workouts } = await supabase
+    // Get workouts for this week - MODE AWARE: only get workouts for this specific mode
+    // This ensures that a workout logged in lifting mode doesn't mark a basketball schedule as completed
+    const { data: workouts, error: workoutsError } = await supabase
       .from('workouts')
-      .select('performed_at')
+      .select('performed_at, mode') // Also select mode for debugging/verification
       .eq('user_id', user.id)
-      .eq('mode', sportMode)
+      .eq('mode', sportMode) // CRITICAL: Filter by mode so each sport mode only checks its own workouts
       .in('performed_at', weekDates);
 
-    const workoutDates = new Set((workouts || []).map(w => w.performed_at));
+    if (workoutsError) {
+      console.error('Error fetching workouts:', workoutsError);
+    }
+
+    // Double-check: filter out any workouts that don't match the mode (defensive programming)
+    // This is critical - we must ONLY count workouts from the current mode
+    const filteredWorkouts = (workouts || []).filter(w => {
+      const matches = w.mode === sportMode;
+      if (!matches && w.mode) {
+        // Log if we find workouts from other modes (shouldn't happen due to query filter, but defensive)
+        console.warn(`Found workout with wrong mode: expected ${sportMode}, got ${w.mode}`);
+      }
+      return matches;
+    });
+    
+    const workoutDates = new Set(filteredWorkouts.map(w => w.performed_at));
+    
+    // Debug logging to verify mode filtering is working
+    if (workouts && workouts.length > 0) {
+      console.log(`[Schedule] Mode: ${sportMode}, Total workouts found: ${workouts.length}, Filtered: ${filteredWorkouts.length}, Dates: ${Array.from(workoutDates).join(', ')}`);
+    }
 
     // Build schedule with status
     const scheduleWithStatus: ScheduleWithStatus[] = (schedule || []).map((item, index) => {
@@ -176,10 +204,15 @@ export async function getScheduleWithStatus(params: {
 
       let status: 'completed' | 'missed' | 'rest' | 'empty';
       
+      // Parse date string as local date to avoid timezone issues
+      const [year, month, day] = date.split('-').map(Number);
+      const dayDate = new Date(year, month - 1, day);
+      dayDate.setHours(0, 0, 0, 0);
+      
+      // Get today's date as local date
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const dayDate = new Date(date);
-      dayDate.setHours(0, 0, 0, 0);
+      
       const isPast = dayDate < today;
       const isToday = dayDate.getTime() === today.getTime();
       
@@ -191,7 +224,12 @@ export async function getScheduleWithStatus(params: {
         status = 'empty';
       } else if (hasWorkout) {
         // Has label and has workout = completed (green check)
+        // CRITICAL: hasWorkout should ONLY be true if there's a workout in THIS specific mode
         status = 'completed';
+        // Debug logging for today's date
+        if (isToday) {
+          console.log(`[Schedule] Today (${date}) marked as completed - hasWorkout: ${hasWorkout}, mode: ${sportMode}, label: ${label}`);
+        }
       } else if (isPast && !isToday) {
         // Past day with label but no workout = missed (red X)
         status = 'missed';
@@ -215,22 +253,36 @@ export async function getScheduleWithStatus(params: {
 
 /**
  * Get current week start date (Sunday)
+ * Uses local date to avoid timezone issues
  */
 export function getCurrentWeekStart(): string {
   const today = new Date();
   const day = today.getDay(); // 0 = Sunday, 6 = Saturday
   const diff = today.getDate() - day; // Days to subtract to get to Sunday
-  const sunday = new Date(today.setDate(diff));
-  return sunday.toISOString().split('T')[0];
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - day);
+  
+  // Format as local date (YYYY-MM-DD) to avoid timezone shifts
+  const year = sunday.getFullYear();
+  const month = String(sunday.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(sunday.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayStr}`;
 }
 
 /**
  * Get next week start date
+ * Uses local date to avoid timezone issues
  */
 export function getNextWeekStart(): string {
   const currentWeekStart = getCurrentWeekStart();
-  const nextWeek = new Date(currentWeekStart);
+  const [year, month, day] = currentWeekStart.split('-').map(Number);
+  const nextWeek = new Date(year, month - 1, day);
   nextWeek.setDate(nextWeek.getDate() + 7);
-  return nextWeek.toISOString().split('T')[0];
+  
+  // Format as local date (YYYY-MM-DD) to avoid timezone shifts
+  const nextYear = nextWeek.getFullYear();
+  const nextMonth = String(nextWeek.getMonth() + 1).padStart(2, '0');
+  const nextDay = String(nextWeek.getDate()).padStart(2, '0');
+  return `${nextYear}-${nextMonth}-${nextDay}`;
 }
 

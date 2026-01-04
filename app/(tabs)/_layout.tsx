@@ -1,6 +1,7 @@
 // app/(tabs)/_layout.tsx
 import { Tabs } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { PROFILE_FEATURES_ENABLED } from "../../constants/features";
 
 export default function TabsLayout() {
   return (
@@ -49,9 +50,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="meals"
         options={{
-          title: "Meals",
+          title: "Coming Soon",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="fast-food-outline" color={color} size={size} />
+            <Ionicons name="hourglass-outline" color={color} size={size} />
           ),
         }}
       />
@@ -73,13 +74,14 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-circle-outline" color={color} size={size} />
           ),
+          href: PROFILE_FEATURES_ENABLED ? undefined : null, // Hide from tab bar if profile features disabled
         }}
       />
 
       <Tabs.Screen
         name="scan"
         options={{
-          href: null, // Hide from tab bar (accessed from meals tab)
+          href: null, // Hide from tab bar
         }}
       />
 
@@ -90,11 +92,84 @@ export default function TabsLayout() {
         }}
       />
 
+      {/* Hide ALL settings screens from tab bar - they're only accessible via settings button */}
       <Tabs.Screen
         name="settings"
         options={{
           href: null, // Hide from tab bar (accessed from home screen)
         }}
+      />
+      <Tabs.Screen
+        name="settings/ai-trainer"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/notifications"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/privacy-security"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/account/email-password"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/account/delete-account"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/sports-training/my-sports"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/sports-training/add-sports"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/nutrition/units"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/privacy-security/blocked-users"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/premium/manage-subscription"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/premium/restore-purchases"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/premium/redeem-code"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/app-preferences/units"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/support-legal/help"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/support-legal/contact"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/support-legal/privacy-policy"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/support-legal/terms"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings/about/credits"
+        options={{ href: null }}
       />
     </Tabs>
   );

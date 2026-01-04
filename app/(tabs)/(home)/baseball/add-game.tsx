@@ -1,92 +1,154 @@
-import React, { useState } from "react";
-import { SafeAreaView, View, Text, Pressable, TextInput, ScrollView, StyleSheet, ActivityIndicator, Alert } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import React, { useState, useEffect, useRef } from "react";
+import { 
+  View, 
+  Text, 
+  Pressable, 
+  TextInput, 
+  ScrollView, 
+  StyleSheet, 
+  ActivityIndicator, 
+  Alert,
+  Image,
+  Dimensions,
+  Platform,
+} from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { theme } from "../../../../constants/theme";
 import { createGame } from "../../../../lib/api/games";
 import { useMode } from "../../../../providers/ModeContext";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
-/* --- Font 2 (Geist) for heading & chip labels --- */
+/* --- Font 2 (Geist) for heading --- */
 import {
   useFonts as useGeist,
   Geist_700Bold,
   Geist_800ExtraBold,
 } from "@expo-google-fonts/geist";
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.25; // 25% of screen height
+
 export default function AddGameScreen() {
   const [geistLoaded] = useGeist({ Geist_700Bold, Geist_800ExtraBold });
   const { mode } = useMode();
   const m = (mode || "baseball").toLowerCase();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
   
   const [title, setTitle] = useState("");
-  const [when, setWhen] = useState("");
   const [stats, setStats] = useState("");
   const [notes, setNotes] = useState("");
-  const [result, setResult] = useState<"W" | "L" | "T" | "">("");
   const [saving, setSaving] = useState(false);
+  const [animationComplete, setAnimationComplete] = useState(false);
+  
+  // Refs for keyboard handling
+  const notesInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Button press animation
+  const buttonScale = useSharedValue(1);
+  const buttonTranslateY = useSharedValue(0);
+  const buttonShadowOpacity = useSharedValue(0.25);
+  const buttonShadowOffset = useSharedValue(10);
+
+  // Get image source
+  const imageSource = params.imageSource === "ohtani" 
+    ? require("../../../../assets/players/ohtani.jpg")
+    : require("../../../../assets/players/ohtani.jpg");
+
+  // Initialize animation values based on params - set synchronously before render
+  const hasAnimationData = params.initialX && params.initialY && params.initialWidth && params.initialHeight;
+  const initialX = hasAnimationData ? parseFloat(params.initialX as string) : 0;
+  const initialY = hasAnimationData ? parseFloat(params.initialY as string) : 0;
+  const initialWidth = hasAnimationData ? parseFloat(params.initialWidth as string) : SCREEN_WIDTH;
+  const initialHeight = hasAnimationData ? parseFloat(params.initialHeight as string) : IMAGE_HEIGHT;
+
+  // Animation values - initialize with starting positions immediately
+  const imageX = useSharedValue(initialX);
+  const imageY = useSharedValue(initialY);
+  const imageWidth = useSharedValue(initialWidth);
+  const imageHeight = useSharedValue(initialHeight);
+  const formY = useSharedValue(hasAnimationData ? SCREEN_HEIGHT : IMAGE_HEIGHT);
+  const imageOpacity = useSharedValue(1); // Start visible so it appears to move
+
+  useEffect(() => {
+    // Start animation immediately - no delay
+    if (hasAnimationData) {
+      // Final position (top of screen, full width, 25% height, NO top padding)
+      const finalX = 0;
+      const finalY = 0; // Go all the way to top (no insets.top)
+      const finalWidth = SCREEN_WIDTH;
+      const finalHeight = IMAGE_HEIGHT;
+
+      // Animate image to top - smooth transition (start immediately)
+      // Higher damping = less bounce, smoother animation
+      imageX.value = withSpring(finalX, { damping: 35, stiffness: 50 });
+      imageY.value = withSpring(finalY, { damping: 35, stiffness: 50 });
+      imageWidth.value = withSpring(finalWidth, { damping: 35, stiffness: 50 });
+      imageHeight.value = withSpring(finalHeight, { damping: 35, stiffness: 50 });
+
+      // Animate form sliding up from bottom - starts immediately
+      formY.value = withSpring(IMAGE_HEIGHT, { 
+        damping: 35, 
+        stiffness: 50,
+      }, () => {
+        runOnJS(setAnimationComplete)(true);
+      });
+    } else {
+      // No animation data, already set to final positions
+      setAnimationComplete(true);
+    }
+  }, []);
+
+  const imageAnimatedStyle = useAnimatedStyle(() => ({
+    position: "absolute",
+    left: imageX.value,
+    top: imageY.value,
+    width: imageWidth.value,
+    height: imageHeight.value,
+    opacity: imageOpacity.value,
+    zIndex: 1,
+  }));
+
+  const formAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: formY.value - IMAGE_HEIGHT }],
+  }));
+
+  const buttonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: buttonScale.value },
+      { translateY: buttonTranslateY.value },
+    ],
+  }));
 
   const save = async () => {
-    if (!when.trim()) {
-      Alert.alert("Error", "Please enter a date.");
-      return;
-    }
-
-    if (!result) {
-      Alert.alert("Error", "Please select a result (Win, Loss, or Tie).");
-      return;
-    }
-
     // Store stats as text (not parsed as numbers)
     // User can type anything and it will be stored as-is
     let statsText = stats.trim();
 
-    // Parse date (accept various formats, default to today)
-    let playedAt = when.trim();
-    if (!playedAt) {
-      playedAt = new Date().toISOString().split('T')[0];
-    } else {
-      // Try to parse date string - handle MM/DD/YYYY format
-      let date: Date;
-      if (playedAt.includes('/')) {
-        // Format: MM/DD/YYYY or M/D/YYYY
-        const parts = playedAt.split('/');
-        if (parts.length === 3) {
-          const month = parseInt(parts[0], 10) - 1; // Month is 0-indexed
-          const day = parseInt(parts[1], 10);
-          const year = parseInt(parts[2], 10);
-          date = new Date(year, month, day);
-        } else {
-          date = new Date(playedAt);
-        }
-      } else {
-        date = new Date(playedAt);
-      }
-      
-      if (isNaN(date.getTime())) {
-        Alert.alert("Error", "Please enter a valid date (e.g., 2025-11-21 or 11/21/2025).");
-        return;
-      }
-      // Format as YYYY-MM-DD using local date
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      playedAt = `${year}-${month}-${day}`;
-    }
+    // Automatically assign today's date (local date, not UTC)
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const playedAt = `${year}-${month}-${day}`;
 
     setSaving(true);
     Haptics.selectionAsync();
 
-    const resultMap: Record<string, 'win' | 'loss' | 'tie'> = {
-      W: 'win',
-      L: 'loss',
-      T: 'tie',
-    };
-
     const { data, error } = await createGame({
       mode: m,
       playedAt,
-      result: resultMap[result],
       title: title.trim() || undefined,
       stats: statsText ? { text: statsText } : {},
       notes: notes.trim() || undefined,
@@ -116,115 +178,145 @@ export default function AddGameScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg0 }}>
-      {/* Back button */}
-      <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
-        <Ionicons name="chevron-back" size={22} color={theme.colors.textHi} />
-      </Pressable>
-
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Heading + rule (match Edit Profile) */}
-        <Text style={styles.title}>Add Game</Text>
-        <View style={styles.rule} />
-
-        {/* Inputs */}
-        <View style={{ marginTop: 20 }}>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Game Title..."
-            placeholderTextColor={theme.colors.textLo}
-            style={styles.input}
-          />
-        </View>
-
-        <View style={{ marginTop: 16 }}>
-          <TextInput
-            value={when}
-            onChangeText={setWhen}
-            placeholder="Date..."
-            placeholderTextColor={theme.colors.textLo}
-            style={styles.input}
-          />
-        </View>
-
-        {/* 2px gap between Date and Stats */}
-        <View style={{ marginTop: 16 }}>
-          <TextInput
-            value={stats}
-            onChangeText={setStats}
-            placeholder="Stats..."
-            placeholderTextColor={theme.colors.textLo}
-            multiline
-            style={[styles.input, styles.inputMed]}
-          />
-        </View>
-
-        {/* Result chips */}
-        <View style={{ flexDirection: "row", gap: 12, marginTop: 26, marginBottom: 16 }}>
-          <Chip label="Win" active={result === "W"} onPress={() => setResult("W")} />
-          <Chip label="Loss" active={result === "L"} onPress={() => setResult("L")} />
-          <Chip label="Tie" active={result === "T"} onPress={() => setResult("T")} />
-        </View>
-
-        {/* Notes */}
-        <View style={{ marginTop: 12 }}>
-          <TextInput
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Notes..."
-            placeholderTextColor={theme.colors.textLo}
-            multiline
-            style={[styles.input, styles.inputBig]}
-          />
-        </View>
-
-        {/* Save (8px under last box) */}
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg0 }}>
+      {/* Animated Image - Part of the screen (not overlay) */}
+      <Animated.View style={imageAnimatedStyle}>
+        <Image 
+          source={imageSource} 
+          style={{ width: "100%", height: "100%" }}
+          resizeMode="cover"
+        />
+        {/* Gradient Scrim Overlay */}
+        <LinearGradient
+          colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.85)"]}
+          locations={[0, 0.65, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Back button - positioned absolutely over the image */}
         <Pressable 
-          onPress={save} 
-          disabled={saving}
-          style={{ marginTop: 20, alignSelf: "flex-start" }}
+          onPress={() => router.back()} 
+          hitSlop={10} 
+          style={[styles.backBtn, { 
+            position: "absolute",
+            top: insets.top + 16,
+            left: 16,
+            zIndex: 1001,
+          }]}
         >
-          <View style={[styles.saveBtn, saving && { opacity: 0.6 }]}>
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.saveText}>Save</Text>
-            )}
-          </View>
+          <Ionicons name="chevron-back" size={22} color={theme.colors.textHi} />
         </Pressable>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
+      </Animated.View>
 
-function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: "Win" | "Loss" | "Tie";
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.chip,
-        active && { borderColor: theme.colors.primary600, backgroundColor: "#0E1316" },
-      ]}
-    >
-      <Text style={[styles.chipText, active && { color: theme.colors.primary600 }]}>{label}</Text>
-    </Pressable>
+      {/* Content - Slides up from bottom */}
+      <Animated.View style={[styles.contentContainer, formAnimatedStyle]}>
+        <ScrollView
+          ref={scrollViewRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 400 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Heading Section - Clear, prominent like to-do list */}
+          <View style={styles.headingSection}>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Game Title..."
+              placeholderTextColor="rgba(255, 255, 255, 0.5)"
+              style={styles.headingInput}
+            />
+          </View>
+
+          {/* Stats and Notes sections with overlapping labels */}
+          <View style={styles.contentSection}>
+            {/* Stats Section */}
+            <View style={styles.inputSection}>
+              <View style={styles.labelOverlay}>
+                <Text style={styles.labelText}>Stats</Text>
+              </View>
+              <TextInput
+                value={stats}
+                onChangeText={setStats}
+                placeholder=""
+                placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                multiline
+                style={styles.textBox}
+              />
+            </View>
+
+            {/* Notes Section */}
+            <View style={styles.inputSection}>
+              <View style={styles.labelOverlay}>
+                <Text style={styles.labelText}>Notes</Text>
+              </View>
+              <TextInput
+                ref={notesInputRef}
+                value={notes}
+                onChangeText={setNotes}
+                placeholder=""
+                placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                multiline
+                style={styles.textBox}
+                onFocus={() => {
+                  // Scroll to end when Notes input is focused to ensure it's visible above keyboard
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 300);
+                }}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </Animated.View>
+
+      {/* Floating Save Button - Bottom Right */}
+      <View style={[styles.floatingButtonContainer, { bottom: 24 + insets.bottom }]}>
+        {/* Shadow wrapper with glow effect */}
+        <Animated.View 
+          style={[
+            styles.buttonShadowWrapper,
+            buttonAnimatedStyle,
+          ]}
+        >
+          <Pressable 
+            onPress={save} 
+            disabled={saving}
+            onPressIn={() => {
+              buttonScale.value = withSpring(0.98, { damping: 15, stiffness: 300 });
+              buttonTranslateY.value = withSpring(1, { damping: 15, stiffness: 300 });
+              buttonShadowOpacity.value = withTiming(0.15, { duration: 100 });
+              buttonShadowOffset.value = withTiming(6, { duration: 100 });
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+            onPressOut={() => {
+              buttonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+              buttonTranslateY.value = withSpring(0, { damping: 15, stiffness: 300 });
+              buttonShadowOpacity.value = withTiming(0.25, { duration: 100 });
+              buttonShadowOffset.value = withTiming(10, { duration: 100 });
+            }}
+            style={[styles.floatingSaveButton, saving && { opacity: 0.6 }]}
+          >
+            {/* Subtle gradient overlay for depth */}
+            <LinearGradient
+              colors={["rgba(255,255,255,0.18)", "rgba(0,0,0,0.12)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <Text style={styles.floatingSaveText}>Save Game</Text>
+            <Ionicons name="checkmark" size={20} color="#0B0E10" style={{ zIndex: 1 }} />
+          </Pressable>
+        </Animated.View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  contentContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.bg0,
+    marginTop: IMAGE_HEIGHT,
+  },
   backBtn: {
     width: 40,
     height: 40,
@@ -233,66 +325,93 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 16,
-    marginTop: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
   },
-
-  title: {
-    color: theme.colors.textHi,
-    fontSize: 28,
-    marginTop: 18,
+  headingSection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 16,
+    backgroundColor: theme.colors.bg0,
+  },
+  headingInput: {
+    fontSize: 32,
     fontFamily: "Geist_800ExtraBold",
-    letterSpacing: 0.2,
-  },
-  rule: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 999,
-    marginTop: 8,
-  },
-
-  input: {
-    backgroundColor: "#0E1216",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    fontWeight: "800",
     color: theme.colors.textHi,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    letterSpacing: -0.5,
+    minHeight: 48,
   },
-  inputMed: {
-    minHeight: 80,
-    textAlignVertical: "top",
+  contentSection: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    gap: 20,
   },
-  inputBig: {
-    minHeight: 160,
-    textAlignVertical: "top",
+  inputSection: {
+    position: "relative",
+    marginTop: 12,
   },
-
-  chip: {
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.22)",
-    backgroundColor: "#0A0F12",
+  labelOverlay: {
+    position: "absolute",
+    top: -8,
+    left: 16,
+    zIndex: 10,
+    backgroundColor: "#74C69D", // Middle green shade (mint green)
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  chipText: {
-    color: theme.colors.textHi,
+  labelText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0B0E10", // Dark text on mint green
     fontFamily: "Geist_700Bold",
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
   },
-
-  saveBtn: {
-    backgroundColor: theme.colors.primary600,
-    borderRadius: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  saveText: {
-    color: "#06160D",
-    fontFamily: "Geist_700Bold",
+  textBox: {
     fontSize: 16,
+    color: theme.colors.textHi,
+    backgroundColor: "#1A1F28", // Dark background that complements the screen
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingTop: 24, // Extra top padding for label overlap - increased for better spacing
+    minHeight: 120,
+    textAlignVertical: "top",
+  },
+  floatingButtonContainer: {
+    position: "absolute",
+    right: 20,
+    zIndex: 50,
+    // No overflow: 'hidden' - shadows need to render
+  },
+  buttonShadowWrapper: {
+    // Enhanced shadow with green glow effect
+    shadowColor: "#74C69D", // Mint green shadow for glow effect
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6, // Higher opacity for visible glow
+    shadowRadius: 25, // Larger radius for spread-out glow
+    elevation: 14,
+  },
+  floatingSaveButton: {
+    backgroundColor: "#74C69D", // Same mint green as overlapping headers
+    borderRadius: 24, // More curved corners
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.10)", // Subtle border for depth
+    overflow: "hidden", // For gradient overlay
+    position: "relative",
+  },
+  floatingSaveText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#0B0E10", // Dark text on mint green
+    fontFamily: "Geist_700Bold",
+    zIndex: 1, // Above gradient
   },
 });
-

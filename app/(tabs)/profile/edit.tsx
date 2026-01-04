@@ -77,7 +77,8 @@ export default function EditProfile() {
 
     if (data) {
       Alert.alert("Success", "Profile updated successfully");
-      router.back();
+      // Navigate to profile index instead of back (which might go to wrong screen)
+      router.replace("/(tabs)/profile");
     }
   };
 

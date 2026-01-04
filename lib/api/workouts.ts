@@ -325,7 +325,14 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
         id: workout.id,
         name: workout.name || '',
         mode: workout.mode as SportMode,
-        performedAt: workout.performed_at || new Date().toISOString(),
+        performedAt: workout.performed_at || (() => {
+          // Format date using local date to avoid timezone issues
+          const today = new Date();
+          const year = today.getFullYear();
+          const month = String(today.getMonth() + 1).padStart(2, '0');
+          const day = String(today.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        })(),
         exercises: exercisesWithSets,
       },
       error: null,
