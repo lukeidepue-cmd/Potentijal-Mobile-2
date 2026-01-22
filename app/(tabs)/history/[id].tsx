@@ -1,11 +1,22 @@
 // app/(tabs)/history/[id].tsx
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Image, Dimensions, Platform } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card } from "../../../components/Card";
 import { theme } from "../../../constants/theme";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  withRepeat,
+  Easing,
+} from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import {
   getWorkoutDetail,
   getPracticeDetail,
@@ -64,6 +75,296 @@ function formatFullDate(iso?: string) {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
+// Helper function to safely format stats for display
+// Stats can be stored as jsonb (object) or text (string) in the database
+function formatStatsForDisplay(stats: any): string {
+  if (!stats) return "";
+  
+  // If it's already a string, return it
+  if (typeof stats === "string") {
+    return stats;
+  }
+  
+  // If it's an object, format it nicely
+  if (typeof stats === "object") {
+    // If it's an empty object, return empty string
+    if (Object.keys(stats).length === 0) {
+      return "";
+    }
+    
+    // Format as key-value pairs
+    return Object.entries(stats)
+      .map(([key, value]) => {
+        // Capitalize first letter of key and format value
+        const formattedKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");
+        return `${formattedKey}: ${value}`;
+      })
+      .join("\n");
+  }
+  
+  // Fallback: convert to string
+  return String(stats);
+}
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.25; // 25% of screen height
+
+// Helper functions for exercise boxes
+type ExerciseTypeForBox = "exercise" | "shooting" | "drill" | "sprints" | "hitting" | "fielding" | "rally";
+
+const getExerciseTypeColor = (type: string, mode?: string): string => {
+  if (type === "exercise") {
+    return "#5AA6FF"; // Blue
+  } else if (type === "shooting") {
+    return "#64C878"; // Green
+  } else if (type === "sprints" || type === "fielding" || type === "rally") {
+    return "#64C878"; // Green
+  } else if (type === "hitting") {
+    return "#B48CFF"; // Purple
+  } else {
+    return "#B48CFF"; // Purple for drills
+  }
+};
+
+const getExerciseIcon = (type: string): React.ReactNode => {
+  if (type === "exercise") {
+    return <MaterialCommunityIcons name="dumbbell" size={24} color="#FFFFFF" />;
+  } else if (type === "shooting") {
+    return <MaterialCommunityIcons name="target" size={24} color="#FFFFFF" />;
+  } else if (type === "sprints") {
+    return <MaterialCommunityIcons name="run-fast" size={24} color="#FFFFFF" />;
+  } else if (type === "hitting") {
+    return <MaterialCommunityIcons name="baseball-bat" size={24} color="#FFFFFF" />;
+  } else if (type === "fielding") {
+    return <MaterialCommunityIcons name="baseball" size={24} color="#FFFFFF" />;
+  } else if (type === "rally") {
+    return <MaterialCommunityIcons name="tennis" size={24} color="#FFFFFF" />;
+  } else {
+    return <Ionicons name="time-outline" size={24} color="#FFFFFF" />;
+  }
+};
+
+// Format set display like workout tab
+const formatSetDisplay = (
+  set: any,
+  exerciseType: string,
+  mode?: string,
+  unitsWeight?: string
+): string => {
+  const parts: string[] = [];
+  
+  if (exerciseType === "exercise") {
+    if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+    if (set.weight != null) parts.push(`Weight (${unitsWeight === 'kg' ? 'kg' : 'lb'}): ${set.weight}`);
+  } else if (exerciseType === "shooting") {
+    if (mode === "basketball") {
+      if (set.attempted != null) parts.push(`Attempted: ${set.attempted}`);
+      if (set.made != null) parts.push(`Made: ${set.made}`);
+    } else {
+      if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+      if (set.distance != null) parts.push(`Distance: ${set.distance} ${mode === "soccer" || mode === "hockey" ? "yds" : ""}`);
+    }
+  } else if (exerciseType === "drill") {
+    if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+    if (set.timeMin != null) parts.push(`Time: ${set.timeMin} min`);
+  } else if (exerciseType === "sprints") {
+    if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+    if (set.distance != null) parts.push(`Distance: ${set.distance} yds`);
+    if (set.avgTimeSec != null) parts.push(`Avg. Time: ${set.avgTimeSec} sec`);
+  } else if (exerciseType === "hitting") {
+    if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+    if (set.distance != null) parts.push(`Distance: ${set.distance} ft`);
+  } else if (exerciseType === "fielding") {
+    if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+    if (set.distance != null) parts.push(`Distance: ${set.distance} ft`);
+  } else if (exerciseType === "rally") {
+    if (set.points != null) parts.push(`Points: ${set.points}`);
+    if (set.timeMin != null) parts.push(`Time: ${set.timeMin} min`);
+  }
+  
+  return parts.length > 0 ? parts.join(" • ") : "No data";
+};
+
+// Exercise Box Component with 3D styling
+function ExerciseBox({
+  exercise,
+  mode,
+  unitsWeight,
+}: {
+  exercise: { id?: string; name: string; type: string; sets: any[] };
+  mode?: string;
+  unitsWeight?: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const rotation = useSharedValue(0);
+  const height = useSharedValue(0);
+  const opacity = useSharedValue(0);
+
+  const exerciseColor = getExerciseTypeColor(exercise.type, mode);
+  const exerciseIcon = getExerciseIcon(exercise.type);
+  const setsCount = exercise.sets?.length || 0;
+  const setsText = setsCount !== 1 ? "sets" : "set";
+
+  useEffect(() => {
+    rotation.value = withTiming(isExpanded ? 90 : 0, { duration: 200 });
+    const estimatedHeight = exercise.sets.length * 60; // Increased height per set to prevent clipping
+    height.value = withTiming(isExpanded ? estimatedHeight : 0, { duration: 200 });
+    opacity.value = withTiming(isExpanded ? 1 : 0, { duration: 200 });
+  }, [isExpanded, exercise.sets.length]);
+
+  const arrowStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
+  const setsContainerStyle = useAnimatedStyle(() => ({
+    height: height.value,
+    opacity: opacity.value,
+  }));
+
+  return (
+    <View style={styles.exerciseBoxContainer}>
+      {/* 3D Box with colored border */}
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setIsExpanded(!isExpanded);
+        }}
+        style={({ pressed }) => [
+          styles.exerciseBox,
+          { borderColor: exerciseColor },
+          pressed && { opacity: 0.8 },
+        ]}
+      >
+        {/* Gradient overlay for depth */}
+        <LinearGradient
+          colors={["rgba(255,255,255,0.08)", "transparent", "rgba(0,0,0,0.15)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        {/* Top highlight for 3D effect */}
+        <LinearGradient
+          colors={["rgba(255,255,255,0.12)", "transparent"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 0.3 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <View style={styles.exerciseBoxContent}>
+          <View style={styles.exerciseBoxLeft}>
+            <Text style={styles.exerciseBoxName}>{exercise.name}</Text>
+            <Text style={styles.exerciseBoxSets}>
+              {setsCount} {setsText}
+            </Text>
+          </View>
+          <View style={styles.exerciseBoxRight}>
+            <Animated.View style={[styles.exerciseBoxArrow, arrowStyle]}>
+              <Ionicons name="chevron-forward" size={22} color={exerciseColor} />
+            </Animated.View>
+            {exerciseIcon}
+          </View>
+        </View>
+      </Pressable>
+
+      {/* Collapsible Sets Display */}
+      {isExpanded && (
+        <Animated.View style={[styles.setsContainer, setsContainerStyle]}>
+          {exercise.sets.map((set, setIdx) => (
+            <View key={set.id || setIdx} style={styles.setRow}>
+              <Text style={styles.setRowLabel}>Set {set.setIndex || setIdx + 1}</Text>
+              <Text 
+                style={styles.setRowValue}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              >
+                {formatSetDisplay(set, exercise.type, mode, unitsWeight)}
+              </Text>
+            </View>
+          ))}
+        </Animated.View>
+      )}
+    </View>
+  );
+}
+
+// Get card background design for practice based on sport mode
+function getPracticeCardBackground(mode?: string) {
+  const modeKey = (mode || "").toLowerCase();
+  
+  switch (modeKey) {
+    case "basketball":
+      return {
+        gradientColors: ["#C84B25", "#FF6A2A"],
+        images: [
+          { source: require("../../../assets/history/basketball-hoop.png"), style: "backgroundHoop" },
+          { source: require("../../../assets/history/basketball.png"), style: "backgroundBall1" },
+        ],
+        fadeColor: "rgba(200, 75, 37, 0.15)",
+      };
+    case "football":
+      return {
+        gradientColors: ["#6B3410", "#A0522D"],
+        images: [
+          { source: require("../../../assets/history/football-field.png"), style: "backgroundFootballField" },
+          { source: require("../../../assets/history/football.png"), style: "backgroundFootball" },
+        ],
+        fadeColor: "rgba(107, 52, 16, 0.15)",
+      };
+    case "soccer":
+      return {
+        gradientColors: ["#1E3A8A", "#3B82F6"],
+        images: [
+          { source: require("../../../assets/history/soccer-goal.png"), style: "backgroundSoccerGoal" },
+        ],
+        fadeColor: "rgba(30, 58, 138, 0.15)",
+      };
+    case "tennis":
+      return {
+        gradientColors: ["#8FA020", "#C8D844"],
+        images: [
+          { source: require("../../../assets/history/tennis-racket.png"), style: "backgroundTennisRacket" },
+          { source: require("../../../assets/history/tennis-ball.png"), style: "backgroundTennisBall" },
+        ],
+        fadeColor: "rgba(143, 160, 32, 0.15)",
+      };
+    case "hockey":
+      return {
+        gradientColors: ["#66CCCC", "#99FFFF"],
+        images: [
+          { source: require("../../../assets/history/hockey-net.png"), style: "backgroundHockeyNet" },
+        ],
+        fadeColor: "rgba(102, 204, 204, 0.15)",
+      };
+    case "baseball":
+      return {
+        gradientColors: ["#B91C1C", "#E63946"],
+        images: [
+          { source: require("../../../assets/history/baseball-bat.png"), style: "backgroundBaseballBat" },
+          { source: require("../../../assets/history/baseball.png"), style: "backgroundBaseball" },
+        ],
+        fadeColor: "rgba(185, 28, 28, 0.15)",
+      };
+    case "lifting":
+      return {
+        gradientColors: ["#4A4A4A", "#6B6B6B"],
+        images: [
+          { source: require("../../../assets/history/dumbell.png"), style: "backgroundDumbbell" },
+        ],
+        fadeColor: "rgba(74, 74, 74, 0.15)",
+      };
+    default:
+      return {
+        gradientColors: ["#C84B25", "#FF6A2A"],
+        images: [
+          { source: require("../../../assets/history/basketball-hoop.png"), style: "backgroundHoop" },
+          { source: require("../../../assets/history/basketball.png"), style: "backgroundBall1" },
+        ],
+        fadeColor: "rgba(200, 75, 37, 0.15)",
+      };
+  }
+}
+
 export default function HistoryDetail() {
   const params = useLocalSearchParams<{
     id: string;
@@ -85,10 +386,89 @@ export default function HistoryDetail() {
   const [error, setError] = useState<string | null>(null);
   const [canCopy, setCanCopy] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [animationComplete, setAnimationComplete] = useState(false);
+
+  // Animation for spinning star loading
+  const starRotation = useSharedValue(0);
+  
+  useEffect(() => {
+    if (loading) {
+      starRotation.value = withRepeat(
+        withTiming(360, {
+          duration: 800,
+          easing: Easing.linear,
+        }),
+        -1,
+        false
+      );
+    } else {
+      starRotation.value = 0;
+    }
+  }, [loading]);
+
+  const starAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${starRotation.value}deg` }],
+  }));
+
+  // Animation values for practice detail screen - start card at card position, animate to top
+  // Start card at approximate position where it would be in the history list (after header/control area)
+  const headerHeight = 200; // Approximate header + control area height
+  const cardX = useSharedValue(16); // Card margin from edges
+  const cardY = useSharedValue(headerHeight); // Start after header area
+  const cardWidth = useSharedValue(SCREEN_WIDTH - 32); // Card width (with margins)
+  const cardHeight = useSharedValue(120); // Card height
+  const cardBorderRadius = useSharedValue(24); // Start with card border radius
+  const formY = useSharedValue(SCREEN_HEIGHT);
 
   useEffect(() => {
     loadDetail();
   }, [params.id, params.type]);
+
+  // Animate card background and content for practice and game screens
+  useEffect(() => {
+    if (params.type === "practice" || params.type === "game") {
+      // Start animation immediately when screen loads, don't wait for data
+      // Animate card background to top - smooth transition
+      const finalX = 0;
+      const finalY = 0; // Go all the way to top (no insets.top)
+      const finalWidth = SCREEN_WIDTH;
+      const finalHeight = IMAGE_HEIGHT;
+
+      // Animate card to top - smooth transition (start immediately)
+      // Higher damping = less bounce, smoother animation
+      cardX.value = withSpring(finalX, { damping: 35, stiffness: 50 });
+      cardY.value = withSpring(finalY, { damping: 35, stiffness: 50 });
+      cardWidth.value = withSpring(finalWidth, { damping: 35, stiffness: 50 });
+      cardHeight.value = withSpring(finalHeight, { damping: 35, stiffness: 50 });
+      cardBorderRadius.value = withSpring(0, { damping: 35, stiffness: 50 }); // Animate to 0 when at top
+
+      // Animate form sliding up from bottom - starts immediately
+      formY.value = withSpring(IMAGE_HEIGHT, {
+        damping: 35,
+        stiffness: 50,
+      }, () => {
+        runOnJS(setAnimationComplete)(true);
+      });
+    } else {
+      // For workout screens, content is already visible
+      formY.value = 0;
+      setAnimationComplete(true);
+    }
+  }, [params.type]); // Trigger immediately when type is practice or game, don't wait for data
+
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    position: "absolute",
+    left: cardX.value,
+    top: cardY.value,
+    width: cardWidth.value,
+    height: cardHeight.value,
+    borderRadius: cardBorderRadius.value,
+    zIndex: 1,
+  }));
+
+  const formAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: formY.value - IMAGE_HEIGHT }],
+  }));
 
   // Check if user can copy this workout (always check for creator workouts, even own)
   useEffect(() => {
@@ -100,26 +480,17 @@ export default function HistoryDetail() {
   const checkCanCopy = async () => {
     if (!workout || !user) return;
 
-    console.log(`📋 [Copy Workout] ===== START Checking if workout can be copied =====`);
-    console.log(`📋 [Copy Workout] Workout mode (DB): ${workout.mode}`);
-    console.log(`📋 [Copy Workout] From creator: ${params.fromCreator}`);
-
-
     // If viewing a creator workout, allow copying regardless of user's sports preferences
     // This allows users to discover and copy workouts from creators even if they haven't set up that sport yet
     if (params.fromCreator === 'true') {
-      console.log(`✅ [Copy Workout] Creator workout - allowing copy without sport check`);
       setCanCopy(true);
       setCopyError(null);
-      console.log(`📋 [Copy Workout] ===== END =====`);
       return;
     }
 
     // For own workouts, check if user has the required sport mode
     // Map database mode to frontend mode for comparison
     const { data: profile } = await getMyProfile();
-    
-    console.log(`📋 [Copy Workout] User profile sports:`, profile?.sports);
     
     // Map workout.mode (database) to frontend mode key
     // "workout" in DB corresponds to "lifting" in frontend
@@ -134,7 +505,6 @@ export default function HistoryDetail() {
     };
     
     const frontendMode = modeMapping[workout.mode] || workout.mode;
-    console.log(`📋 [Copy Workout] Mapped frontend mode: ${frontendMode}`);
     
     // Check if user has the sport in their profile
     // Also check if the mode is "workout" and user has "lifting" OR if they have the exact mode
@@ -143,26 +513,18 @@ export default function HistoryDetail() {
       (workout.mode === 'workout' && profile.sports.includes('workout')) // Also allow if profile has "workout" directly
     );
     
-    console.log(`📋 [Copy Workout] User has sport: ${hasSport}`);
-    
     if (hasSport) {
-      console.log(`✅ [Copy Workout] User can copy this workout`);
       setCanCopy(true);
       setCopyError(null);
     } else {
-      console.log(`❌ [Copy Workout] User cannot copy - missing sport in profile`);
       setCanCopy(false);
       const modeName = workout.mode === 'workout' ? 'Workout' : workout.mode.charAt(0).toUpperCase() + workout.mode.slice(1);
       setCopyError(`Cannot copy workout because it was logged in ${modeName} mode`);
     }
-    
-    console.log(`📋 [Copy Workout] ===== END =====`);
   };
 
   const handleCopy = async () => {
     if (!workout || !canCopy) return;
-
-    console.log(`📋 [Copy Workout] Starting copy process for workout: ${workout.id}`);
     
     const { data: newWorkoutId, error: copyError } = await copyWorkoutSkeleton({
       sourceWorkoutId: workout.id,
@@ -173,8 +535,6 @@ export default function HistoryDetail() {
       Alert.alert("Error", "Failed to copy workout");
       return;
     }
-
-    console.log(`✅ [Copy Workout] Workout copied successfully. New workout ID: ${newWorkoutId}`);
     
     Alert.alert("Success", "Workout copied! You can now edit it in the Workouts tab.", [
       {
@@ -195,24 +555,19 @@ export default function HistoryDetail() {
     setLoading(true);
     setError(null);
 
-    console.log('📋 [History Detail] Loading detail:', { id: params.id, type: params.type, fromCreator: params.fromCreator });
-
     try {
       // If type is missing, try to determine from workout (default to workout for creator workouts)
       let type = params.type;
       if (!type && params.fromCreator === "true") {
         type = "workout";
-        console.log('📋 [History Detail] Type missing, defaulting to workout for creator workout');
       }
 
       if (type === "workout" || (!type && params.fromCreator === "true")) {
-        console.log('📋 [History Detail] Fetching workout:', params.id);
         const { data, error: err } = await getWorkoutDetail(params.id);
         if (err || !data) {
           console.error('❌ [History Detail] Workout error:', err);
           setError("Failed to load workout");
         } else {
-          console.log('✅ [History Detail] Workout loaded:', data.name);
           setWorkout(data);
         }
       } else if (type === "practice") {
@@ -261,6 +616,183 @@ export default function HistoryDetail() {
     }
   };
 
+  // For practice and game screens, show animated card background header
+  if (params.type === "practice" || params.type === "game") {
+    // Use data if available, otherwise use params for initial render
+    const mode = (params.type === "practice" ? practice?.mode : game?.mode) || params.mode || "basketball";
+    const cardBg = getPracticeCardBackground(mode);
+    const itemTitle = params.type === "practice" 
+      ? (practice?.title || "Practice")
+      : (game?.title || "Game");
+    const itemDate = params.type === "practice"
+      ? (practice ? formatFullDate(practice.practiced_at) : formatFullDate(params.when))
+      : (game ? formatFullDate(game.played_at) : formatFullDate(params.when));
+
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.bg0 }}>
+        {/* Animated Card Background Header - animates from card position to top */}
+        <Animated.View style={[cardAnimatedStyle, { overflow: "hidden" }]}>
+          {/* Layer 1: Base gradient background */}
+          <LinearGradient
+            colors={cardBg.gradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          
+          {/* Layer 2: Dark overlay at bottom for depth */}
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.18)"]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          
+          {/* Layer 3: Artwork - top-right, embedded feel */}
+          <View style={styles.cardBackgroundImages}>
+            {cardBg.images.map((img, idx) => {
+              // Map style names to actual style objects
+              const styleMap: Record<string, any> = {
+                backgroundHoop: styles.backgroundHoop,
+                backgroundBall1: styles.backgroundBall1,
+                backgroundFootballField: styles.backgroundFootballField,
+                backgroundFootball: styles.backgroundFootball,
+                backgroundSoccerGoal: styles.backgroundSoccerGoal,
+                backgroundTennisRacket: styles.backgroundTennisRacket,
+                backgroundTennisBall: styles.backgroundTennisBall,
+                backgroundHockeyNet: styles.backgroundHockeyNet,
+                backgroundBaseballBat: styles.backgroundBaseballBat,
+                backgroundBaseball: styles.backgroundBaseball,
+                backgroundDumbbell: styles.backgroundDumbbell,
+              };
+              return (
+                <Image
+                  key={idx}
+                  source={img.source}
+                  style={styleMap[img.style] || {}}
+                  resizeMode="cover"
+                />
+              );
+            })}
+            {/* Right-side fade mask for artwork */}
+            <LinearGradient
+              colors={["transparent", cardBg.fadeColor]}
+              start={{ x: 0.6, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+          </View>
+          
+          {/* Layer 4: Top sheen highlight (premium coating effect) */}
+          <LinearGradient
+            colors={["rgba(255,255,255,0.10)", "transparent"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 0.4 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          
+          {/* Back button - positioned absolutely over the background */}
+          <Pressable 
+            onPress={() => router.back()} 
+            hitSlop={10} 
+            style={[styles.backBtn, { 
+              position: "absolute",
+              top: insets.top + 16,
+              left: 16,
+              zIndex: 1001,
+            }]}
+          >
+            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          </Pressable>
+          
+          {/* Text Overlay - Bottom Left */}
+          <View style={styles.logTextOverlay}>
+            <View style={styles.logTextContainer}>
+              <Text style={styles.logTitle}>{itemTitle}</Text>
+              <Text style={styles.logSubtitle}>{itemDate}</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Content - Slides up from bottom */}
+        <Animated.View style={[styles.contentContainer, formAnimatedStyle]}>
+          {loading ? (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 40 }}>
+              <ActivityIndicator size="large" color={theme.color.brand} />
+            </View>
+          ) : error ? (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16, paddingTop: 40 }}>
+              <Text style={{ color: "#EF4444", fontSize: 16 }}>{error}</Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.contentSection}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Practice: Drills and Notes */}
+              {params.type === "practice" && practice && (
+                <>
+                  {practice.drill && (
+                    <View style={styles.inputSection}>
+                      <View style={styles.labelOverlay}>
+                        <Text style={styles.labelText}>Drills</Text>
+                      </View>
+                      <View style={styles.textBox}>
+                        <Text style={styles.textBoxText}>{practice.drill}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {practice.notes && (
+                    <View style={styles.inputSection}>
+                      <View style={styles.labelOverlay}>
+                        <Text style={styles.labelText}>Notes</Text>
+                      </View>
+                      <View style={styles.textBox}>
+                        <Text style={styles.textBoxText}>{practice.notes}</Text>
+                      </View>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* Game: Stats and Notes */}
+              {params.type === "game" && game && (
+                <>
+                  {game.stats && (
+                    <View style={styles.inputSection}>
+                      <View style={styles.labelOverlay}>
+                        <Text style={styles.labelText}>Stats</Text>
+                      </View>
+                      <View style={styles.textBox}>
+                        <Text style={styles.textBoxText}>{formatStatsForDisplay(game.stats)}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {game.notes && (
+                    <View style={styles.inputSection}>
+                      <View style={styles.labelOverlay}>
+                        <Text style={styles.labelText}>Notes</Text>
+                      </View>
+                      <View style={styles.textBox}>
+                        <Text style={styles.textBoxText}>{game.notes}</Text>
+                      </View>
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+          )}
+        </Animated.View>
+      </View>
+    );
+  }
+
+  // For workout and game screens, use original layout
   return (
     <View
       style={{
@@ -281,26 +813,10 @@ export default function HistoryDetail() {
             }
           }}
           hitSlop={10}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "#0f1317",
-            borderWidth: 1,
-            borderColor: "#1a222b",
-          }}
         >
           <Ionicons name="chevron-back" size={20} color={theme.color.text} />
         </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.titleLine}>{getTitle()}</Text>
-          <Text style={styles.subtitle}>{getSubtitle()}</Text>
-        </View>
-        {params.mode && (
-          <View style={styles.sportPill}>{iconFor[params.mode] || iconFor.workout}</View>
-        )}
+        <View style={{ flex: 1 }} />
         {/* Copy button for creator workouts */}
         {params.fromCreator === "true" && workout && canCopy && (
           <Pressable
@@ -323,212 +839,46 @@ export default function HistoryDetail() {
         )}
       </View>
 
-      <View style={styles.rule} />
-
       {loading ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color={theme.color.brand} />
+        <View style={styles.loadingContainer}>
+          <Animated.View style={starAnimatedStyle}>
+            <Image
+              source={require("../../../assets/star.png")}
+              style={styles.loadingStar}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
       ) : error ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16 }}>
           <Text style={{ color: "#EF4444", fontSize: 16 }}>{error}</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <ScrollView 
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 24, paddingBottom: 100, gap: 16 }}
+        >
           {(params.type === "workout" || (params.fromCreator === "true" && workout)) && workout && (
             <>
+              {/* Centered Heading */}
+              <View style={styles.headingSection}>
+                <Text style={styles.workoutName}>{workout.name || getTitle()}</Text>
+                <Text style={styles.workoutDate}>
+                  {workout.performedAt ? formatFullDate(workout.performedAt) : getSubtitle()}
+                </Text>
+              </View>
+
+              {/* Exercise Boxes */}
               {workout.exercises.map((exercise, idx) => (
-                <Card key={exercise.id || idx} style={{ padding: 16 }}>
-                  <Text style={styles.exerciseName}>{exercise.name}</Text>
-                  <View style={styles.rule} />
-                  {exercise.sets.map((set, setIdx) => (
-                    <View key={set.id || setIdx} style={styles.setRow}>
-                      <Text style={styles.setNumber}>Set {set.setIndex || setIdx + 1}</Text>
-                      <View style={styles.setData}>
-                        {exercise.type === "exercise" && (
-                          <>
-                            {set.reps != null && (
-                              <Text style={styles.setValue}>{set.reps} reps</Text>
-                            )}
-                            {set.weight != null && (
-                              <Text style={styles.setValue}>
-                                {set.weight} {unitsWeight === 'kg' ? 'kg' : 'lbs'}
-                              </Text>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "shooting" && (
-                          <>
-                            {/* Basketball shooting: attempted, made, percentage */}
-                            {/* Soccer/Hockey shooting: reps, distance */}
-                            {workout.mode === "basketball" ? (
-                              <>
-                                {set.attempted != null && (
-                                  <Text style={styles.setValue}>{set.attempted} attempted</Text>
-                                )}
-                                {set.made != null && (
-                                  <Text style={styles.setValue}>{set.made} made</Text>
-                                )}
-                                {set.attempted != null && set.made != null && (
-                                  <Text style={styles.setValue}>
-                                    {Math.round((set.made / set.attempted) * 100)}%
-                                  </Text>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                {set.reps != null && (
-                                  <Text style={styles.setValue}>{set.reps} reps</Text>
-                                )}
-                                {set.distance != null && (
-                                  <Text style={styles.setValue}>{set.distance} {workout.mode === "soccer" || workout.mode === "hockey" ? "yds" : ""}</Text>
-                                )}
-                              </>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "drill" && (
-                          <>
-                            {set.reps != null && (
-                              <Text style={styles.setValue}>{set.reps} reps</Text>
-                            )}
-                            {set.timeMin != null && (
-                              <Text style={styles.setValue}>{set.timeMin} min</Text>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "sprints" && (
-                          <>
-                            {set.reps != null && (
-                              <Text style={styles.setValue}>{set.reps} reps</Text>
-                            )}
-                            {set.distance != null && (
-                              <Text style={styles.setValue}>{set.distance} yds</Text>
-                            )}
-                            {set.avgTimeSec != null && (
-                              <Text style={styles.setValue}>{set.avgTimeSec} sec</Text>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "hitting" && (
-                          <>
-                            {set.reps != null && (
-                              <Text style={styles.setValue}>{set.reps} reps</Text>
-                            )}
-                            {set.distance != null && (
-                              <Text style={styles.setValue}>{set.distance} ft</Text>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "fielding" && (
-                          <>
-                            {set.reps != null && (
-                              <Text style={styles.setValue}>{set.reps} reps</Text>
-                            )}
-                            {set.distance != null && (
-                              <Text style={styles.setValue}>{set.distance} ft</Text>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "rally" && (
-                          <>
-                            {set.points != null && (
-                              <Text style={styles.setValue}>{set.points} points</Text>
-                            )}
-                            {set.timeMin != null && (
-                              <Text style={styles.setValue}>{set.timeMin} min</Text>
-                            )}
-                          </>
-                        )}
-                        {false && exercise.type === "running" && (
-                          <>
-                            {set.distance != null && (
-                              <Text style={styles.setValue}>{set.distance} mi</Text>
-                            )}
-                            {set.timeMin != null && (
-                              <Text style={styles.setValue}>{set.timeMin} min</Text>
-                            )}
-                          </>
-                        )}
-                        {exercise.type === "cardio" && (
-                          <>
-                            {set.distance != null && (
-                              <Text style={styles.setValue}>{set.distance} mi</Text>
-                            )}
-                            {set.timeMin != null && (
-                              <Text style={styles.setValue}>{set.timeMin} min</Text>
-                            )}
-                          </>
-                        )}
-                      </View>
-                    </View>
-                  ))}
-                </Card>
+                <ExerciseBox
+                  key={exercise.id || idx}
+                  exercise={exercise}
+                  mode={workout.mode}
+                  unitsWeight={unitsWeight}
+                />
               ))}
             </>
           )}
 
-          {params.type === "practice" && practice && (
-            <>
-              <Card style={{ padding: 16 }}>
-                <Text style={styles.sectionTitle}>Date</Text>
-                <Text style={styles.sectionValue}>{formatFullDate(practice.practiced_at)}</Text>
-              </Card>
-              <Card style={{ padding: 16 }}>
-                <Text style={styles.sectionTitle}>Mode</Text>
-                <Text style={styles.sectionValue}>{practice.mode}</Text>
-              </Card>
-              {practice.drill && (
-                <Card style={{ padding: 16 }}>
-                  <Text style={styles.sectionTitle}>Drills</Text>
-                  <Text style={styles.sectionValue}>{practice.drill}</Text>
-                </Card>
-              )}
-              {practice.notes && (
-                <Card style={{ padding: 16 }}>
-                  <Text style={styles.sectionTitle}>Notes</Text>
-                  <Text style={styles.sectionValue}>{practice.notes}</Text>
-                </Card>
-              )}
-            </>
-          )}
-
-          {params.type === "game" && game && (
-            <>
-              <Card style={{ padding: 16 }}>
-                <Text style={styles.sectionTitle}>Date</Text>
-                <Text style={styles.sectionValue}>{formatFullDate(game.played_at)}</Text>
-              </Card>
-              {game.title && (
-                <Card style={{ padding: 16 }}>
-                  <Text style={styles.sectionTitle}>Game Title</Text>
-                  <Text style={styles.sectionValue}>{game.title}</Text>
-                </Card>
-              )}
-              <Card style={{ padding: 16 }}>
-                <Text style={styles.sectionTitle}>Result</Text>
-                <Text style={[styles.sectionValue, { textTransform: "capitalize" }]}>
-                  {game.result}
-                </Text>
-              </Card>
-              <Card style={{ padding: 16 }}>
-                <Text style={styles.sectionTitle}>Mode</Text>
-                <Text style={styles.sectionValue}>{game.mode}</Text>
-              </Card>
-              {game.stats && (
-                <Card style={{ padding: 16 }}>
-                  <Text style={styles.sectionTitle}>Stats</Text>
-                  <Text style={styles.sectionValue}>{game.stats}</Text>
-                </Card>
-              )}
-              {game.notes && (
-                <Card style={{ padding: 16 }}>
-                  <Text style={styles.sectionTitle}>Notes</Text>
-                  <Text style={styles.sectionValue}>{game.notes}</Text>
-                </Card>
-              )}
-            </>
-          )}
         </ScrollView>
       )}
     </View>
@@ -562,19 +912,111 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e7e4b3",
   },
-  exerciseName: {
+  // Centered heading styles
+  headingSection: {
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  workoutName: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: theme.color.text,
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  workoutDate: {
+    fontSize: 14,
+    color: theme.color.dim,
+    textAlign: "center",
+  },
+  // Exercise box styles (3D)
+  exerciseBoxContainer: {
+    marginBottom: 20,
+  },
+  exerciseBox: {
+    backgroundColor: theme.color.bg,
+    borderRadius: 16,
+    borderWidth: 2,
+    overflow: "hidden",
+    position: "relative",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.4,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 8 },
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  exerciseBoxContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    position: "relative",
+  },
+  exerciseBoxLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  exerciseBoxName: {
     color: theme.color.text,
     fontSize: 18,
     fontWeight: "700",
-    marginBottom: 8,
+  },
+  exerciseBoxSets: {
+    color: theme.color.dim,
+    fontSize: 14,
+  },
+  exerciseBoxRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginLeft: 16,
+  },
+  exerciseBoxArrow: {
+    // Arrow is now inline with icon
+  },
+  // Sets container (collapsible)
+  setsContainer: {
+    overflow: "visible",
+    paddingTop: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    borderRadius: 12,
+    marginTop: 8,
   },
   setRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.1)",
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+    gap: 12,
+    minHeight: 50,
+  },
+  setRowLabel: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 12,
+    minWidth: 50,
+  },
+  setRowValue: {
+    color: theme.color.text,
+    fontSize: 15,
+    fontWeight: "600",
+    flex: 1,
+    textAlign: "right",
+    lineHeight: 20,
+  },
+  // Legacy styles (kept for practice/game screens)
+  exerciseName: {
+    color: theme.color.text,
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
   },
   setNumber: {
     color: theme.color.dim,
@@ -605,5 +1047,199 @@ const styles = StyleSheet.create({
     color: theme.color.text,
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Practice detail screen styles (matching add-practice screen)
+  contentContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.bg0,
+    marginTop: IMAGE_HEIGHT,
+  },
+  backBtn: {
+    // No box styling - matches onboarding screens
+  },
+  logTextOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 22,
+    paddingBottom: 24,
+    justifyContent: "flex-end",
+    alignItems: "flex-start",
+  },
+  logTextContainer: {
+    maxWidth: "70%",
+  },
+  logTitle: {
+    fontSize: 42,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -1,
+    textShadowColor: "rgba(0, 0, 0, 0.7)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+    marginBottom: 6,
+    transform: [{ skewX: "-5deg" }], // Slight italic-like slant
+  },
+  logSubtitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.7)",
+    letterSpacing: 0.3,
+    textShadowColor: "rgba(0, 0, 0, 0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  contentSection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 40,
+    gap: 20,
+  },
+  inputSection: {
+    position: "relative",
+    marginTop: 12,
+  },
+  labelOverlay: {
+    position: "absolute",
+    top: -8,
+    left: 16,
+    zIndex: 10,
+    backgroundColor: "#74C69D", // Middle green shade (mint green)
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  labelText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0B0E10", // Dark text on mint green
+    letterSpacing: 0.3,
+  },
+  textBox: {
+    fontSize: 16,
+    color: theme.colors.textHi,
+    backgroundColor: "#1A1F28", // Dark background that complements the screen
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingTop: 24, // Extra top padding for label overlap
+    minHeight: 120,
+  },
+  textBoxText: {
+    fontSize: 16,
+    color: theme.colors.textHi,
+    lineHeight: 24,
+  },
+  // Card background images container
+  cardBackgroundImages: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // Background image styles (matching history cards)
+  backgroundHoop: {
+    position: "absolute",
+    right: -30,
+    top: -20,
+    width: 240,
+    height: 240,
+    opacity: 0.35,
+  },
+  backgroundBall1: {
+    position: "absolute",
+    right: 128,
+    bottom: 39,
+    width: 86,
+    height: 86,
+    opacity: 0.30,
+  },
+  backgroundHockeyNet: {
+    position: "absolute",
+    right: -30,
+    top: -30,
+    width: 240,
+    height: 240,
+    opacity: 0.35,
+  },
+  backgroundFootballField: {
+    position: "absolute",
+    right: 76,
+    top: 13,
+    width: 152,
+    height: 152,
+    opacity: 0.45,
+    transform: [{ scaleX: -1 }, { translateX: -76 }],
+  },
+  backgroundFootball: {
+    position: "absolute",
+    right: 134,
+    bottom: 33,
+    width: 62,
+    height: 62,
+    opacity: 0.30,
+    transform: [{ scaleX: -1 }],
+  },
+  backgroundSoccerGoal: {
+    position: "absolute",
+    right: -30,
+    top: -20,
+    width: 240,
+    height: 240,
+    opacity: 0.35,
+  },
+  backgroundTennisRacket: {
+    position: "absolute",
+    right: -30,
+    top: -20,
+    width: 240,
+    height: 240,
+    opacity: 0.35,
+  },
+  backgroundTennisBall: {
+    position: "absolute",
+    right: 4,
+    bottom: 39,
+    width: 86,
+    height: 86,
+    opacity: 0.30,
+  },
+  backgroundBaseballBat: {
+    position: "absolute",
+    right: -14,
+    top: 2,
+    width: 192,
+    height: 192,
+    opacity: 0.35,
+  },
+  backgroundBaseball: {
+    position: "absolute",
+    right: 72,
+    bottom: 39,
+    width: 60,
+    height: 60,
+    opacity: 0.30,
+  },
+  backgroundDumbbell: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 208,
+    height: 208,
+    opacity: 0.30,
+    transform: [{ translateX: -25 }, { translateY: -83 }],
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingStar: {
+    width: 82,
+    height: 82,
   },
 });

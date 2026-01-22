@@ -243,14 +243,10 @@ export async function finalizeWorkout(workoutId: string): Promise<{ error: any }
  */
 export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: WorkoutDetails | null; error: any }> {
   try {
-    console.log(`💪 [Workout Details] ===== START Fetching workout details: ${workoutId} =====`);
-    
     // Get current user for debugging
     const { data: { user: currentUser } } = await supabase.auth.getUser();
-    console.log(`💪 [Workout Details] Current user: ${currentUser?.id || 'not authenticated'}`);
     
     // Fetch workout
-    console.log(`💪 [Workout Details] Querying workouts table for workout: ${workoutId}`);
     const { data: workout, error: workoutError } = await supabase
       .from('workouts')
       .select('id, name, mode, performed_at, user_id')
@@ -263,11 +259,7 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
       return { data: null, error: workoutError || { message: 'Workout not found' } };
     }
 
-    console.log(`✅ [Workout Details] Workout found:`, { id: workout.id, name: workout.name, user_id: workout.user_id });
-    console.log(`💪 [Workout Details] Is viewing own workout: ${currentUser?.id === workout.user_id}`);
-
     // Fetch exercises
-    console.log(`💪 [Workout Details] Querying workout_exercises for workout: ${workoutId}`);
     const { data: exercises, error: exercisesError } = await supabase
       .from('workout_exercises')
       .select('id, name, exercise_type')
@@ -281,10 +273,7 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
       return { data: null, error: exercisesError };
     }
 
-    console.log(`✅ [Workout Details] Found ${exercises?.length || 0} exercises`);
-
     // Fetch sets for each exercise
-    console.log(`💪 [Workout Details] Fetching sets for ${exercises?.length || 0} exercises`);
     const exercisesWithSets = await Promise.all(
       (exercises || []).map(async (exercise) => {
         const { data: sets, error: setsError } = await supabase
@@ -295,8 +284,6 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
 
         if (setsError) {
           console.error(`❌ [Workout Details] Sets query error for exercise ${exercise.id}:`, setsError);
-        } else {
-          console.log(`✅ [Workout Details] Found ${sets?.length || 0} sets for exercise ${exercise.id} (${exercise.name})`);
         }
 
         return {
@@ -338,7 +325,6 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
       error: null,
     };
 
-    console.log(`✅ [Workout Details] ===== END Successfully loaded workout with ${exercisesWithSets.length} exercises =====`);
     return result;
   } catch (error: any) {
     console.error(`❌ [Workout Details] Exception:`, error);

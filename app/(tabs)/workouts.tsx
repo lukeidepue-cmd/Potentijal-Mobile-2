@@ -14,12 +14,14 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
+import Svg, { Path } from "react-native-svg";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -27,6 +29,9 @@ import Animated, {
   withTiming,
   runOnJS,
 } from "react-native-reanimated";
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 import { useMode } from "../../providers/ModeContext";
 import { theme } from "../../constants/theme";
 import { router } from "expo-router";
@@ -34,6 +39,8 @@ import { saveCompleteWorkout, getWorkoutWithDetails } from "../../lib/api/workou
 import { useAuth } from "../../providers/AuthProvider";
 import { useSettings } from "../../providers/SettingsContext";
 import { mapModeKeyToSportMode, mapItemKindToExerciseType } from "../../lib/types";
+import { ErrorToast } from "../../components/ErrorToast";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /* ---------------- Fonts (match Home pages) ---------------- */
 import {
@@ -202,8 +209,27 @@ export default function WorkoutsScreen() {
 
   /* ---------- top meta ---------- */
   const [isCreating, setIsCreating] = useState(false);
+  
+  // Animation for Start Workout button
+  const startWorkoutScale = useSharedValue(1);
+  const startWorkoutAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: startWorkoutScale.value }],
+  }));
   const [workoutName, setWorkoutName] = useState("");
+  const [nameInputFocused, setNameInputFocused] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const nameInputRef = useRef<TextInput>(null);
+  
+  // Animation for name input focus
+  const nameInputScale = useSharedValue(1);
+  
+  // Reset animation when button becomes visible again
+  useEffect(() => {
+    if (!isCreating) {
+      startWorkoutScale.value = 1;
+    }
+  }, [isCreating]);
 
   // Animation values for empty state transition
   const nameInputTranslateY = useSharedValue(-100);
@@ -213,8 +239,15 @@ export default function WorkoutsScreen() {
 
   // Animated styles
   const nameInputAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: nameInputTranslateY.value }],
+    transform: [
+      { translateY: nameInputTranslateY.value },
+      { scale: nameInputScale.value },
+    ],
     opacity: nameInputOpacity.value,
+  }));
+
+  const nameInputPillAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: nameInputScale.value }],
   }));
 
   const actionButtonsAnimatedStyle = useAnimatedStyle(() => ({
@@ -254,7 +287,6 @@ export default function WorkoutsScreen() {
   useEffect(() => {
     const loadWorkout = async () => {
       if (params.workoutId && user) {
-        console.log(`💪 [Workouts] Loading workout from copy: ${params.workoutId}`);
         const { data: workout, error } = await getWorkoutWithDetails(params.workoutId);
         
         if (error || !workout) {
@@ -262,8 +294,6 @@ export default function WorkoutsScreen() {
           Alert.alert("Error", "Failed to load copied workout");
           return;
         }
-
-        console.log(`✅ [Workouts] Loaded workout: ${workout.name} with ${workout.exercises.length} exercises`);
         
         // Map database mode to frontend mode
         const modeMapping: Record<string, ModeKey> = {
@@ -351,8 +381,6 @@ export default function WorkoutsScreen() {
             
             // Start the workout
             setIsCreating(true);
-            
-            console.log(`✅ [Workouts] Workout loaded and started with ${convertedItems.length} exercises`);
           } else {
             console.error(`❌ [Workouts] No setter found for mode: ${currentMode}`);
           }
@@ -362,19 +390,6 @@ export default function WorkoutsScreen() {
     
     loadWorkout();
   }, [params.workoutId, user, mode, setMode]);
-
-  // Reset workout state when screen comes into focus (after finishing workout)
-  // But don't reset if we're loading a workout from params
-  useFocusEffect(
-    React.useCallback(() => {
-      // Only reset if we're not loading a workout from params
-      if (!params.workoutId) {
-        setIsCreating(false);
-        setWorkoutName("");
-        setList([]);
-      }
-    }, [params.workoutId])
-  );
 
   /* ---------- per-mode drafts ---------- */
   const [liftDraft, setLiftDraft] = useState<AnyItem[]>([]);
@@ -397,11 +412,134 @@ export default function WorkoutsScreen() {
 
   const [list, setList] = drafts[m];
 
+  // Persist workout state to AsyncStorage
+  const WORKOUT_STORAGE_KEY = '@workout_draft';
+  
+  // Clear workout state function (called when workout is saved)
+  const clearWorkoutState = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(WORKOUT_STORAGE_KEY);
+      console.log('✅ [Workouts] Cleared workout state from AsyncStorage');
+    } catch (error) {
+      console.error('❌ [Workouts] Error clearing workout state:', error);
+    }
+  }, []);
+
+  // Save workout state to AsyncStorage whenever it changes
+  useEffect(() => {
+    if (isCreating && user) {
+      const saveWorkoutState = async () => {
+        try {
+          const stateToSave = {
+            isCreating,
+            workoutName,
+            mode: m,
+            drafts: {
+              lifting: liftDraft,
+              basketball: bbDraft,
+              football: fbDraft,
+              baseball: bsDraft,
+              soccer: scDraft,
+              hockey: hkDraft,
+              tennis: tnDraft,
+            },
+          };
+          await AsyncStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(stateToSave));
+          console.log('✅ [Workouts] Saved workout state to AsyncStorage');
+        } catch (error) {
+          console.error('❌ [Workouts] Error saving workout state:', error);
+        }
+      };
+      saveWorkoutState();
+    }
+  }, [isCreating, workoutName, m, liftDraft, bbDraft, fbDraft, bsDraft, scDraft, hkDraft, tnDraft, user]);
+
+  // Load workout state from AsyncStorage on mount (only if not loading from params)
+  useEffect(() => {
+    if (!params.workoutId && user) {
+      const loadWorkoutState = async () => {
+        try {
+          const savedState = await AsyncStorage.getItem(WORKOUT_STORAGE_KEY);
+          if (savedState) {
+            const state = JSON.parse(savedState);
+            
+            // Only restore if we're in the same mode
+            if (state.mode === m && state.isCreating) {
+              setIsCreating(state.isCreating);
+              setWorkoutName(state.workoutName || "");
+              
+              // Restore the draft for the current mode
+              const draftSetters: Record<ModeKey, React.Dispatch<React.SetStateAction<AnyItem[]>>> = {
+                lifting: setLiftDraft,
+                basketball: setBbDraft,
+                football: setFbDraft,
+                baseball: setBsDraft,
+                soccer: setScDraft,
+                hockey: setHkDraft,
+                tennis: setTnDraft,
+              };
+              
+              const setDraft = draftSetters[m];
+              if (setDraft && state.drafts && state.drafts[m]) {
+                setDraft(state.drafts[m]);
+                console.log('✅ [Workouts] Restored workout state from AsyncStorage');
+              }
+            }
+          } else {
+            // No saved state - reset to "Start Workout" screen
+            setIsCreating(false);
+            setWorkoutName("");
+            // Clear all drafts
+            setLiftDraft([]);
+            setBbDraft([]);
+            setFbDraft([]);
+            setBsDraft([]);
+            setScDraft([]);
+            setHkDraft([]);
+            setTnDraft([]);
+          }
+        } catch (error) {
+          console.error('❌ [Workouts] Error loading workout state:', error);
+        }
+      };
+      loadWorkoutState();
+    }
+  }, [params.workoutId, user, m]); // Only run on mount or when mode changes
+
+  // Check AsyncStorage when screen comes into focus - reset if workout was saved
+  useFocusEffect(
+    useCallback(() => {
+      if (!params.workoutId && user) {
+        const checkAndReset = async () => {
+          try {
+            const savedState = await AsyncStorage.getItem(WORKOUT_STORAGE_KEY);
+            // If no saved state exists (workout was saved and cleared), reset local state
+            if (!savedState && isCreating) {
+              setIsCreating(false);
+              setWorkoutName("");
+              // Clear all drafts
+              setLiftDraft([]);
+              setBbDraft([]);
+              setFbDraft([]);
+              setBsDraft([]);
+              setScDraft([]);
+              setHkDraft([]);
+              setTnDraft([]);
+              console.log('✅ [Workouts] Reset workout state - workout was saved');
+            }
+          } catch (error) {
+            console.error('❌ [Workouts] Error checking workout state:', error);
+          }
+        };
+        checkAndReset();
+      }
+    }, [params.workoutId, user, isCreating])
+  );
+
   // Load workout if workoutId is provided (e.g., from copying a creator workout)
   useEffect(() => {
     const loadWorkout = async () => {
       if (params.workoutId && user) {
-        console.log(`💪 [Workouts] Loading workout from copy: ${params.workoutId}`);
         const { data: workout, error } = await getWorkoutWithDetails(params.workoutId);
         
         if (error || !workout) {
@@ -409,8 +547,6 @@ export default function WorkoutsScreen() {
           Alert.alert("Error", "Failed to load copied workout");
           return;
         }
-
-        console.log(`✅ [Workouts] Loaded workout: ${workout.name} with ${workout.exercises.length} exercises`);
         
         // Map database mode to frontend mode
         const modeMapping: Record<string, ModeKey> = {
@@ -496,8 +632,6 @@ export default function WorkoutsScreen() {
             
             // Start the workout
             setIsCreating(true);
-            
-            console.log(`✅ [Workouts] Workout loaded and started with ${convertedItems.length} exercises`);
           } else {
             console.error(`❌ [Workouts] No setter found for mode: ${frontendMode}`);
           }
@@ -542,11 +676,24 @@ export default function WorkoutsScreen() {
 
   const saveWorkout = async () => {
     if (!workoutName.trim()) {
-      Alert.alert("Name your workout", "Please give your workout a name.");
+      setErrorMessage("Please give your workout a name.");
+      setShowError(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
     if (list.length === 0) {
-      Alert.alert("Add something first", "Add at least one square.");
+      setErrorMessage("Add at least one exercise first.");
+      setShowError(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    
+    // Check if all exercises have names
+    const unnamedExercises = list.filter(item => !item.name || !item.name.trim());
+    if (unnamedExercises.length > 0) {
+      setErrorMessage("Please name all exercises.");
+      setShowError(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
@@ -686,6 +833,11 @@ export default function WorkoutsScreen() {
       behavior={Platform.select({ ios: "padding", android: undefined })}
       style={{ flex: 1 }}
     >
+      <ErrorToast
+        message={errorMessage}
+        visible={showError}
+        onHide={() => setShowError(false)}
+      />
       {/* Layer A: Base gradient */}
       <LinearGradient
         colors={["#0B1513", "#0F2A22", "#0F3B2E", "#070B0A"]}
@@ -723,7 +875,7 @@ export default function WorkoutsScreen() {
             {/* Workout name input - floating pill with animation */}
             {isCreating && (
               <Animated.View style={[styles.nameInputContainer, nameInputAnimatedStyle]}>
-                <View style={styles.nameInputPill}>
+                <Animated.View style={[styles.nameInputPill, nameInputPillAnimatedStyle]}>
                   <Ionicons name="create-outline" size={18} color="rgba(255,255,255,0.6)" style={{ marginRight: 8 }} />
                   <TextInput
                     ref={nameInputRef}
@@ -741,8 +893,17 @@ export default function WorkoutsScreen() {
                     blurOnSubmit={false}
                     onSubmitEditing={() => {}}
                     editable={true}
+                    onFocus={() => {
+                      setNameInputFocused(true);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      nameInputScale.value = withTiming(1.02, { duration: 250 });
+                    }}
+                    onBlur={() => {
+                      setNameInputFocused(false);
+                      nameInputScale.value = withTiming(1, { duration: 250 });
+                    }}
                   />
-                </View>
+                </Animated.View>
               </Animated.View>
             )}
           </View>
@@ -878,7 +1039,7 @@ export default function WorkoutsScreen() {
                     }}
                   />
                   <ActionButton
-                    icon={<MaterialCommunityIcons name="tennisball" size={20} color="#FFFFFF" />}
+                    icon={<MaterialCommunityIcons name="grid" size={20} color="#FFFFFF" />}
                     label="Rally"
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -905,24 +1066,31 @@ export default function WorkoutsScreen() {
         {/* Empty state with circles and hero button */}
         {!isCreating && (
           <View style={styles.emptyStateContainer}>
-            {/* Mascot circles */}
+            {/* Mascot star */}
             <View style={styles.mascotCircles}>
-              <View style={styles.mascotCircle1} />
-              <View style={styles.mascotCircle2} />
-              <View style={styles.mascotCircle3} />
+              <Image 
+                source={require("../../assets/star.png")} 
+                style={styles.starImage}
+                resizeMode="contain"
+              />
             </View>
             
             {/* Hero button */}
-            <Pressable
+            <AnimatedPressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                // Reset scale before state change to ensure animation works next time
+                startWorkoutScale.value = 1;
                 setIsCreating(true);
                 setWorkoutName("");
               }}
-              style={({ pressed }) => [
-                styles.startWorkoutButton,
-                pressed && styles.startWorkoutButtonPressed,
-              ]}
+              onPressIn={() => {
+                startWorkoutScale.value = withSpring(0.88, { damping: 8, stiffness: 100 });
+              }}
+              onPressOut={() => {
+                startWorkoutScale.value = withSpring(1, { damping: 8, stiffness: 100 });
+              }}
+              style={[styles.startWorkoutButton, startWorkoutAnimatedStyle]}
             >
               <LinearGradient
                 colors={[theme.colors.primary600, theme.colors.primary500]}
@@ -932,7 +1100,7 @@ export default function WorkoutsScreen() {
               >
                 <Text style={styles.startWorkoutText}>Start Workout</Text>
               </LinearGradient>
-            </Pressable>
+            </AnimatedPressable>
           </View>
         )}
 
@@ -1048,11 +1216,15 @@ function FullWidthCard({
     return f;
   });
 
-  // Get the type label (Exercise, Shooting, Drill)
+  // Get the type label (Exercise, Shooting, Drill, Sprints, Hitting, Fielding, Rally)
   const getTypeLabel = (kind: ItemKind): string => {
     if (kind === "exercise") return "Exercise";
     if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") return "Shooting";
-    if (kind.endsWith("_drill") || kind === "fb_sprint" || kind === "bs_hit" || kind === "bs_field" || kind === "tn_rally") return "Drill";
+    if (kind === "fb_sprint") return "Sprints";
+    if (kind === "bs_hit") return "Hitting";
+    if (kind === "bs_field") return "Fielding";
+    if (kind === "tn_rally") return "Rally";
+    if (kind.endsWith("_drill")) return "Drill";
     return "Exercise";
   };
 
@@ -1066,6 +1238,12 @@ function FullWidthCard({
     } else if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") {
       // Light green for shooting
       return ["rgba(100, 200, 120, 0.3)", "rgba(100, 200, 120, 0.1)", "transparent"];
+    } else if (kind === "fb_sprint" || kind === "bs_field" || kind === "tn_rally") {
+      // Green for sprints, fielding, and rally
+      return ["rgba(100, 200, 120, 0.3)", "rgba(100, 200, 120, 0.1)", "transparent"];
+    } else if (kind === "bs_hit") {
+      // Purple for hitting
+      return ["rgba(180, 140, 255, 0.3)", "rgba(180, 140, 255, 0.1)", "transparent"];
     } else {
       // Light purple for drills
       return ["rgba(180, 140, 255, 0.3)", "rgba(180, 140, 255, 0.1)", "transparent"];
@@ -1406,43 +1584,22 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   mascotCircles: {
-    width: 120,
-    height: 120,
+    width: 262,
+    height: 262,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
-    marginBottom: 40,
+    marginBottom: -32,
+    marginTop: -176,
   },
-  mascotCircle1: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(23, 214, 127, 0.2)",
-    position: "absolute",
-    top: 0,
-    left: 0,
-  },
-  mascotCircle2: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "rgba(23, 214, 127, 0.3)",
-    position: "absolute",
-    top: 15,
-    left: 15,
-  },
-  mascotCircle3: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(23, 214, 127, 0.4)",
-    position: "absolute",
-    top: 30,
-    left: 30,
+  starImage: {
+    width: 262,
+    height: 262,
   },
   startWorkoutButton: {
     borderRadius: 20,
     overflow: "hidden",
+    marginTop: -4,
     ...Platform.select({
       ios: {
         shadowColor: theme.colors.primary600,

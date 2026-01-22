@@ -1,13 +1,21 @@
 // app/(tabs)/(home)/index.tsx
-import React, { useState } from "react";
-import { SafeAreaView, View, Text, Pressable, Modal, ScrollView, StyleSheet } from "react-native";
+import React, { useState, useCallback } from "react";
+import { SafeAreaView, View, Text, Pressable, Modal, ScrollView, StyleSheet, Image } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets, SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useMode } from "../../../providers/ModeContext";
 import { theme } from "../../../constants/theme";
+import { useAvailableModes } from "../../../hooks/useAvailableModes";
 import AppHeader from "../../../components/AppHeader";
 import PrimaryButton from "../../../components/Button";
 import ProgressBar from "../../../components/ProgressBar";
@@ -86,22 +94,108 @@ const ALL_MODES: { key: ModeKey; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function HomeIndex() {
-  const { mode, setMode } = useMode();
+  const { mode, setMode, modeLoading } = useMode();
   const { canUseAITrainer } = useFeatures();
   const { user } = useAuth();
   const [showChooser, setShowChooser] = useState(false);
   const [showAITrainer, setShowAITrainer] = useState(false);
+  const { availableModes, refresh: refreshAvailableModes } = useAvailableModes();
+
+  // Refresh available modes when screen comes into focus (e.g., after adding a sport)
+  useFocusEffect(
+    useCallback(() => {
+      refreshAvailableModes();
+    }, [refreshAvailableModes])
+  );
+  
+  // Convert available modes to format with React node icons
+  const availableModesWithIcons = availableModes.map((m) => {
+    const iconMap: Record<string, React.ReactNode> = {
+      "lifting": <MaterialCommunityIcons name="dumbbell" size={18} color={theme.colors.textHi} />,
+      "basketball": <Ionicons name="basketball-outline" size={18} color={theme.colors.textHi} />,
+      "football": <Ionicons name="american-football-outline" size={18} color={theme.colors.textHi} />,
+      "baseball": <MaterialCommunityIcons name="baseball" size={18} color={theme.colors.textHi} />,
+      "soccer": <Ionicons name="football-outline" size={18} color={theme.colors.textHi} />,
+      "hockey": <MaterialCommunityIcons name="hockey-sticks" size={18} color={theme.colors.textHi} />,
+      "tennis": <Ionicons name="tennisball-outline" size={18} color={theme.colors.textHi} />,
+    };
+    return {
+      key: m.key,
+      label: m.label,
+      icon: iconMap[m.key] || <MaterialCommunityIcons name="dumbbell" size={18} color={theme.colors.textHi} />,
+    };
+  });
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const insets = useSafeAreaInsets();
 
   const m = (mode || "lifting").toLowerCase() as ModeKey;
   const isDedicated = DEDICATED.includes(m);
+
+  // Animation for spinning star loading
+  const starRotation = useSharedValue(0);
+  
+  // Hide loading overlay after initial mount
+  React.useEffect(() => {
+    if (isInitialLoad) {
+      starRotation.value = withRepeat(
+        withTiming(360, {
+          duration: 800,
+          easing: Easing.linear,
+        }),
+        -1,
+        false
+      );
+    } else {
+      starRotation.value = 0;
+    }
+  }, [isInitialLoad]);
+
+  const starAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${starRotation.value}deg` }],
+  }));
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 2000); // Show loading for 2 seconds on initial load
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Wait for mode to load before rendering sport-specific screens
+  // This ensures we start in the correct mode (primary sport) instead of defaulting to lifting
+  if (modeLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0B0E10", justifyContent: 'center', alignItems: 'center' }}>
+        <Animated.View style={starAnimatedStyle}>
+          <Image
+            source={require("../../../assets/star.png")}
+            style={{ width: 150, height: 150 }}
+            resizeMode="contain"
+          />
+        </Animated.View>
+      </View>
+    );
+  }
 
   // Inline header only for inline pages (right now: none)
   // For lifting, basketball, football, soccer, baseball, hockey, and tennis modes, use View instead of SafeAreaView to allow calendar to extend to top
   if (isDedicated && (m === "lifting" || m === "basketball" || m === "football" || m === "soccer" || m === "baseball" || m === "hockey" || m === "tennis")) {
     return (
       <View style={{ flex: 1, backgroundColor: "#0B0E10" }}>
+        {isInitialLoad && (
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+            <View style={{ flex: 1, backgroundColor: "#0B0E10", justifyContent: 'center', alignItems: 'center' }}>
+              <Animated.View style={starAnimatedStyle}>
+                <Image
+                  source={require("../../../assets/star.png")}
+                  style={{ width: 150, height: 150 }}
+                  resizeMode="contain"
+                />
+              </Animated.View>
+            </View>
+          </View>
+        )}
         {m === "lifting" ? <LiftingHomeScreen /> : 
          m === "basketball" ? <BasketballHomeScreen /> : 
          m === "football" ? <FootballHomeScreen /> : 
@@ -313,7 +407,7 @@ export default function HomeIndex() {
           <Text style={{ fontSize: 12, color: theme.colors.textLo, marginBottom: 6, marginLeft: 6, fontWeight: "700" }}>
             Switch mode
           </Text>
-          {ALL_MODES.map(({ key, label, icon }) => (
+          {availableModesWithIcons.map(({ key, label, icon }) => (
             <ModeItem
               key={key}
               icon={icon}

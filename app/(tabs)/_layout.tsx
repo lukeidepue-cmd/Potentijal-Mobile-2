@@ -2,14 +2,40 @@
 import { Tabs } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { PROFILE_FEATURES_ENABLED } from "../../constants/features";
+import { Platform } from "react-native";
+import TabBarBackground from "../../components/ui/TabBarBackground";
+import AnimatedTabBarIcon from "../../components/ui/AnimatedTabBarIcon";
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#22C55E",
-        tabBarStyle: { backgroundColor: "#0b0b0c", borderTopColor: "#141414" },
+        tabBarActiveTintColor: "#22C55E", // Brand green
+        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.5)", // More subtle inactive
+        tabBarBackground: TabBarBackground,
+        tabBarStyle: {
+          backgroundColor: "transparent",
+          borderTopWidth: 0,
+          borderTopColor: "transparent",
+          elevation: 0,
+          shadowOpacity: 0,
+          position: "absolute",
+          paddingBottom: Platform.OS === "ios" ? 12 : 0,
+          paddingTop: 12,
+          height: Platform.OS === "ios" ? 80 : 56,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "600",
+          marginTop: -2,
+          letterSpacing: 0.3,
+        },
+        tabBarItemStyle: {
+          paddingTop: 4,
+          paddingBottom: 2,
+        },
+        tabBarShowLabel: true,
       }}
     >
       {/* Home tab is the (home) group */}
@@ -17,8 +43,14 @@ export default function TabsLayout() {
         name="(home)"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" color={color} size={size} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <AnimatedTabBarIcon focused={focused}>
+              <Ionicons 
+                name={focused ? "home" : "home-outline"} 
+                color={color} 
+                size={size} 
+              />
+            </AnimatedTabBarIcon>
           ),
         }}
       />
@@ -27,8 +59,14 @@ export default function TabsLayout() {
         name="workouts"
         options={{
           title: "Workouts",
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="dumbbell" color={color} size={size} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <AnimatedTabBarIcon focused={focused}>
+              <MaterialCommunityIcons 
+                name="dumbbell" 
+                color={color} 
+                size={size} 
+              />
+            </AnimatedTabBarIcon>
           ),
         }}
       />
@@ -50,10 +88,40 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="meals"
         options={{
-          title: "Coming Soon",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="hourglass-outline" color={color} size={size} />
+          title: "Progress",
+          tabBarIcon: ({ color, focused, size }) => (
+            <AnimatedTabBarIcon focused={focused}>
+              <Ionicons 
+                name={focused ? "stats-chart" : "stats-chart-outline"} 
+                color={color} 
+                size={size} 
+              />
+            </AnimatedTabBarIcon>
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="meals/progress-graphs"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="meals/skill-map"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="meals/consistency-score"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="meals/training-statistics"
+        options={{
+          href: null, // Hide from tab bar
         }}
       />
 
@@ -61,8 +129,14 @@ export default function TabsLayout() {
         name="history"
         options={{
           title: "History",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="hourglass-outline" color={color} size={size} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <AnimatedTabBarIcon focused={focused}>
+              <Ionicons 
+                name={focused ? "hourglass" : "hourglass-outline"} 
+                color={color} 
+                size={size} 
+              />
+            </AnimatedTabBarIcon>
           ),
         }}
       />
@@ -71,8 +145,14 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle-outline" color={color} size={size} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <AnimatedTabBarIcon focused={focused}>
+              <Ionicons 
+                name={focused ? "person-circle" : "person-circle-outline"} 
+                color={color} 
+                size={size} 
+              />
+            </AnimatedTabBarIcon>
           ),
           href: PROFILE_FEATURES_ENABLED ? undefined : null, // Hide from tab bar if profile features disabled
         }}

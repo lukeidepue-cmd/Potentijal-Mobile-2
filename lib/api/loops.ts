@@ -1,9 +1,12 @@
 // lib/api/loops.ts
 // Loops email service integration
 // Documentation: https://loops.so/docs
+// 
+// ⚠️ SECURITY: This file calls a Supabase Edge Function, NOT Loops directly.
+// The Loops API key is stored securely in Supabase secrets and never exposed to the client.
+// According to Loops docs: "Your Loops API key should never be used client side or exposed to your end users."
 
-const LOOPS_API_KEY = process.env.EXPO_PUBLIC_LOOPS_API_KEY || '';
-const LOOPS_API_URL = 'https://app.loops.so/api/v1';
+import { supabase } from '../supabase';
 
 export interface LoopsContact {
   email: string;
@@ -29,30 +32,52 @@ export interface LoopsTransactionalEmail {
 
 /**
  * Create or update a contact in Loops
+ * Calls the secure Supabase Edge Function (API key is stored server-side)
  */
 export async function createOrUpdateContact(contact: LoopsContact): Promise<{ data: any | null; error: any }> {
   try {
-    if (!LOOPS_API_KEY) {
-      console.warn('⚠️ [Loops] API key not configured. Skipping contact creation.');
-      return { data: null, error: { message: 'Loops API key not configured' } };
+    // Get the current user's session token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.error('❌ [Loops] Failed to get session:', sessionError);
+      return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const response = await fetch(`${LOOPS_API_URL}/contacts/create`, {
+    // Get the Supabase URL from the client
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('❌ [Loops] Supabase URL not configured');
+      return { data: null, error: { message: 'Service not configured' } };
+    }
+
+    // Call the Supabase Edge Function
+    console.log('🔵 [Loops] Calling Edge Function to create/update contact:', contact.email);
+    const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOOPS_API_KEY}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
       },
-      body: JSON.stringify(contact),
+      body: JSON.stringify({
+        action: 'createOrUpdateContact',
+        ...contact,
+      }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      return { data: null, error: { message: data.message || 'Failed to create/update contact' } };
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ [Loops] Edge Function error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData,
+      });
+      return { data: null, error: errorData.error || { message: 'Failed to create/update contact' } };
     }
 
-    return { data, error: null };
+    const result = await response.json();
+    console.log('✅ [Loops] Edge Function response:', result);
+    return { data: result.data, error: result.error };
   } catch (error: any) {
     console.error('❌ [Loops] Error creating/updating contact:', error);
     return { data: null, error };
@@ -61,34 +86,48 @@ export async function createOrUpdateContact(contact: LoopsContact): Promise<{ da
 
 /**
  * Send a transactional email via Loops
+ * Calls the secure Supabase Edge Function (API key is stored server-side)
  */
 export async function sendTransactionalEmail(params: LoopsTransactionalEmail): Promise<{ data: any | null; error: any }> {
   try {
-    if (!LOOPS_API_KEY) {
-      console.warn('⚠️ [Loops] API key not configured. Skipping email send.');
-      return { data: null, error: { message: 'Loops API key not configured' } };
+    // Get the current user's session token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.error('❌ [Loops] Failed to get session:', sessionError);
+      return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const response = await fetch(`${LOOPS_API_URL}/transactional`, {
+    // Get the Supabase URL from the client
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('❌ [Loops] Supabase URL not configured');
+      return { data: null, error: { message: 'Service not configured' } };
+    }
+
+    // Call the Supabase Edge Function
+    const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOOPS_API_KEY}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
       },
       body: JSON.stringify({
+        action: 'sendTransactional',
         transactionalId: params.transactionalId,
         email: params.email,
         dataVariables: params.dataVariables || {},
       }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      return { data: null, error: { message: data.message || 'Failed to send email' } };
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ [Loops] Edge Function error:', errorData);
+      return { data: null, error: errorData.error || { message: 'Failed to send email' } };
     }
 
-    return { data, error: null };
+    const result = await response.json();
+    return { data: result.data, error: result.error };
   } catch (error: any) {
     console.error('❌ [Loops] Error sending transactional email:', error);
     return { data: null, error };
@@ -97,30 +136,46 @@ export async function sendTransactionalEmail(params: LoopsTransactionalEmail): P
 
 /**
  * Track an event in Loops
+ * Calls the secure Supabase Edge Function (API key is stored server-side)
  */
 export async function trackEvent(event: LoopsEvent): Promise<{ data: any | null; error: any }> {
   try {
-    if (!LOOPS_API_KEY) {
-      console.warn('⚠️ [Loops] API key not configured. Skipping event tracking.');
-      return { data: null, error: { message: 'Loops API key not configured' } };
+    // Get the current user's session token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.error('❌ [Loops] Failed to get session:', sessionError);
+      return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const response = await fetch(`${LOOPS_API_URL}/events/send`, {
+    // Get the Supabase URL from the client
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('❌ [Loops] Supabase URL not configured');
+      return { data: null, error: { message: 'Service not configured' } };
+    }
+
+    // Call the Supabase Edge Function
+    const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOOPS_API_KEY}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
       },
-      body: JSON.stringify(event),
+      body: JSON.stringify({
+        action: 'trackEvent',
+        ...event,
+      }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      return { data: null, error: { message: data.message || 'Failed to track event' } };
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ [Loops] Edge Function error:', errorData);
+      return { data: null, error: errorData.error || { message: 'Failed to track event' } };
     }
 
-    return { data, error: null };
+    const result = await response.json();
+    return { data: result.data, error: result.error };
   } catch (error: any) {
     console.error('❌ [Loops] Error tracking event:', error);
     return { data: null, error };
@@ -129,30 +184,46 @@ export async function trackEvent(event: LoopsEvent): Promise<{ data: any | null;
 
 /**
  * Delete a contact from Loops
+ * Calls the secure Supabase Edge Function (API key is stored server-side)
  */
 export async function deleteContact(email: string): Promise<{ data: any | null; error: any }> {
   try {
-    if (!LOOPS_API_KEY) {
-      console.warn('⚠️ [Loops] API key not configured. Skipping contact deletion.');
-      return { data: null, error: { message: 'Loops API key not configured' } };
+    // Get the current user's session token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.error('❌ [Loops] Failed to get session:', sessionError);
+      return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const response = await fetch(`${LOOPS_API_URL}/contacts/delete`, {
+    // Get the Supabase URL from the client
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('❌ [Loops] Supabase URL not configured');
+      return { data: null, error: { message: 'Service not configured' } };
+    }
+
+    // Call the Supabase Edge Function
+    const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOOPS_API_KEY}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
       },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({
+        action: 'deleteContact',
+        email,
+      }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      return { data: null, error: { message: data.message || 'Failed to delete contact' } };
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ [Loops] Edge Function error:', errorData);
+      return { data: null, error: errorData.error || { message: 'Failed to delete contact' } };
     }
 
-    return { data, error: null };
+    const result = await response.json();
+    return { data: result.data, error: result.error };
   } catch (error: any) {
     console.error('❌ [Loops] Error deleting contact:', error);
     return { data: null, error };
@@ -203,7 +274,6 @@ export async function sendWelcomeEmail(email: string, firstName?: string): Promi
   // If you need to manually trigger a welcome email, use Loops Campaigns API instead
   // For now, we'll just log that the contact was added (Journey will handle the email)
   
-  console.log('✅ [Loops] Contact added - Welcome email will be sent via Journey if configured');
   return { error: null };
 }
 

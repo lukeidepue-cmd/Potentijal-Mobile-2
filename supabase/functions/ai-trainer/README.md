@@ -53,7 +53,7 @@ https://your-project-ref.supabase.co/functions/v1/ai-trainer
 
 2. **Edge Function** (`supabase/functions/ai-trainer/index.ts`):
    - Receives the request with user authentication
-   - Fetches user context from the database (workouts, games, practices, meals)
+   - Fetches user context from the database (workouts, games, practices)
    - Formats the context into a prompt for OpenAI
    - Calls OpenAI API with the secret API key
    - Returns the AI response to the frontend

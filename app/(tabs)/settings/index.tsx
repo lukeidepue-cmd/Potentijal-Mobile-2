@@ -1,39 +1,28 @@
 // app/(tabs)/settings/index.tsx
 // Main Settings Screen - Lists all settings sections
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "@/constants/theme";
 import { useFeatures } from "@/hooks/useFeatures";
+import * as Haptics from "expo-haptics";
 import { useAuth } from "@/providers/AuthProvider";
 import Constants from "expo-constants";
 import { PROFILE_FEATURES_ENABLED } from "@/constants/features";
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 
-// Logout component
-function LogoutButton() {
-  const { signOut } = useAuth();
-  
-  return (
-    <Pressable
-      style={[styles.settingItem, styles.logoutButton]}
-      onPress={async () => {
-        await signOut();
-        router.replace("/(tabs)/(home)");
-      }}
-    >
-      <Ionicons name="log-out-outline" size={20} color={theme.colors.danger} />
-      <Text style={[styles.settingText, { color: theme.colors.danger }]}>Log Out</Text>
-    </Pressable>
-  );
-}
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+
 
 /* ---- Fonts ---- */
 import {
@@ -54,7 +43,7 @@ const FONT = {
 export default function Settings() {
   const insets = useSafeAreaInsets();
   const { canAddMoreSports, isPremium, isCreator } = useFeatures();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [geistLoaded] = useGeist({
     Geist_400Regular,
     Geist_500Medium,
@@ -63,6 +52,29 @@ export default function Settings() {
   });
   const fontsReady = geistLoaded;
 
+  // Fade-in animation
+  const opacity = useSharedValue(0.85);
+
+  // Animate fade-in every time screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      // Start from 0.85 and fade in to 1 (very subtle, no flash)
+      opacity.value = 0.85;
+      opacity.value = withTiming(1, { duration: 400 });
+      
+      // Return cleanup function for fade-out when leaving
+      return () => {
+        opacity.value = withTiming(0.85, { duration: 250 });
+      };
+    }, [opacity])
+  );
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: opacity.value,
+    };
+  });
+
   if (!fontsReady) {
     return null;
   }
@@ -70,9 +82,16 @@ export default function Settings() {
   const appVersion = Constants.expoConfig?.version || "1.0.0";
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <Animated.View style={[styles.container, animatedStyle]}>
+      {/* Gradient Background */}
+      <LinearGradient
+        colors={["#1A4A3A", "rgba(18, 48, 37, 0.5)", "transparent", theme.colors.bg0]}
+        locations={[0, 0.2, 0.4, 0.7]}
+        style={styles.gradientBackground}
+      />
+
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <Pressable
           onPress={() => router.back()}
           style={styles.backButton}
@@ -86,272 +105,297 @@ export default function Settings() {
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 16 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Account Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          
-          {PROFILE_FEATURES_ENABLED && (
+          <Text style={styles.sectionTitle}>ACCOUNT</Text>
+          <View style={styles.groupCard}>
             <Pressable
-              style={styles.settingItem}
-              onPress={() => router.push("/(tabs)/profile/edit")}
+              style={[styles.settingRow, styles.settingRowFirst]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/sports-training/my-sports");
+              }}
             >
-              <Ionicons name="person-outline" size={20} color={theme.colors.textHi} />
-              <Text style={styles.settingText}>Edit Profile</Text>
+              <Ionicons name="basketball-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>My Sports</Text>
               <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
             </Pressable>
-          )}
 
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/account/email-password")}
-          >
-            <Ionicons name="mail-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Email & Password</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
-
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/account/delete-account")}
-          >
-            <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
-            <Text style={[styles.settingText, { color: theme.colors.danger }]}>Delete Account</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
-        </View>
-
-        {/* Sports & Training Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sports & Training</Text>
-          
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/sports-training/my-sports")}
-          >
-            <Ionicons name="basketball-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>My Sports</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.settingItem,
-              !canAddMoreSports && { opacity: 0.6 }
-            ]}
-            onPress={() => {
-              if (canAddMoreSports) {
-                router.push("/(tabs)/settings/sports-training/add-sports");
-              }
-            }}
-            disabled={!canAddMoreSports}
-          >
-            <Ionicons name="add-circle-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Add Sports</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {!canAddMoreSports && (
-                <Ionicons name="lock-closed" size={16} color={theme.colors.textLo} />
-              )}
-              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-            </View>
-          </Pressable>
-
-        </View>
-
-        {/* AI Trainer Section (Premium) */}
-        {(isPremium || isCreator) && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>AI Trainer</Text>
-            
+            <View style={styles.settingRowSeparator} />
             <Pressable
-              style={styles.settingItem}
-              onPress={() => router.push("/(tabs)/settings/ai-trainer")}
+              style={styles.settingRow}
+              onPress={() => {
+                if (canAddMoreSports) {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push("/(tabs)/settings/sports-training/add-sports");
+                }
+              }}
+              disabled={!canAddMoreSports}
             >
-              <Ionicons name="sparkles-outline" size={20} color={theme.colors.textHi} />
-              <Text style={styles.settingText}>AI Trainer Settings</Text>
+              <Ionicons name="add-circle-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Add Sports</Text>
+              <View style={styles.settingRowRight}>
+                {!canAddMoreSports && (
+                  <View style={styles.lockPill}>
+                    <Ionicons name="lock-closed" size={12} color={theme.colors.textLo} />
+                    <Text style={styles.lockPillText}>Locked</Text>
+                  </View>
+                )}
+                <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+              </View>
+            </Pressable>
+
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={styles.settingRow}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/notifications");
+              }}
+            >
+              <Ionicons name="notifications-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Notification Preferences</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
+
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={styles.settingRow}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/account/email-password");
+              }}
+            >
+              <Ionicons name="mail-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Email & Password</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
+
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/app-preferences/units");
+              }}
+            >
+              <Ionicons name="resize-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Units</Text>
               <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
             </Pressable>
           </View>
-        )}
-
-        {/* Notifications Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
-          
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/notifications")}
-          >
-            <Ionicons name="notifications-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Notification Preferences</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
-        </View>
-
-        {/* Privacy & Security Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Privacy & Security</Text>
-          
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/privacy-security")}
-          >
-            <Ionicons name="lock-closed-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Privacy Settings</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
-
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/privacy-security/blocked-users")}
-          >
-            <Ionicons name="ban-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Blocked Users</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
         </View>
 
         {/* Premium Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Premium</Text>
-          
-          <View style={styles.settingItem}>
-            <Ionicons name="star-outline" size={20} color={theme.colors.textHi} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.settingText}>
-                {isPremium || isCreator ? "Premium Active" : "Free Plan"}
-              </Text>
-              {isCreator && (
-                <Text style={styles.settingSubtext}>Creator Account</Text>
+          <Text style={styles.sectionTitle}>PREMIUM</Text>
+          <View style={styles.groupCard}>
+            {(isPremium || isCreator) && (
+              <>
+                <Pressable
+                  style={[styles.settingRow, styles.settingRowFirst]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push("/(tabs)/settings/ai-trainer");
+                  }}
+                >
+                  <Ionicons name="sparkles-outline" size={20} color={theme.colors.textHi} />
+                  <Text style={styles.settingRowText}>AI Trainer Settings</Text>
+                  <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+                </Pressable>
+                <View style={styles.settingRowSeparator} />
+              </>
+            )}
+
+            {/* Plan Card */}
+            <View style={styles.planCard}>
+              <View style={styles.planCardContent}>
+                <Ionicons name="star-outline" size={20} color={theme.colors.textHi} />
+                <View style={styles.planCardInfo}>
+                  <Text style={styles.planCardTitle}>
+                    {isPremium || isCreator ? "Premium Active" : "Free Plan"}
+                  </Text>
+                  {isCreator && (
+                    <Text style={styles.planCardSubtitle}>Creator Account</Text>
+                  )}
+                  {!isPremium && !isCreator && (
+                    <Text style={styles.planCardSubtitle}>Unlock advanced analytics + pro tools</Text>
+                  )}
+                </View>
+              </View>
+              {!isPremium && !isCreator && (
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    router.push("/(tabs)/purchase-premium");
+                  }}
+                  style={styles.upgradeButtonNew}
+                >
+                  <Text style={styles.upgradeButtonTextNew}>Upgrade</Text>
+                </Pressable>
               )}
             </View>
-            {!isPremium && !isCreator && (
-              <Pressable
-                onPress={() => router.push("/(tabs)/purchase-premium")}
-                style={styles.upgradeButton}
-              >
-                <Text style={styles.upgradeButtonText}>Upgrade</Text>
-              </Pressable>
+
+            {(isPremium || isCreator) && (
+              <>
+                <View style={styles.settingRowSeparator} />
+                <Pressable
+                  style={styles.settingRow}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push("/(tabs)/settings/premium/manage-subscription");
+                  }}
+                >
+                  <Ionicons name="card-outline" size={20} color={theme.colors.textHi} />
+                  <Text style={styles.settingRowText}>Manage Subscription</Text>
+                  <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+                </Pressable>
+
+                <View style={styles.settingRowSeparator} />
+                <Pressable
+                  style={styles.settingRow}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push("/(tabs)/settings/premium/restore-purchases");
+                  }}
+                >
+                  <Ionicons name="refresh-outline" size={20} color={theme.colors.textHi} />
+                  <Text style={styles.settingRowText}>Restore Purchases</Text>
+                  <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+                </Pressable>
+              </>
             )}
+
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/premium/redeem-code");
+              }}
+            >
+              <Ionicons name="gift-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Redeem Code</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
           </View>
-
-          {(isPremium || isCreator) && (
-            <>
-              <Pressable
-                style={styles.settingItem}
-                onPress={() => router.push("/(tabs)/settings/premium/manage-subscription")}
-              >
-                <Ionicons name="card-outline" size={20} color={theme.colors.textHi} />
-                <Text style={styles.settingText}>Manage Subscription</Text>
-                <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-              </Pressable>
-
-              <Pressable
-                style={styles.settingItem}
-                onPress={() => router.push("/(tabs)/settings/premium/restore-purchases")}
-              >
-                <Ionicons name="refresh-outline" size={20} color={theme.colors.textHi} />
-                <Text style={styles.settingText}>Restore Purchases</Text>
-                <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-              </Pressable>
-            </>
-          )}
-
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/premium/redeem-code")}
-          >
-            <Ionicons name="gift-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Redeem Code</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
-        </View>
-
-        {/* App Preferences Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Preferences</Text>
-          
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/app-preferences/units")}
-          >
-            <Ionicons name="resize-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Units</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
         </View>
 
         {/* Support & Legal Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support & Legal</Text>
-          
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/support-legal/help")}
-          >
-            <Ionicons name="help-circle-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Help</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
+          <Text style={styles.sectionTitle}>SUPPORT & LEGAL</Text>
+          <View style={styles.groupCard}>
+            <Pressable
+              style={[styles.settingRow, styles.settingRowFirst]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/support-legal/help");
+              }}
+            >
+              <Ionicons name="help-circle-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Help</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
 
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/support-legal/contact")}
-          >
-            <Ionicons name="mail-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Contact Support</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={styles.settingRow}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/support-legal/contact");
+              }}
+            >
+              <Ionicons name="mail-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Contact Support</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
 
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/support-legal/privacy-policy")}
-          >
-            <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Privacy Policy</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={styles.settingRow}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/support-legal/privacy-policy");
+              }}
+            >
+              <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Privacy Policy</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
 
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/support-legal/terms")}
-          >
-            <Ionicons name="document-text-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Terms of Service</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/support-legal/terms");
+              }}
+            >
+              <Ionicons name="document-text-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Terms of Service</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
+          </View>
         </View>
 
         {/* About Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
-          
-          <View style={styles.settingItem}>
-            <Ionicons name="information-circle-outline" size={20} color={theme.colors.textHi} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.settingText}>App Version</Text>
-              <Text style={styles.settingSubtext}>{appVersion}</Text>
+          <Text style={styles.sectionTitle}>ABOUT</Text>
+          <View style={styles.groupCard}>
+            <View style={[styles.settingRow, styles.settingRowFirst]}>
+              <Ionicons name="information-circle-outline" size={20} color={theme.colors.textHi} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingRowText}>App Version</Text>
+                <Text style={styles.settingRowSubtext}>{appVersion}</Text>
+              </View>
             </View>
-          </View>
 
-          <Pressable
-            style={styles.settingItem}
-            onPress={() => router.push("/(tabs)/settings/about/credits")}
-          >
-            <Ionicons name="people-outline" size={20} color={theme.colors.textHi} />
-            <Text style={styles.settingText}>Credits</Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-          </Pressable>
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => router.push("/(tabs)/settings/about/credits")}
+            >
+              <Ionicons name="people-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Credits</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Delete Account - Isolated */}
+        <View style={styles.section}>
+          <View style={styles.groupCard}>
+            <Pressable
+              style={[styles.settingRow, styles.settingRowFirst, styles.settingRowLast]}
+              onPress={() => router.push("/(tabs)/settings/account/delete-account")}
+            >
+              <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
+              <Text style={[styles.settingRowText, { color: theme.colors.danger }]}>Delete Account</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
+          </View>
         </View>
 
         {/* Log Out */}
         <View style={styles.section}>
-          <LogoutButton />
+          <View style={styles.groupCard}>
+            <Pressable
+              style={[styles.settingRow, styles.settingRowFirst, styles.settingRowLast]}
+              onPress={async () => {
+                await signOut();
+                router.replace("/(tabs)/(home)");
+              }}
+            >
+              <Ionicons name="log-out-outline" size={20} color={theme.colors.danger} />
+              <Text style={[styles.settingRowText, { color: theme.colors.danger }]}>Log Out</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -360,24 +404,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 320,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
+    zIndex: 10,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
   },
   headerTitle: {
     fontSize: 20,
@@ -389,60 +432,125 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    paddingTop: 18,
+    paddingBottom: 16,
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 18,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
     color: theme.colors.textLo,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
     fontFamily: FONT.uiSemi,
   },
-  settingItem: {
+  groupCard: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 0,
+    borderWidth: 0,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 4,
+    overflow: "hidden",
+  },
+  settingRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    paddingHorizontal: 18,
     paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: theme.colors.surface1,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    marginBottom: 8,
+    minHeight: 56,
+    gap: 12,
   },
-  settingText: {
+  settingRowFirst: {
+    paddingTop: 12,
+  },
+  settingRowLast: {
+    paddingBottom: 12,
+  },
+  settingRowSeparator: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginHorizontal: 18,
+  },
+  settingRowText: {
     flex: 1,
     fontSize: 16,
+    fontWeight: "600",
     color: theme.colors.textHi,
-    fontFamily: FONT.uiRegular,
+    fontFamily: FONT.uiSemi,
   },
-  settingSubtext: {
-    fontSize: 12,
+  settingRowSubtext: {
+    fontSize: 13,
     color: theme.colors.textLo,
     marginTop: 2,
     fontFamily: FONT.uiRegular,
   },
-  upgradeButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: theme.colors.primary600,
+  settingRowRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  upgradeButtonText: {
-    fontSize: 14,
+  lockPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  lockPillText: {
+    fontSize: 11,
     fontWeight: "600",
-    color: "#06160D",
+    color: theme.colors.textLo,
     fontFamily: FONT.uiSemi,
   },
-  logoutButton: {
-    borderColor: theme.colors.danger + "40",
-    backgroundColor: theme.colors.danger + "10",
+  planCard: {
+    padding: 16,
+  },
+  planCardContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 12,
+  },
+  planCardInfo: {
+    flex: 1,
+  },
+  planCardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.colors.textHi,
+    fontFamily: FONT.uiSemi,
+    marginBottom: 2,
+  },
+  planCardSubtitle: {
+    fontSize: 13,
+    color: theme.colors.textLo,
+    fontFamily: FONT.uiRegular,
+  },
+  upgradeButtonNew: {
+    alignSelf: "flex-end",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: theme.colors.primary600,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  upgradeButtonTextNew: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#06160D",
+    fontFamily: FONT.uiBold,
   },
 });
 

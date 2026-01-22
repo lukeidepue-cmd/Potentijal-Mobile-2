@@ -7,6 +7,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -143,6 +144,11 @@ export default function CreatorWorkouts() {
           </View>
         ) : workouts.length === 0 ? (
           <View style={styles.emptyContainer}>
+            <Image
+              source={require("../../../assets/empty-star.png")}
+              style={styles.emptyStar}
+              resizeMode="contain"
+            />
             <Text style={styles.emptyText}>No workouts available</Text>
           </View>
         ) : (
@@ -176,13 +182,7 @@ export default function CreatorWorkouts() {
 
 const styles = StyleSheet.create({
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
     marginLeft: 16,
     marginBottom: 16,
   },
@@ -205,12 +205,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyContainer: {
-    paddingVertical: 40,
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
+    minHeight: 400,
+    paddingVertical: 60,
+  },
+  emptyStar: {
+    width: 182,
+    height: 182,
+    marginBottom: -30,
   },
   emptyText: {
     color: theme.colors.textLo,
-    fontSize: 16,
+    fontSize: 26,
   },
   workoutsList: {
     gap: 12,

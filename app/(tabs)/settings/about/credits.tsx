@@ -113,14 +113,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.strokeSoft,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
   },
   headerTitle: {
     fontSize: 20,

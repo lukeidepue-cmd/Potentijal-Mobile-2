@@ -1,6 +1,6 @@
 // app/(tabs)/settings/account/email-password.tsx
 // Email & Password Settings Screen
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import {
   View,
@@ -14,11 +14,13 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "@/constants/theme";
 import { useAuth } from "@/providers/AuthProvider";
 import { updateEmail, updatePassword } from "@/lib/api/settings";
 import { supabase } from "@/lib/supabase";
+import { LinearGradient } from "expo-linear-gradient";
 
 /* ---- Fonts ---- */
 import {
@@ -56,9 +58,6 @@ export default function EmailPasswordSettings() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
@@ -67,6 +66,7 @@ export default function EmailPasswordSettings() {
   const emailUpdateRef = useRef<string | null>(null); // Ref to track the email we're updating to (for immediate access)
   const pendingEmailRef = useRef<string | null>(null); // Ref to track pending email that needs confirmation
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store the interval so we can clear it
+  const emailConfirmedRef = useRef<boolean>(false); // Ref to track if email was confirmed (to force update)
 
   useEffect(() => {
     // CRITICAL: Check for pending email FIRST - this prevents old email from showing during confirmation wait
@@ -75,11 +75,15 @@ export default function EmailPasswordSettings() {
       // Only update if the pending email was confirmed
       if (user?.email && user.email.toLowerCase() === pendingEmailRef.current.toLowerCase()) {
         // Pending email was confirmed! Update the display
-        setCurrentEmail(user.email);
+        const confirmedEmail = user.email;
+        // Clear all flags and refs first
         pendingEmailRef.current = null;
+        emailUpdateRef.current = null;
+        emailConfirmedRef.current = true; // Mark as confirmed
         setEmailJustUpdated(false);
         setLastUpdatedEmail(null);
-        emailUpdateRef.current = null;
+        // Update the email display
+        setCurrentEmail(confirmedEmail);
         // Clear any running interval
         if (checkIntervalRef.current) {
           clearInterval(checkIntervalRef.current);
@@ -130,29 +134,50 @@ export default function EmailPasswordSettings() {
     // This prevents the old email from overriding after we've confirmed a new email
     // CRITICAL: Also check if emailJustUpdated is true but expectedEmail is null (pending confirmation)
     const hasPendingConfirmation = emailJustUpdated && !lastUpdatedEmail && !emailUpdateRef.current;
+    
+    // If all flags are cleared and no pending email, always update from user context
     if (user?.email && !emailJustUpdated && !emailUpdateRef.current && !pendingEmailRef.current && !hasPendingConfirmation) {
       setCurrentEmail(prev => {
-        // Only update if:
-        // 1. It's different from current, AND
-        // 2. The current email is NOT a newer email that we're waiting to confirm
-        // This prevents old email from overriding new email after confirmation
+        // Update if email is different from current
         if (prev.toLowerCase() !== user.email.toLowerCase()) {
-          // CRITICAL: If we have a lastUpdatedEmail (even if flags are cleared),
-          // only update if user context matches it. This prevents old email from
-          // overriding after Supabase confirms but before user context updates.
+          // If we have a lastUpdatedEmail, only update if user context matches it
           if (lastUpdatedEmail) {
             if (user.email.toLowerCase() === lastUpdatedEmail.toLowerCase()) {
-              // User context matches the expected email - safe to update
-              // Now we can safely clear the flags
+              // User context matches the expected email - safe to update and clear flags
               setEmailJustUpdated(false);
               setLastUpdatedEmail(null);
               return user.email;
             } else {
               // User context has different email than expected - keep current
-              return prev; // Keep current email
+              return prev;
             }
           }
           // No lastUpdatedEmail - safe to update from user context
+          return user.email;
+        }
+        return prev;
+      });
+    }
+    
+    // CRITICAL: If email was confirmed, ensure it matches user context and keep it updated
+    if (emailConfirmedRef.current && user?.email) {
+      // Email was confirmed - update display to match user context (the new confirmed email)
+      setCurrentEmail(user.email);
+      // Clear flags since confirmation is complete
+      emailConfirmedRef.current = false;
+      setEmailJustUpdated(false);
+      setLastUpdatedEmail(null);
+      emailUpdateRef.current = null;
+      pendingEmailRef.current = null;
+      return;
+    }
+    
+    // CRITICAL: If all flags are cleared, always sync with user context
+    // This ensures the email display stays in sync with Supabase
+    if (user?.email && !emailJustUpdated && !lastUpdatedEmail && !emailUpdateRef.current && !pendingEmailRef.current && !emailConfirmedRef.current) {
+      setCurrentEmail(prev => {
+        // Always update if different - user context is the source of truth
+        if (prev.toLowerCase() !== user.email.toLowerCase()) {
           return user.email;
         }
         return prev;
@@ -168,14 +193,28 @@ export default function EmailPasswordSettings() {
         const { data: { user: updatedUser } } = await supabase.auth.getUser();
         if (updatedUser?.email && updatedUser.email.toLowerCase() === pendingEmailRef.current.toLowerCase()) {
           // Email was confirmed!
-          setCurrentEmail(updatedUser.email);
-          Alert.alert("Email Updated", "Your email has been successfully updated!");
+          const confirmedEmail = updatedUser.email;
+          // Clear all flags and refs first
           pendingEmailRef.current = null;
+          emailUpdateRef.current = null;
+          setEmailJustUpdated(false);
+          setLastUpdatedEmail(null);
           // Clear any running interval
           if (checkIntervalRef.current) {
             clearInterval(checkIntervalRef.current);
             checkIntervalRef.current = null;
           }
+          // Update the email display IMMEDIATELY when confirmation is detected
+          setCurrentEmail(confirmedEmail);
+          // Mark email as confirmed
+          emailConfirmedRef.current = true;
+          
+          // Show alert (email is already updated above)
+          Alert.alert(
+            "Email Updated", 
+            "Your email has been successfully updated!",
+            [{ text: "OK" }]
+          );
         }
       }
     });
@@ -184,6 +223,48 @@ export default function EmailPasswordSettings() {
       subscription.remove();
     };
   }, []);
+
+  // Check for email confirmation when screen comes into focus (user manually opens app)
+  useFocusEffect(
+    useCallback(() => {
+      // Check if we have a pending email and verify if it was confirmed
+      if (pendingEmailRef.current) {
+        const checkEmailConfirmation = async () => {
+          const { data: { user: updatedUser } } = await supabase.auth.getUser();
+          if (updatedUser?.email && updatedUser.email.toLowerCase() === pendingEmailRef.current?.toLowerCase()) {
+            // Email was confirmed! Update immediately
+            const confirmedEmail = updatedUser.email;
+            
+            // Clear all flags and refs
+            pendingEmailRef.current = null;
+            emailUpdateRef.current = null;
+            emailConfirmedRef.current = true;
+            setEmailJustUpdated(false);
+            setLastUpdatedEmail(null);
+            
+            // Clear any running interval
+            if (checkIntervalRef.current) {
+              clearInterval(checkIntervalRef.current);
+              checkIntervalRef.current = null;
+            }
+            
+            // Update the email display IMMEDIATELY
+            setCurrentEmail(confirmedEmail);
+            
+            // Show alert
+            Alert.alert(
+              "Email Updated", 
+              "Your email has been successfully updated!",
+              [{ text: "OK" }]
+            );
+          }
+        };
+        
+        // Check immediately when screen comes into focus
+        checkEmailConfirmation();
+      }
+    }, [])
+  );
 
   const handleUpdateEmail = async () => {
     if (!newEmail || !newEmail.trim()) {
@@ -267,18 +348,37 @@ export default function EmailPasswordSettings() {
               // Check if email has been updated in Supabase (after confirmation)
               if (updatedUser.email.toLowerCase() === trimmedNewEmail.toLowerCase()) {
                 // Confirmation link was clicked! Email is now updated in Supabase
-                setCurrentEmail(updatedUser.email);
-                Alert.alert("Email Updated", "Your email has been successfully updated!");
-                pendingEmailRef.current = null; // Clear pending email
+                const confirmedEmail = updatedUser.email;
+                // Clear all flags and refs first
+                pendingEmailRef.current = null;
+                emailUpdateRef.current = null;
+                setEmailJustUpdated(false);
+                setLastUpdatedEmail(null);
+                // Clear interval
                 if (checkIntervalRef.current) {
                   clearInterval(checkIntervalRef.current);
                   checkIntervalRef.current = null;
                 }
+                // Update the email display IMMEDIATELY when confirmation is detected
+                setCurrentEmail(confirmedEmail);
+                // Mark email as confirmed
+                emailConfirmedRef.current = true;
+                
+                // Show alert (email is already updated above)
+                Alert.alert(
+                  "Email Updated", 
+                  "Your email has been successfully updated!",
+                  [{ text: "OK" }]
+                );
                 return;
               } else if (updatedUser.email.toLowerCase() !== currentEmail.toLowerCase()) {
                 // Email changed but not to what we expected - update display anyway
-                setCurrentEmail(updatedUser.email);
-                pendingEmailRef.current = null; // Clear pending email
+                const newEmail = updatedUser.email;
+                pendingEmailRef.current = null;
+                emailUpdateRef.current = null;
+                setEmailJustUpdated(false);
+                setLastUpdatedEmail(null);
+                setCurrentEmail(newEmail);
                 if (checkIntervalRef.current) {
                   clearInterval(checkIntervalRef.current);
                   checkIntervalRef.current = null;
@@ -393,45 +493,55 @@ export default function EmailPasswordSettings() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Gradient Background */}
+      <LinearGradient
+        colors={["#1A4A3A", "rgba(18, 48, 37, 0.5)", "transparent", theme.colors.bg0]}
+        locations={[0, 0.2, 0.4, 0.7]}
+        style={styles.gradientBackground}
+      />
+
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
-        </Pressable>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <View style={{ width: 40, alignItems: "flex-start" }}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={20} color={theme.colors.textHi} />
+          </Pressable>
+        </View>
         <Text style={styles.headerTitle}>Email & Password</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 16 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Email Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Email</Text>
           
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Current Email</Text>
+          {/* Current Email Line - Now Editable */}
+          <View style={styles.inputLine}>
             <TextInput
-              style={styles.input}
+              style={styles.lineInput}
               value={currentEmail}
-              editable={false}
+              onChangeText={setCurrentEmail}
               placeholder="Current email"
               placeholderTextColor={theme.colors.textLo}
               autoCapitalize="none"
               keyboardType="email-address"
+              editable={true}
             />
+            <View style={styles.lineUnderline} />
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>New Email</Text>
+          {/* New Email Line */}
+          <View style={styles.inputLine}>
             <TextInput
-              style={styles.input}
+              style={styles.lineInput}
               value={newEmail}
               onChangeText={setNewEmail}
               placeholder="Enter new email"
@@ -439,6 +549,7 @@ export default function EmailPasswordSettings() {
               autoCapitalize="none"
               keyboardType="email-address"
             />
+            <View style={styles.lineUnderline} />
           </View>
 
           <Pressable
@@ -447,7 +558,7 @@ export default function EmailPasswordSettings() {
             disabled={savingEmail}
           >
             {savingEmail ? (
-              <ActivityIndicator color={theme.colors.textHi} />
+              <ActivityIndicator color="#06160D" />
             ) : (
               <Text style={styles.saveButtonText}>Update Email</Text>
             )}
@@ -458,54 +569,32 @@ export default function EmailPasswordSettings() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Password</Text>
           
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>New Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="Enter new password"
-                placeholderTextColor={theme.colors.textLo}
-                secureTextEntry={!showNewPassword}
-                autoCapitalize="none"
-              />
-              <Pressable
-                onPress={() => setShowNewPassword(!showNewPassword)}
-                style={styles.eyeButton}
-              >
-                <Ionicons
-                  name={showNewPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color={theme.colors.textLo}
-                />
-              </Pressable>
-            </View>
+          {/* New Password Line */}
+          <View style={styles.inputLine}>
+            <TextInput
+              style={styles.lineInput}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Enter new password"
+              placeholderTextColor={theme.colors.textLo}
+              secureTextEntry={true}
+              autoCapitalize="none"
+            />
+            <View style={styles.lineUnderline} />
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm new password"
-                placeholderTextColor={theme.colors.textLo}
-                secureTextEntry={!showConfirmPassword}
-                autoCapitalize="none"
-              />
-              <Pressable
-                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                style={styles.eyeButton}
-              >
-                <Ionicons
-                  name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color={theme.colors.textLo}
-                />
-              </Pressable>
-            </View>
+          {/* Confirm Password Line */}
+          <View style={styles.inputLine}>
+            <TextInput
+              style={styles.lineInput}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              placeholderTextColor={theme.colors.textLo}
+              secureTextEntry={true}
+              autoCapitalize="none"
+            />
+            <View style={styles.lineUnderline} />
           </View>
 
           <Pressable
@@ -514,7 +603,7 @@ export default function EmailPasswordSettings() {
             disabled={savingPassword}
           >
             {savingPassword ? (
-              <ActivityIndicator color={theme.colors.textHi} />
+              <ActivityIndicator color="#06160D" />
             ) : (
               <Text style={styles.saveButtonText}>Update Password</Text>
             )}
@@ -530,24 +619,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 360,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    paddingTop: 8,
+    paddingBottom: 12,
+    zIndex: 10,
   },
   headerTitle: {
     fontSize: 20,
@@ -559,11 +645,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 40,
   },
   sectionTitle: {
     fontSize: 14,
@@ -571,56 +658,31 @@ const styles = StyleSheet.create({
     color: theme.colors.textLo,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginBottom: 16,
+    marginBottom: 20,
     fontFamily: FONT.uiSemi,
   },
-  inputGroup: {
-    marginBottom: 16,
+  inputLine: {
+    marginBottom: 24,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.textHi,
-    marginBottom: 8,
-    fontFamily: FONT.uiSemi,
-  },
-  input: {
-    backgroundColor: theme.colors.surface1,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  lineInput: {
     fontSize: 16,
     color: theme.colors.textHi,
     fontFamily: FONT.uiRegular,
-  },
-  passwordContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.colors.surface1,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-  },
-  passwordInput: {
-    flex: 1,
     paddingVertical: 12,
-    fontSize: 16,
-    color: theme.colors.textHi,
-    fontFamily: FONT.uiRegular,
+    paddingHorizontal: 0,
   },
-  eyeButton: {
-    padding: 4,
+  lineUnderline: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginTop: 4,
   },
   saveButton: {
     backgroundColor: theme.colors.primary600,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 20,
+    paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: 12,
   },
   saveButtonDisabled: {
     opacity: 0.6,

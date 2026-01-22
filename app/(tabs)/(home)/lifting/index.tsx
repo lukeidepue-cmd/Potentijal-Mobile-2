@@ -1,5 +1,5 @@
 // app/(tabs)/(home)/lifting/index.tsx
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   StatusBar,
   Platform,
   Modal,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -21,11 +22,14 @@ import { getHistoryStats } from "../../../../lib/api/history";
 import { useExerciseProgressGraphDirect } from "../../../../hooks/useExerciseProgressGraphDirect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMode } from "../../../../providers/ModeContext";
+import { useAvailableModes } from "../../../../hooks/useAvailableModes";
+import { useBottomTabOverflow } from "../../../../components/ui/TabBarBackground";
 import type { ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
 import { Confetti } from "../../../../components/Confetti";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from "react-native-reanimated";
 
 const AnimatedText = Animated.createAnimatedComponent(Text);
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Animated Hero Headline Component
 function AnimatedHeroHeadline({ 
@@ -106,10 +110,17 @@ function yTicksFrom(avg: number) {
 /* -------------------------------- Component -------------------------------- */
 export default function LiftingHome() {
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabOverflow();
   const days = getCurrentWeekStartingSunday();
   const { user } = useAuth();
   const weekStart = getCurrentWeekStart();
   const today = startOfDay(new Date());
+  
+  // Animation for Edit Schedule button
+  const editScheduleScale = useSharedValue(1);
+  const editScheduleAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: editScheduleScale.value }],
+  }));
 
   // Schedule state
   const [scheduleData, setScheduleData] = useState<Array<{
@@ -166,17 +177,8 @@ export default function LiftingHome() {
       // Check if status changed to completed (trigger confetti)
       const prevStatus = previousStatusRef.current;
       
-      // Debug logging
-      console.log('Lifting Schedule Load:', {
-        previousStatus: prevStatus,
-        currentStatus,
-        hasLabel: !!currentItem?.label,
-        shouldTrigger: prevStatus !== null && prevStatus !== 'completed' && currentStatus === 'completed' && currentItem?.label
-      });
-      
       // If we had a previous status and it wasn't completed, but now it is, trigger confetti
       if (prevStatus !== null && prevStatus !== 'completed' && currentStatus === 'completed' && currentItem?.label) {
-        console.log('🎉 Triggering confetti animation!');
         setShowConfetti(true);
         // Animate text change with more visible animation
         textScale.value = withSequence(
@@ -319,6 +321,14 @@ export default function LiftingHome() {
   const { mode, setMode } = useMode();
   const [showModeChooser, setShowModeChooser] = useState(false);
   const [showAssistantCard, setShowAssistantCard] = useState(false);
+  const { availableModes, refresh: refreshAvailableModes } = useAvailableModes();
+
+  // Refresh available modes when screen comes into focus (e.g., after adding a sport)
+  useFocusEffect(
+    useCallback(() => {
+      refreshAvailableModes();
+    }, [refreshAvailableModes])
+  );
 
   // Calculate header height
   const headerTopHeight = 56; // Height for top actions row
@@ -478,9 +488,11 @@ export default function LiftingHome() {
             {/* Small hero icon/illustration */}
             <View style={styles.heroIconContainer}>
               <View style={styles.mascotCircles}>
-                <View style={styles.mascotCircle1} />
-                <View style={styles.mascotCircle2} />
-                <View style={styles.mascotCircle3} />
+                <Image 
+                  source={require("../../../../assets/star.png")} 
+                  style={styles.starImage}
+                  resizeMode="contain"
+                />
               </View>
             </View>
             
@@ -662,30 +674,21 @@ export default function LiftingHome() {
       </ScrollView>
 
       {/* FIX #5: Sticky bottom primary CTA */}
-      <View style={[styles.stickyCTA, { bottom: insets.bottom + 16 }]}>
-        {/* FIX #5: Expandable assistant card above CTA */}
-        <Pressable 
-          style={styles.assistantCard}
-          onPress={() => setShowAssistantCard(!showAssistantCard)}
-        >
-          <View style={styles.assistantCardContent}>
-            <Text style={styles.assistantCardText}>Today's Focus: Mobility + Core (12 min)</Text>
-            <Ionicons 
-              name={showAssistantCard ? "chevron-up" : "chevron-down"} 
-              size={16} 
-              color="#9E9E9E" 
-            />
-          </View>
-        </Pressable>
-
+      <View style={[styles.stickyCTA, { bottom: tabBarHeight + -2 }]}>
         {/* Primary CTA Button - Edit Schedule */}
-        <Pressable 
-          style={styles.primaryCTA} 
+        <AnimatedPressable 
+          style={[styles.primaryCTA, editScheduleAnimatedStyle]} 
           onPress={() => router.push("/(tabs)/(home)/schedule-week")}
+          onPressIn={() => {
+            editScheduleScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+          }}
+          onPressOut={() => {
+            editScheduleScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+          }}
         >
           <Ionicons name="pencil" size={20} color="#000000" />
           <Text style={styles.primaryCTAText}>Edit Schedule</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
       {/* Mode Chooser Modal */}
@@ -698,15 +701,7 @@ export default function LiftingHome() {
         <Pressable style={styles.modalOverlay} onPress={() => setShowModeChooser(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Switch mode</Text>
-            {[
-              { key: "lifting", label: "Lifting", icon: "dumbbell" },
-              { key: "basketball", label: "Basketball", icon: "basketball-outline" },
-              { key: "football", label: "Football", icon: "american-football-outline" },
-              { key: "baseball", label: "Baseball", icon: "baseball" },
-              { key: "soccer", label: "Soccer", icon: "football-outline" },
-              { key: "hockey", label: "Hockey", icon: "hockey-sticks" },
-              { key: "tennis", label: "Tennis", icon: "tennisball-outline" },
-            ].map((m) => (
+            {availableModes.map((m) => (
               <Pressable
                 key={m.key}
                 style={styles.modalItem}
@@ -715,11 +710,26 @@ export default function LiftingHome() {
                   setShowModeChooser(false);
                 }}
               >
-                {m.icon.includes("-") ? (
-                  <Ionicons name={m.icon as any} size={18} color="#FFFFFF" />
-                ) : (
-                  <MaterialCommunityIcons name={m.icon as any} size={18} color="#FFFFFF" />
-                )}
+                {(() => {
+                  // Map each mode to the correct icon library and name
+                  const iconMap: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
+                    "lifting": { lib: 'mci', name: 'dumbbell' },
+                    "basketball": { lib: 'ion', name: 'basketball-outline' },
+                    "football": { lib: 'ion', name: 'american-football-outline' },
+                    "baseball": { lib: 'mci', name: 'baseball' },
+                    "soccer": { lib: 'ion', name: 'football-outline' },
+                    "hockey": { lib: 'mci', name: 'hockey-sticks' },
+                    "tennis": { lib: 'ion', name: 'tennisball-outline' },
+                  };
+                  
+                  const iconConfig = iconMap[m.key] || { lib: 'mci', name: 'dumbbell' };
+                  
+                  return iconConfig.lib === 'ion' ? (
+                    <Ionicons name={iconConfig.name as any} size={18} color="#FFFFFF" />
+                  ) : (
+                    <MaterialCommunityIcons name={iconConfig.name as any} size={18} color="#FFFFFF" />
+                  );
+                })()}
                 <Text style={styles.modalItemText}>{m.label}</Text>
               </Pressable>
             ))}
@@ -733,7 +743,6 @@ export default function LiftingHome() {
           <Confetti 
             active={showConfetti} 
             onComplete={() => {
-              console.log('Confetti animation completed');
               setShowConfetti(false);
             }}
           />
@@ -902,32 +911,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
   },
+  starImage: {
+    width: 242,
+    height: 242,
+  },
   mascotCircle1: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(62, 180, 137, 0.2)", // Green based on #3eb489
     position: "absolute",
     top: 0,
     left: 0,
   },
   mascotCircle2: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "rgba(62, 180, 137, 0.3)", // Green based on #3eb489
     position: "absolute",
-    top: 15,
-    left: 15,
+    top: 20,
+    left: 20,
   },
   mascotCircle3: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(62, 180, 137, 0.4)", // Green based on #3eb489
     position: "absolute",
-    top: 30,
-    left: 30,
+    top: 35,
+    left: 35,
   },
   
   // FIX #4: Typography hierarchy

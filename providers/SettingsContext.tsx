@@ -55,6 +55,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (!user) {
       setPreferences(null);
       setLoading(false);
+      // Clear cached preferences when user logs out
+      try {
+        await AsyncStorage.removeItem(PREFERENCES_STORAGE_KEY);
+      } catch (error) {
+        // Ignore errors
+      }
       return;
     }
 
@@ -64,17 +70,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       
       if (error) {
         console.error('❌ [SettingsContext] Error loading preferences:', error);
-        // Try to load from cache
-        const cached = await AsyncStorage.getItem(PREFERENCES_STORAGE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          setPreferences(parsed);
-          setThemeState(parsed.theme || 'system');
+        // Don't load from cache - always use fresh data from API
+        // Clear any stale cache
+        try {
+          await AsyncStorage.removeItem(PREFERENCES_STORAGE_KEY);
+        } catch (e) {
+          // Ignore errors
         }
       } else if (data) {
         setPreferences(data);
         setThemeState(data.theme || 'system');
-        // Cache preferences
+        // Cache preferences (but they'll be fresh from API with correct defaults)
         await AsyncStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(data));
       }
     } catch (error) {

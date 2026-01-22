@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../../constants/theme";
 import { getPrivacySettings, updatePrivacySettings } from "../../../../lib/api/settings";
 import { Alert } from "react-native";
+import * as Haptics from "expo-haptics";
 
 /* ---- Fonts ---- */
 import {
@@ -142,7 +143,10 @@ export default function PrivacySecuritySettings() {
             </View>
             <Switch
               value={settings.is_private_account}
-              onValueChange={(value) => updateSetting('is_private_account', value)}
+              onValueChange={(value) => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                updateSetting('is_private_account', value);
+              }}
               trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
               thumbColor="#fff"
             />
@@ -254,7 +258,10 @@ export default function PrivacySecuritySettings() {
             </View>
             <Switch
               value={settings.suggest_me_to_others}
-              onValueChange={(value) => updateSetting('suggest_me_to_others', value)}
+              onValueChange={(value) => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                updateSetting('suggest_me_to_others', value);
+              }}
               trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
               thumbColor="#fff"
             />
@@ -319,14 +326,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.strokeSoft,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
   },
   headerTitle: {
     fontSize: 20,

@@ -184,13 +184,7 @@ export default function EditProfile() {
 
 const styles = StyleSheet.create({
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
     marginLeft: 16,
   },
 

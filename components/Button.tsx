@@ -3,6 +3,10 @@ import React from "react";
 import { Pressable, Text, ViewStyle, StyleProp } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "@/constants/theme";
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type Props = {
   label: string;
@@ -23,19 +27,40 @@ function PrimaryButton({
 }: Props) {
   const isSecondary = variant === "secondary";
   
+  // Animation values
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  
   if (isSecondary) {
     return (
-      <Pressable
-        onPress={onPress}
+      <AnimatedPressable
+        onPress={() => {
+          if (!disabled) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress();
+          }
+        }}
         disabled={disabled}
-        style={({ pressed }) => [
+        onPressIn={() => {
+          if (!disabled) {
+            scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+          }
+        }}
+        onPressOut={() => {
+          if (!disabled) {
+            scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+          }
+        }}
+        style={[
           {
             paddingVertical: theme.layout.lg,
             paddingHorizontal: theme.layout.xl,
             borderRadius: theme.radii.pill,
             borderWidth: 1,
             borderColor: theme.colors.primary600,
-            backgroundColor: pressed ? "rgba(23, 214, 127, 0.08)" : "transparent",
+            backgroundColor: "transparent",
             opacity: disabled ? 0.6 : 1,
             alignItems: "center",
             justifyContent: "center",
@@ -45,8 +70,8 @@ function PrimaryButton({
             shadowOpacity: 0.2,
             shadowRadius: 8,
             elevation: 4,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
           },
+          animatedStyle,
           style,
         ]}
       >
@@ -59,15 +84,30 @@ function PrimaryButton({
         >
           {label}
         </Text>
-      </Pressable>
+      </AnimatedPressable>
     );
   }
 
   return (
-    <Pressable
-      onPress={onPress}
+    <AnimatedPressable
+      onPress={() => {
+        if (!disabled) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }
+      }}
       disabled={disabled}
-      style={({ pressed }) => [
+      onPressIn={() => {
+        if (!disabled) {
+          scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+        }
+      }}
+      onPressOut={() => {
+        if (!disabled) {
+          scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+        }
+      }}
+      style={[
         {
           borderRadius: theme.radii.pill,
           opacity: disabled ? 0.6 : 1,
@@ -76,11 +116,11 @@ function PrimaryButton({
           flexDirection: "row",
           gap: theme.layout.sm,
           shadowColor: theme.colors.primary600,
-          shadowOpacity: pressed ? 0.4 : 0.3,
-          shadowRadius: pressed ? 20 : 16,
-          elevation: pressed ? 12 : 8,
-          transform: [{ scale: pressed ? 0.98 : 1 }],
+          shadowOpacity: 0.3,
+          shadowRadius: 16,
+          elevation: 8,
         },
+        animatedStyle,
         style,
       ]}
     >
@@ -108,7 +148,7 @@ function PrimaryButton({
           {label}
         </Text>
       </LinearGradient>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

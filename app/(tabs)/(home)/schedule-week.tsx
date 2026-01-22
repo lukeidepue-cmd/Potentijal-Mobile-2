@@ -9,7 +9,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Alert,
   ImageBackground,
   Dimensions,
 } from 'react-native';
@@ -35,6 +34,9 @@ import {
   getCurrentWeekStart,
   type ScheduleItem,
 } from '../../../lib/api/schedule';
+import { SuccessToast } from '../../../components/SuccessToast';
+import { ErrorToast } from '../../../components/ErrorToast';
+import * as Haptics from 'expo-haptics';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -69,6 +71,10 @@ export default function ScheduleWeekScreen() {
   const [currentWeekSchedule, setCurrentWeekSchedule] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [shouldNavigate, setShouldNavigate] = useState(false);
 
   const currentWeekStart = getCurrentWeekStart();
   const currentWeekDates = getWeekDates(currentWeekStart);
@@ -128,17 +134,42 @@ export default function ScheduleWeekScreen() {
     setSaving(false);
 
     if (currentError.error) {
-      Alert.alert('Error', 'Failed to save schedule. Please try again.');
+      setErrorMessage('Failed to save schedule. Please try again.');
+      setShowError(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
-    Alert.alert('Success', 'Schedule saved!', [
-      {
-        text: 'OK',
-        onPress: () => router.back(),
-      },
-    ]);
+    // Reschedule workout notifications after saving schedule
+    const { scheduleWorkoutNotification } = await import('../../../lib/notifications/notifications');
+    scheduleWorkoutNotification(m).catch((error) => {
+      console.error('❌ [Schedule] Error rescheduling notifications:', error);
+    });
+
+    setShowSuccess(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    // Set flag to navigate after toast animation
+    setTimeout(() => {
+      setShouldNavigate(true);
+    }, 2000);
   };
+
+  // Handle navigation after success toast
+  useEffect(() => {
+    if (shouldNavigate) {
+      // Use a small delay to ensure the component is fully mounted
+      const timer = setTimeout(() => {
+        try {
+          router.back();
+        } catch (error) {
+          console.error('Navigation error:', error);
+        }
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [shouldNavigate]);
 
   if (loading) {
     return (
@@ -201,6 +232,16 @@ export default function ScheduleWeekScreen() {
       style={styles.backgroundImage}
       resizeMode="cover"
     >
+      <SuccessToast
+        message="Schedule saved!"
+        visible={showSuccess}
+        onHide={() => setShowSuccess(false)}
+      />
+      <ErrorToast
+        message={errorMessage}
+        visible={showError}
+        onHide={() => setShowError(false)}
+      />
       {/* Uniform blur across entire screen - pointerEvents none so it doesn't block touches */}
       <BlurView 
         intensity={20} 
@@ -410,7 +451,7 @@ const styles = StyleSheet.create({
   // STEP 7: Footer with bottom fade and detached action
   footerFade: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 44,
     left: 0,
     right: 0,
     paddingTop: 40, // Fade starts higher

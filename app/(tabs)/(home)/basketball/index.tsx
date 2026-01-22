@@ -15,6 +15,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, router } from "expo-router";
+import { useCallback } from "react";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
 import { getScheduleWithStatus, getCurrentWeekStart } from "../../../../lib/api/schedule";
 import { useAuth } from "../../../../providers/AuthProvider";
@@ -22,11 +23,16 @@ import { getHistoryStats } from "../../../../lib/api/history";
 import { useExerciseProgressGraphDirect } from "../../../../hooks/useExerciseProgressGraphDirect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMode } from "../../../../providers/ModeContext";
+import { useBottomTabOverflow } from "../../../../components/ui/TabBarBackground";
+import { useAvailableModes } from "../../../../hooks/useAvailableModes";
 import { getPrimaryExerciseTypeDirect } from "../../../../lib/api/exercise-types-direct";
 import { getMetricOptionsForExerciseType } from "../../../../lib/api/exercise-types";
 import type { ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
 import { Confetti } from "../../../../components/Confetti";
+import { useFeatures } from "../../../../hooks/useFeatures";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from "react-native-reanimated";
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 import {
   useFonts as useSpaceGrotesk,
   SpaceGrotesk_700Bold,
@@ -115,6 +121,14 @@ function yTicksFrom(avg: number) {
 export default function BasketballHome() {
   const [sgLoaded] = useSpaceGrotesk({ SpaceGrotesk_700Bold, SpaceGrotesk_800ExtraBold });
   const insets = useSafeAreaInsets();
+  const { canLogGames, canLogPractices } = useFeatures();
+  const tabBarHeight = useBottomTabOverflow();
+  
+  // Animation for Edit Schedule button
+  const editScheduleScale = useSharedValue(1);
+  const editScheduleAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: editScheduleScale.value }],
+  }));
   
   // Press state for log cards - using animated values for smooth transitions
   const gameScale = useSharedValue(1);
@@ -201,17 +215,8 @@ export default function BasketballHome() {
       // Check if status changed to completed (trigger confetti)
       const prevStatus = previousStatusRef.current;
       
-      // Debug logging
-      console.log('Basketball Schedule Load:', {
-        previousStatus: prevStatus,
-        currentStatus,
-        hasLabel: !!currentItem?.label,
-        shouldTrigger: prevStatus !== null && prevStatus !== 'completed' && currentStatus === 'completed' && currentItem?.label
-      });
-      
       // If we had a previous status and it wasn't completed, but now it is, trigger confetti
       if (prevStatus !== null && prevStatus !== 'completed' && currentStatus === 'completed' && currentItem?.label) {
-        console.log('🎉 Triggering confetti animation!');
         setShowConfetti(true);
         // Animate text change with more visible animation
         textScale.value = withSequence(
@@ -379,6 +384,14 @@ export default function BasketballHome() {
   const { mode, setMode } = useMode();
   const [showModeChooser, setShowModeChooser] = useState(false);
   const [showAssistantCard, setShowAssistantCard] = useState(false);
+  const { availableModes, refresh: refreshAvailableModes } = useAvailableModes();
+
+  // Refresh available modes when screen comes into focus (e.g., after adding a sport)
+  useFocusEffect(
+    useCallback(() => {
+      refreshAvailableModes();
+    }, [refreshAvailableModes])
+  );
 
   // Calculate header height
   const headerTopHeight = 56; // Height for top actions row
@@ -538,9 +551,11 @@ export default function BasketballHome() {
             {/* Small hero icon/illustration */}
             <View style={styles.heroIconContainer}>
               <View style={styles.mascotCircles}>
-                <View style={styles.mascotCircle1} />
-                <View style={styles.mascotCircle2} />
-                <View style={styles.mascotCircle3} />
+                <Image 
+                  source={require("../../../../assets/star.png")} 
+                  style={styles.starImage}
+                  resizeMode="contain"
+                />
               </View>
             </View>
             
@@ -566,9 +581,13 @@ export default function BasketballHome() {
           collapsable={false}
         >
           <Pressable 
-            style={[styles.logSection, { marginTop: 0 }]}
+            style={[styles.logSection, { marginTop: 0 }, !canLogGames && styles.logSectionDisabled]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (!canLogGames) {
+                // Do nothing for premium features when not premium
+                return;
+              }
               // Measure image position before navigation
               if (gameCardRef.current) {
                 gameCardRef.current.measure((x, y, width, height, pageX, pageY) => {
@@ -597,10 +616,10 @@ export default function BasketballHome() {
             gameScrimOpacity.value = withTiming(1, { duration: 100 });
           }}
         >
-          <Animated.View style={[styles.logSectionInner, gameAnimatedStyle]}>
+          <Animated.View style={[styles.logSectionInner, gameAnimatedStyle, !canLogGames && styles.logSectionInnerDisabled]}>
             <Image 
               source={require("../../../../assets/players/kyrie.png")} 
-              style={styles.logImage}
+              style={[styles.logImage, !canLogGames && styles.logImageDisabled]}
               resizeMode="cover"
             />
             {/* Gradient Scrim Overlay */}
@@ -611,11 +630,17 @@ export default function BasketballHome() {
                 style={StyleSheet.absoluteFill}
               />
             </Animated.View>
+            {/* Lock Icon Overlay for non-premium */}
+            {!canLogGames && (
+              <View style={styles.lockOverlay}>
+                <Ionicons name="lock-closed" size={32} color="#FFFFFF" />
+              </View>
+            )}
             {/* Text Overlay - Bottom Left */}
             <View style={styles.logTextOverlay}>
               <View style={styles.logTextContainer}>
-                <Text style={[styles.logTitle, !sgLoaded && { fontFamily: undefined }]}>Log Game</Text>
-                <Text style={styles.logSubtitle}>Stats • Outcome • Notes</Text>
+                <Text style={[styles.logTitle, !sgLoaded && { fontFamily: undefined }, !canLogGames && styles.logTitleDisabled]}>Log Game</Text>
+                <Text style={[styles.logSubtitle, !canLogGames && styles.logSubtitleDisabled]}>Stats • Outcome • Notes</Text>
               </View>
             </View>
           </Animated.View>
@@ -628,9 +653,13 @@ export default function BasketballHome() {
           collapsable={false}
         >
           <Pressable 
-            style={styles.logSection}
+            style={[styles.logSection, !canLogPractices && styles.logSectionDisabled]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (!canLogPractices) {
+                // Do nothing for premium features when not premium
+                return;
+              }
               // Measure image position before navigation
               if (practiceCardRef.current) {
                 practiceCardRef.current.measure((x, y, width, height, pageX, pageY) => {
@@ -659,10 +688,10 @@ export default function BasketballHome() {
             practiceScrimOpacity.value = withTiming(1, { duration: 100 });
           }}
         >
-          <Animated.View style={[styles.logSectionInner, practiceAnimatedStyle]}>
+          <Animated.View style={[styles.logSectionInner, practiceAnimatedStyle, !canLogPractices && styles.logSectionInnerDisabled]}>
             <Image 
               source={require("../../../../assets/players/shai.webp")} 
-              style={styles.logImage}
+              style={[styles.logImage, !canLogPractices && styles.logImageDisabled]}
               resizeMode="cover"
             />
             {/* Gradient Scrim Overlay */}
@@ -673,11 +702,17 @@ export default function BasketballHome() {
                 style={StyleSheet.absoluteFill}
               />
             </Animated.View>
+            {/* Lock Icon Overlay for non-premium */}
+            {!canLogPractices && (
+              <View style={styles.lockOverlay}>
+                <Ionicons name="lock-closed" size={32} color="#FFFFFF" />
+              </View>
+            )}
             {/* Text Overlay - Bottom Left */}
             <View style={styles.logTextOverlay}>
               <View style={styles.logTextContainer}>
-                <Text style={[styles.logTitle, !sgLoaded && { fontFamily: undefined }]}>Log Practice</Text>
-                <Text style={styles.logSubtitle}>Drills • Notes • Minutes</Text>
+                <Text style={[styles.logTitle, !sgLoaded && { fontFamily: undefined }, !canLogPractices && styles.logTitleDisabled]}>Log Practice</Text>
+                <Text style={[styles.logSubtitle, !canLogPractices && styles.logSubtitleDisabled]}>Drills • Notes • Minutes</Text>
               </View>
             </View>
           </Animated.View>
@@ -862,30 +897,21 @@ export default function BasketballHome() {
       </ScrollView>
 
       {/* FIX #5: Sticky bottom primary CTA */}
-      <View style={[styles.stickyCTA, { bottom: insets.bottom + 16 }]}>
-        {/* FIX #5: Expandable assistant card above CTA */}
-        <Pressable 
-          style={styles.assistantCard}
-          onPress={() => setShowAssistantCard(!showAssistantCard)}
-        >
-          <View style={styles.assistantCardContent}>
-            <Text style={styles.assistantCardText}>Today's Focus: Mobility + Core (12 min)</Text>
-            <Ionicons 
-              name={showAssistantCard ? "chevron-up" : "chevron-down"} 
-              size={16} 
-              color="#9E9E9E" 
-            />
-          </View>
-        </Pressable>
-
+      <View style={[styles.stickyCTA, { bottom: tabBarHeight + -2 }]}>
         {/* Primary CTA Button - Edit Schedule */}
-        <Pressable 
-          style={styles.primaryCTA} 
+        <AnimatedPressable 
+          style={[styles.primaryCTA, editScheduleAnimatedStyle]} 
           onPress={() => router.push("/(tabs)/(home)/schedule-week")}
+          onPressIn={() => {
+            editScheduleScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+          }}
+          onPressOut={() => {
+            editScheduleScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+          }}
         >
           <Ionicons name="pencil" size={20} color="#000000" />
           <Text style={styles.primaryCTAText}>Edit Schedule</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
       {/* Mode Chooser Modal */}
@@ -898,31 +924,38 @@ export default function BasketballHome() {
         <Pressable style={styles.modalOverlay} onPress={() => setShowModeChooser(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Switch mode</Text>
-            {[
-              { key: "lifting", label: "Lifting", icon: "dumbbell" },
-              { key: "basketball", label: "Basketball", icon: "basketball-outline" },
-              { key: "football", label: "Football", icon: "american-football-outline" },
-              { key: "baseball", label: "Baseball", icon: "baseball" },
-              { key: "soccer", label: "Soccer", icon: "football-outline" },
-              { key: "hockey", label: "Hockey", icon: "hockey-sticks" },
-              { key: "tennis", label: "Tennis", icon: "tennisball-outline" },
-            ].map((m) => (
-              <Pressable
-                key={m.key}
-                style={styles.modalItem}
-                onPress={() => {
-                  setMode(m.key as any);
-                  setShowModeChooser(false);
-                }}
-              >
-                {m.icon.includes("-") ? (
-                  <Ionicons name={m.icon as any} size={18} color="#FFFFFF" />
-                ) : (
-                  <MaterialCommunityIcons name={m.icon as any} size={18} color="#FFFFFF" />
-                )}
-                <Text style={styles.modalItemText}>{m.label}</Text>
-              </Pressable>
-            ))}
+            {availableModes.map((m) => {
+              // Map each mode to the correct icon library and name
+              const iconMap: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
+                "lifting": { lib: 'mci', name: 'dumbbell' },
+                "basketball": { lib: 'ion', name: 'basketball-outline' },
+                "football": { lib: 'ion', name: 'american-football-outline' },
+                "baseball": { lib: 'mci', name: 'baseball' },
+                "soccer": { lib: 'ion', name: 'football-outline' },
+                "hockey": { lib: 'mci', name: 'hockey-sticks' },
+                "tennis": { lib: 'ion', name: 'tennisball-outline' },
+              };
+              
+              const iconConfig = iconMap[m.key] || { lib: 'mci', name: 'dumbbell' };
+              
+              return (
+                <Pressable
+                  key={m.key}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setMode(m.key as any);
+                    setShowModeChooser(false);
+                  }}
+                >
+                  {iconConfig.lib === 'ion' ? (
+                    <Ionicons name={iconConfig.name as any} size={18} color="#FFFFFF" />
+                  ) : (
+                    <MaterialCommunityIcons name={iconConfig.name as any} size={18} color="#FFFFFF" />
+                  )}
+                  <Text style={styles.modalItemText}>{m.label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </Pressable>
       </Modal>
@@ -933,7 +966,6 @@ export default function BasketballHome() {
           <Confetti 
             active={showConfetti} 
             onComplete={() => {
-              console.log('Confetti animation completed');
               setShowConfetti(false);
             }}
           />
@@ -1102,32 +1134,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
   },
-  mascotCircle1: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(62, 180, 137, 0.2)", // Green based on #3eb489
-    position: "absolute",
-    top: 0,
-    left: 0,
-  },
-  mascotCircle2: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "rgba(62, 180, 137, 0.3)", // Green based on #3eb489
-    position: "absolute",
-    top: 15,
-    left: 15,
-  },
-  mascotCircle3: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(62, 180, 137, 0.4)", // Green based on #3eb489
-    position: "absolute",
-    top: 30,
-    left: 30,
+  starImage: {
+    width: 242,
+    height: 242,
   },
   
   // FIX #4: Typography hierarchy
@@ -1459,5 +1468,33 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 24,
     fontWeight: "700",
+  },
+  
+  // Disabled styles for non-premium users
+  logSectionDisabled: {
+    opacity: 0.7,
+  },
+  logSectionInnerDisabled: {
+    opacity: 0.8,
+  },
+  logImageDisabled: {
+    opacity: 0.6,
+  },
+  logTitleDisabled: {
+    opacity: 0.85,
+  },
+  logSubtitleDisabled: {
+    opacity: 0.75,
+  },
+  lockOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    zIndex: 10,
   },
 });

@@ -17,6 +17,8 @@ import * as Haptics from "expo-haptics";
 import { theme } from "../../../../constants/theme";
 import { createGame } from "../../../../lib/api/games";
 import { useMode } from "../../../../providers/ModeContext";
+import { SuccessToast } from "../../../../components/SuccessToast";
+import { ErrorToast } from "../../../../components/ErrorToast";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -49,6 +51,9 @@ export default function AddGameScreen() {
   const [stats, setStats] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [animationComplete, setAnimationComplete] = useState(false);
   
   // Refs for keyboard handling
@@ -157,16 +162,19 @@ export default function AddGameScreen() {
     setSaving(false);
 
     if (error) {
-      Alert.alert("Error", error.message || "Failed to save game. Please try again.");
+      setErrorMessage(error.message || "Failed to save game. Please try again.");
+      setShowError(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
-    Alert.alert("Success", "Game saved!", [
-      {
-        text: "OK",
-        onPress: () => router.back(),
-      },
-    ]);
+    setShowSuccess(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    // Navigate back after toast animation
+    setTimeout(() => {
+      router.back();
+    }, 2000);
   };
 
   if (!geistLoaded) {
@@ -179,6 +187,16 @@ export default function AddGameScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg0 }}>
+      <SuccessToast
+        message="Game saved!"
+        visible={showSuccess}
+        onHide={() => setShowSuccess(false)}
+      />
+      <ErrorToast
+        message={errorMessage}
+        visible={showError}
+        onHide={() => setShowError(false)}
+      />
       {/* Animated Image - Part of the screen (not overlay) */}
       <Animated.View style={imageAnimatedStyle}>
         <Image 
@@ -269,7 +287,7 @@ export default function AddGameScreen() {
       </Animated.View>
 
       {/* Floating Save Button - Bottom Right */}
-      <View style={[styles.floatingButtonContainer, { bottom: 24 + insets.bottom }]}>
+      <View style={[styles.floatingButtonContainer, { bottom: 34 + insets.bottom }]}>
         {/* Shadow wrapper with glow effect */}
         <Animated.View 
           style={[
@@ -318,14 +336,7 @@ const styles = StyleSheet.create({
     marginTop: IMAGE_HEIGHT,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    // No box styling - matches onboarding screens
   },
   headingSection: {
     paddingHorizontal: 20,

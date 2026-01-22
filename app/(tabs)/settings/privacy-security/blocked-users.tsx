@@ -9,6 +9,7 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -109,11 +110,12 @@ export default function BlockedUsersScreen() {
         </View>
       ) : blockedUsers.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="ban-outline" size={64} color={theme.colors.textLo} />
+          <Image
+            source={require("../../../../assets/empty-star.png")}
+            style={styles.emptyStar}
+            resizeMode="contain"
+          />
           <Text style={styles.emptyText}>No blocked users</Text>
-          <Text style={styles.emptySubtext}>
-            Users you block will appear here
-          </Text>
         </View>
       ) : (
         <ScrollView
@@ -169,14 +171,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.strokeSoft,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
   },
   headerTitle: {
     fontSize: 20,
@@ -193,21 +188,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 32,
+    minHeight: 400,
+    paddingVertical: 60,
+  },
+  emptyStar: {
+    width: 182,
+    height: 182,
+    marginBottom: -30,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: theme.colors.textHi,
-    marginTop: 16,
-    fontFamily: FONT.uiSemi,
-  },
-  emptySubtext: {
-    fontSize: 14,
+    fontSize: 26,
     color: theme.colors.textLo,
-    marginTop: 8,
-    textAlign: "center",
-    fontFamily: FONT.uiRegular,
+    fontFamily: FONT.uiSemi,
   },
   scrollView: {
     flex: 1,

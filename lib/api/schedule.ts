@@ -130,8 +130,6 @@ export async function getScheduleWithStatus(params: {
       ? mapModeKeyToSportMode(params.mode) 
       : params.mode;
 
-    // Debug: Log the mode being used
-    console.log(`[Schedule] Checking schedule for mode: ${params.mode} -> ${sportMode}`);
 
     // Get schedule
     const { data: schedule, error: scheduleError } = await getWeeklySchedule(params);
@@ -178,10 +176,6 @@ export async function getScheduleWithStatus(params: {
     
     const workoutDates = new Set(filteredWorkouts.map(w => w.performed_at));
     
-    // Debug logging to verify mode filtering is working
-    if (workouts && workouts.length > 0) {
-      console.log(`[Schedule] Mode: ${sportMode}, Total workouts found: ${workouts.length}, Filtered: ${filteredWorkouts.length}, Dates: ${Array.from(workoutDates).join(', ')}`);
-    }
 
     // Build schedule with status
     const scheduleWithStatus: ScheduleWithStatus[] = (schedule || []).map((item, index) => {
@@ -226,10 +220,6 @@ export async function getScheduleWithStatus(params: {
         // Has label and has workout = completed (green check)
         // CRITICAL: hasWorkout should ONLY be true if there's a workout in THIS specific mode
         status = 'completed';
-        // Debug logging for today's date
-        if (isToday) {
-          console.log(`[Schedule] Today (${date}) marked as completed - hasWorkout: ${hasWorkout}, mode: ${sportMode}, label: ${label}`);
-        }
       } else if (isPast && !isToday) {
         // Past day with label but no workout = missed (red X)
         status = 'missed';

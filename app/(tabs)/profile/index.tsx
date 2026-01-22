@@ -27,6 +27,8 @@ import { useFeatures } from "../../../hooks/useFeatures";
 import UpgradeModal from "../../../components/UpgradeModal";
 import { blockUser, isUserBlocked } from "../../../lib/api/settings";
 import { theme } from "../../../constants/theme";
+import { Skeleton, SkeletonCircle, SkeletonText } from "../../../components/Skeleton";
+import { AnimatedProgressBar } from "../../../components/AnimatedProgressBar";
 
 /* ---- Fonts ---- */
 import {
@@ -408,11 +410,30 @@ export default function Profile() {
     if (!res.canceled && res.assets[0]) {
       const imageUri = res.assets[0].uri;
       setPfpUri(imageUri); // Optimistic update
+      setIsUploading(true);
+      setUploadLabel("Uploading profile picture...");
+      setUploadProgress(0);
+
+      // Simulate progress (Supabase doesn't provide real-time progress)
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 0.9) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 0.1;
+        });
+      }, 200);
 
       // Upload to Supabase
       const { data, error } = await uploadProfileImage(imageUri);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(1);
       if (error) {
         console.error('❌ [Profile] Upload error details:', error);
+        setIsUploading(false);
+        setUploadProgress(0);
         Alert.alert("Error", `Failed to upload profile picture: ${error.message || 'Unknown error'}`);
         setPfpUri(profile?.profile_image_url || null); // Revert
       } else if (data) {
@@ -429,6 +450,12 @@ export default function Profile() {
             setProfile(updatedProfile);
             setPfpUri(updatedProfile.profile_image_url);
           }
+        }, 500);
+        
+        // Hide progress after a brief delay
+        setTimeout(() => {
+          setIsUploading(false);
+          setUploadProgress(0);
         }, 500);
       }
     }
@@ -451,9 +478,30 @@ export default function Profile() {
     } as any);
     if (!res.canceled && res.assets.length > 0) {
       const files = res.assets.map((a) => ({ uri: a.uri }));
+      setIsUploading(true);
+      setUploadLabel(`Uploading ${files.length} highlight${files.length > 1 ? 's' : ''}...`);
+      setUploadProgress(0);
+
+      // Simulate progress for multiple files
+      const totalFiles = files.length;
+      let completedFiles = 0;
+      const progressInterval = setInterval(() => {
+        completedFiles += 0.1;
+        const progress = Math.min(completedFiles / totalFiles, 0.9);
+        setUploadProgress(progress);
+        if (progress >= 0.9) {
+          clearInterval(progressInterval);
+        }
+      }, 300);
+
       const { data, error } = await uploadHighlights(files);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(1);
       if (error) {
         console.error('❌ [Highlights] Upload error details:', error);
+        setIsUploading(false);
+        setUploadProgress(0);
         Alert.alert("Error", `Failed to upload highlights: ${error.message || 'Unknown error'}`);
       } else if (data) {
         // Add new highlights to clips immediately
@@ -481,6 +529,12 @@ export default function Profile() {
         if (updatedStats) {
           setStats(updatedStats);
         }
+        
+        // Hide progress after a brief delay
+        setTimeout(() => {
+          setIsUploading(false);
+          setUploadProgress(0);
+        }, 500);
       }
     }
   };
@@ -550,10 +604,87 @@ export default function Profile() {
 
   const viewConfig = useMemo(() => ({ itemVisiblePercentThreshold: 80 }), []);
 
-  if (!fontsReady || loading) {
+  if (!fontsReady) {
     return (
       <View style={{ flex: 1, backgroundColor: DARK, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: DARK }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: 28,
+            paddingTop: 44,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Skeleton Profile Header */}
+          <View style={{ marginBottom: 20 }}>
+            <Skeleton width={120} height={24} borderRadius={4} style={{ marginBottom: 12 }} />
+            <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)', marginBottom: 24 }} />
+          </View>
+
+          {/* Skeleton Top Row (Avatar + Name) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            <SkeletonCircle size={80} />
+            <View style={{ flex: 1, marginLeft: 16 }}>
+              <SkeletonText width="60%" style={{ marginBottom: 8 }} />
+              <SkeletonText width="40%" />
+            </View>
+          </View>
+
+          {/* Skeleton Bio Card */}
+          <View style={{
+            backgroundColor: CARD,
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: STROKE,
+          }}>
+            <SkeletonText width="30%" style={{ marginBottom: 10 }} />
+            <SkeletonText width="100%" style={{ marginBottom: 6 }} />
+            <SkeletonText width="80%" />
+          </View>
+
+          {/* Skeleton Stats Row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
+            {[1, 2, 3].map((i) => (
+              <View key={i} style={{ alignItems: 'center' }}>
+                <SkeletonText width={60} style={{ marginBottom: 6 }} />
+                <SkeletonText width={40} />
+              </View>
+            ))}
+          </View>
+
+          {/* Skeleton Buttons */}
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+            <Skeleton width="48%" height={40} borderRadius={20} />
+            <Skeleton width="48%" height={40} borderRadius={20} />
+          </View>
+          <Skeleton width="100%" height={40} borderRadius={20} style={{ marginBottom: 20 }} />
+
+          {/* Skeleton Highlights Grid */}
+          <View style={{ marginTop: 20 }}>
+            <SkeletonText width="40%" style={{ marginBottom: 16 }} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {[...Array(6)].map((_, i) => (
+                <Skeleton
+                  key={i}
+                  width={(Dimensions.get('window').width - 48) / 3 - 6}
+                  height={(Dimensions.get('window').width - 48) / 3 - 6}
+                  borderRadius={8}
+                />
+              ))}
+            </View>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -566,6 +697,19 @@ export default function Profile() {
   /* ---------------------------- UI ---------------------------- */
   return (
     <View style={{ flex: 1, backgroundColor: DARK }}>
+      {/* Upload Progress Overlay */}
+      {isUploading && (
+        <View style={styles.progressOverlay}>
+          <View style={styles.progressContainer}>
+            <AnimatedProgressBar
+              progress={uploadProgress}
+              height={8}
+              showPercentage={true}
+              label={uploadLabel}
+            />
+          </View>
+        </View>
+      )}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
@@ -584,14 +728,6 @@ export default function Profile() {
               top: 44,
               left: 16,
               zIndex: 10,
-              width: 40,
-              height: 40,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.15)",
-              backgroundColor: "rgba(0,0,0,0.3)",
-              alignItems: "center",
-              justifyContent: "center",
             }}
             hitSlop={10}
           >
@@ -806,14 +942,13 @@ export default function Profile() {
         </Text>
 
         {clips.length === 0 ? (
-          <View
-            style={styles.emptyCard}
-            /* CHANGE (SPACING): emptyCard.marginTop = gap between heading and empty state card; paddingVertical = card height */
-          >
-            <Ionicons name="videocam-outline" size={28} color={DIM} />
-            <Text style={{ color: DIM, marginTop: 10 /* CHANGE (SPACING): icon-to-text gap */ }}>
-              No highlights yet
-            </Text>
+          <View style={styles.emptyContainer}>
+            <Image
+              source={require("../../../assets/empty-star.png")}
+              style={styles.emptyStar}
+              resizeMode="contain"
+            />
+            <Text style={styles.emptyText}>No highlights yet</Text>
           </View>
         ) : (
           <Pressable
@@ -1059,15 +1194,22 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 16, fontWeight: "900", fontFamily: FONT.uiBold },
 
-  emptyCard: {
-    marginTop: 16,     // CHANGE (SPACING): gap between "Highlights" header and empty state card
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: STROKE,
-    backgroundColor: CARD,
-    alignItems: "center",
+  emptyContainer: {
+    marginTop: 16,
+    flex: 1,
     justifyContent: "center",
-    paddingVertical: 32, // CHANGE (SPACING): height/air inside the empty card
+    alignItems: "center",
+    minHeight: 200,
+    paddingVertical: 60,
+  },
+  emptyStar: {
+    width: 182,
+    height: 182,
+    marginBottom: -30,
+  },
+  emptyText: {
+    color: DIM,
+    fontSize: 26,
   },
 
   previewCard: {
@@ -1111,6 +1253,27 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   hintText: { color: "#FFF", opacity: 0.9, fontSize: 14, marginBottom: 2 },
+
+  progressOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    zIndex: 1000,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  progressContainer: {
+    width: "80%",
+    maxWidth: 400,
+    padding: 24,
+    backgroundColor: CARD,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: STROKE,
+  },
 });
 
 

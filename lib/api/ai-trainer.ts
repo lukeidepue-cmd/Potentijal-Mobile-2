@@ -50,7 +50,6 @@ export interface UserContextData {
     drill: string;
     notes: string | null;
   }>;
-  // recentMeals removed - meals feature removed from app
 }
 
 /**
@@ -122,8 +121,6 @@ export function formatUserContextForAI(context: UserContextData): string {
     prompt += `\n`;
   }
 
-  // Recent meals removed - meals feature removed from app
-
   prompt += `Based on this information, provide personalized advice, insights, and recommendations to help this athlete improve. `;
   prompt += `You should reference their specific workouts, games, and practices when giving advice. `;
   prompt += `If they mention new information (like injuries), remember it for future conversations. `;
@@ -147,8 +144,6 @@ export async function sendMessageToAI(
       console.error('❌ [AI Trainer] Failed to get session:', sessionError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
-
-    console.log('🤖 [AI Trainer] Sending message to AI via Edge Function...');
 
     // Get the Supabase URL from the client
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -184,7 +179,6 @@ export async function sendMessageToAI(
       return { data: null, error: { message: 'No response from AI' } };
     }
 
-    console.log('✅ [AI Trainer] Received AI response');
     return { data: aiResponse, error: null };
   } catch (error: any) {
     console.error('❌ [AI Trainer] Error sending message:', error);

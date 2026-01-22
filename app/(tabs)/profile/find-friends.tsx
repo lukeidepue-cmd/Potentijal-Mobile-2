@@ -161,6 +161,11 @@ export default function FindFriends() {
           </View>
         ) : profiles.length === 0 ? (
           <View style={styles.emptyContainer}>
+            <Image
+              source={require("../../../assets/empty-star.png")}
+              style={styles.emptyStar}
+              resizeMode="contain"
+            />
             <Text style={styles.emptyText}>
               {searchQuery.trim() ? "No users found" : "No recommendations available"}
             </Text>
@@ -230,13 +235,7 @@ export default function FindFriends() {
 
 const styles = StyleSheet.create({
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
+    // No box styling - matches onboarding screens
     marginLeft: 16,
     marginBottom: 16,
   },
@@ -278,12 +277,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyContainer: {
-    paddingVertical: 40,
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
+    minHeight: 400,
+    paddingVertical: 60,
+  },
+  emptyStar: {
+    width: 182,
+    height: 182,
+    marginBottom: -30,
   },
   emptyText: {
     color: theme.colors.textLo,
-    fontSize: 16,
+    fontSize: 26,
   },
   profilesList: {
     gap: 12,

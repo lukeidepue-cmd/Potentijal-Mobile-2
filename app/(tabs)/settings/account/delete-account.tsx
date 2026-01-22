@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../../constants/theme";
 import { useAuth } from "../../../../providers/AuthProvider";
 import { deleteAccount } from "../../../../lib/api/settings";
+import { LinearGradient } from "expo-linear-gradient";
 
 /* ---- Fonts ---- */
 import {
@@ -95,56 +96,62 @@ export default function DeleteAccount() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Gradient Background */}
+      <LinearGradient
+        colors={["#4A1A1A", "rgba(75, 26, 26, 0.5)", "transparent", theme.colors.bg0]}
+        locations={[0, 0.2, 0.4, 0.7]}
+        style={styles.gradientBackground}
+      />
+
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
-        </Pressable>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <View style={{ width: 40, alignItems: "flex-start" }}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={20} color={theme.colors.textHi} />
+          </Pressable>
+        </View>
         <Text style={styles.headerTitle}>Delete Account</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 16 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Warning Section */}
-        <View style={styles.warningBox}>
-          <Ionicons name="warning-outline" size={32} color={theme.colors.danger} />
-          <Text style={styles.warningTitle}>Warning: This action is permanent</Text>
-          <Text style={styles.warningText}>
-            Deleting your account will permanently remove all your data including:
-          </Text>
-          <View style={styles.warningList}>
-            <Text style={styles.warningListItem}>• All workouts and exercise data</Text>
-            <Text style={styles.warningListItem}>• All games and practices</Text>
-            <Text style={styles.warningListItem}>• Your profile and social connections</Text>
-            <Text style={styles.warningListItem}>• All highlights and media</Text>
-            <Text style={styles.warningListItem}>• AI Trainer settings and memory</Text>
-            <Text style={styles.warningListItem}>• All progress and history</Text>
-          </View>
-          <Text style={styles.warningText}>
-            This cannot be undone. If you're sure, type "DELETE" below to confirm.
-          </Text>
+        {/* Warning Text */}
+        <Text style={styles.warningText}>
+          Please know that deleting your account will remove all of your data
+        </Text>
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Bullet Points */}
+        <View style={styles.bulletList}>
+          <Text style={styles.bulletItem}>• All workouts and exercise data</Text>
+          <Text style={styles.bulletItem}>• All games and practices</Text>
+          <Text style={styles.bulletItem}>• Your profile and social connections</Text>
+          <Text style={styles.bulletItem}>• All highlights and media</Text>
+          <Text style={styles.bulletItem}>• AI Trainer settings and memory</Text>
+          <Text style={styles.bulletItem}>• All progress and history</Text>
         </View>
 
         {/* Confirmation Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Type "DELETE" to confirm</Text>
+        <View style={styles.inputLine}>
           <TextInput
-            style={styles.input}
+            style={styles.lineInput}
             value={confirmText}
             onChangeText={setConfirmText}
-            placeholder="DELETE"
+            placeholder='Type "DELETE" to confirm'
             placeholderTextColor={theme.colors.textLo}
             autoCapitalize="characters"
             autoCorrect={false}
           />
+          <View style={styles.lineUnderline} />
         </View>
 
         {/* Delete Button */}
@@ -156,10 +163,7 @@ export default function DeleteAccount() {
           {deleting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <>
-              <Ionicons name="trash-outline" size={20} color="#fff" />
-              <Text style={styles.deleteButtonText}>Permanently Delete Account</Text>
-            </>
+            <Text style={styles.deleteButtonText}>Delete My Account</Text>
           )}
         </Pressable>
       </ScrollView>
@@ -172,24 +176,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 360,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    paddingTop: 8,
+    paddingBottom: 12,
+    zIndex: 10,
   },
   headerTitle: {
     fontSize: 20,
@@ -201,77 +202,55 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  warningBox: {
-    backgroundColor: theme.colors.danger + "15",
-    borderWidth: 1,
-    borderColor: theme.colors.danger + "40",
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 24,
-    alignItems: "center",
-  },
-  warningTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: theme.colors.danger,
-    marginTop: 12,
-    marginBottom: 12,
-    fontFamily: FONT.uiBold,
-    textAlign: "center",
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   warningText: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.textHi,
-    lineHeight: 20,
-    marginBottom: 12,
-    fontFamily: FONT.uiRegular,
-    textAlign: "center",
-  },
-  warningList: {
-    width: "100%",
-    marginVertical: 12,
-  },
-  warningListItem: {
-    fontSize: 14,
-    color: theme.colors.textHi,
-    lineHeight: 22,
-    marginBottom: 4,
+    lineHeight: 24,
+    marginBottom: 32,
     fontFamily: FONT.uiRegular,
   },
-  section: {
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 32,
+  },
+  bulletList: {
+    marginBottom: 48,
+  },
+  bulletItem: {
+    fontSize: 16,
+    color: theme.colors.textHi,
+    lineHeight: 32,
+    marginBottom: 8,
+    fontFamily: FONT.uiRegular,
+  },
+  inputLine: {
     marginBottom: 24,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.textHi,
-    marginBottom: 8,
-    fontFamily: FONT.uiSemi,
-  },
-  input: {
-    backgroundColor: theme.colors.surface1,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  lineInput: {
     fontSize: 16,
     color: theme.colors.textHi,
     fontFamily: FONT.uiRegular,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
     textTransform: "uppercase",
+  },
+  lineUnderline: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginTop: 4,
   },
   deleteButton: {
     backgroundColor: theme.colors.danger,
-    borderRadius: 12,
-    paddingVertical: 16,
-    flexDirection: "row",
+    borderRadius: 20,
+    paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    marginTop: 8,
+    marginTop: 0,
   },
   deleteButtonDisabled: {
     opacity: 0.6,

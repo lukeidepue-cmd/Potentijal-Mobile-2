@@ -105,22 +105,17 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
       .order('created_at', { ascending: false })
       .limit(50); // Get more to sort properly
 
-    console.log(`👥 [Recommended Profiles] Found ${allProfiles?.length || 0} total profiles`);
-
     if (error) {
       console.error('❌ [Recommended Profiles] Query error:', error);
       return { data: null, error };
     }
 
     if (!allProfiles || allProfiles.length === 0) {
-      console.log('👥 [Recommended Profiles] No profiles found');
       return { data: [], error: null };
     }
 
     // Get privacy settings for all profiles - CRITICAL: Must fetch AFTER getting profiles
-    console.log(`🔒 [Recommendations] ===== START Loading Privacy Settings =====`);
     const profileIds = allProfiles.map(p => p.id);
-    console.log(`🔒 [Recommendations] Fetching privacy settings for profile IDs:`, profileIds);
     
     // IMPORTANT: RLS might block us from reading other users' privacy settings
     // We need to check if we can read them, or if RLS is blocking
@@ -137,24 +132,16 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
       // If there's a real error, log it but continue
     }
 
-    console.log(`🔒 [Recommendations] Raw privacy settings response:`, privacySettings);
-    console.log(`🔒 [Recommendations] Privacy settings count: ${privacySettings?.length || 0}`);
-
     const privacyMap = new Map();
     (privacySettings || []).forEach(ps => {
       privacyMap.set(ps.user_id, ps);
-      console.log(`🔒 [Privacy] User ${ps.user_id}: profile="${ps.who_can_see_profile}", highlights="${ps.who_can_see_highlights}", suggest=${ps.suggest_me_to_others}`);
     });
-    
-    console.log(`🔒 [Privacy] Loaded ${privacyMap.size} privacy settings for ${allProfiles.length} profiles`);
     
     // If we got 0 settings but have profiles, this might be an RLS issue
     if (privacyMap.size === 0 && allProfiles.length > 0 && !privacyError) {
       console.warn('⚠️ [Recommendations] WARNING: No privacy settings found but no error. This might indicate RLS is blocking access or settings don\'t exist.');
       console.warn('⚠️ [Recommendations] You may need to run migration 019_fix_privacy_settings_rls.sql to allow reading privacy settings.');
     }
-    
-    console.log(`🔒 [Recommendations] ===== END Loading Privacy Settings =====`);
 
     // Get mutual followers for each profile
     // profileIds already declared above for privacy settings query
@@ -192,20 +179,15 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
     const filteredProfiles = allProfiles.filter(profile => {
       // Exclude blocked users
       if (blockedIds.has(profile.id) || blockedByIds.has(profile.id)) {
-        console.log(`🚫 [Recommendations] Excluding ${profile.id} - blocked`);
         return false;
       }
 
       // Get privacy settings for this profile
       const privacy = privacyMap.get(profile.id);
-      console.log(`🔍 [Recommendations] Checking profile ${profile.id} (${profile.username}): privacy=${privacy ? 'exists' : 'none'}`);
       
       if (privacy) {
-        console.log(`🔍 [Recommendations] Privacy details: suggest=${privacy.suggest_me_to_others}, profile=${privacy.who_can_see_profile}`);
-        
         // Exclude users who don't want to be recommended
         if (privacy.suggest_me_to_others === false) {
-          console.log(`🚫 [Recommendations] Excluding ${profile.id} (${profile.username}) - suggest_me_to_others is false`);
           return false;
         }
 
@@ -213,42 +195,25 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
         const isFollowing = followingIds.has(profile.id);
         // Normalize visibility value - handle case sensitivity and null/undefined
         const profileVisibility = (privacy.who_can_see_profile || 'everyone').toLowerCase();
-        console.log(`🔍 [Recommendations] Profile visibility: "${profileVisibility}" (raw: "${privacy.who_can_see_profile}"), isFollowing: ${isFollowing}`);
         
         // If set to 'none', exclude completely
         if (profileVisibility === 'none') {
-          console.log(`🚫 [Recommendations] EXCLUDING ${profile.id} (@${profile.username}) - profile visibility is 'none'`);
           return false;
         }
         
         // If set to 'followers', only show if user is following
-        if (profileVisibility === 'followers') {
-          if (!isFollowing) {
-            console.log(`🚫 [Recommendations] EXCLUDING ${profile.id} (@${profile.username}) - profile visibility is 'followers' and user is NOT following`);
-            return false;
-          } else {
-            console.log(`✅ [Recommendations] Profile ${profile.id} (@${profile.username}) - visibility is 'followers' but user IS following`);
-          }
+        if (profileVisibility === 'followers' && !isFollowing) {
+          return false;
         }
-        
-        // If 'everyone', allow (continue below)
-        if (profileVisibility === 'everyone') {
-          console.log(`✅ [Recommendations] Profile ${profile.id} (@${profile.username}) - visibility is 'everyone'`);
-        }
-        console.log(`✅ [Recommendations] Profile ${profile.id} (@${profile.username}) passed privacy checks`);
-      } else {
-        console.log(`✅ [Recommendations] Profile ${profile.id} (${profile.username}) has no privacy settings - defaulting to public`);
       }
       // If no privacy settings exist, default to public (allow)
 
       // Exclude already-followed users
       const isFollowing = followingIds.has(profile.id);
       if (isFollowing) {
-        console.log(`🚫 [Recommendations] Excluding ${profile.id} (${profile.username}) - user is already following`);
         return false;
       }
       
-      console.log(`✅ [Recommendations] Including ${profile.id} (${profile.username})`);
       return true;
     });
 
@@ -280,7 +245,6 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
     });
 
     const data = sortedProfiles.slice(0, 20); // Limit to 20
-    console.log(`👥 [Recommended Profiles] Returning ${data.length} profiles (sorted by mutuals/creators)`);
 
     // Get follow status for final sorted profiles
     const finalProfileIds = data.map((p) => p.id);
@@ -558,8 +522,6 @@ export async function follow(profileId: string): Promise<{ data: boolean | null;
     if (user.id === profileId) {
       return { data: null, error: { message: 'Cannot follow yourself' } };
     }
-
-    console.log(`👥 [Follow] User ${user.id} attempting to follow ${profileId}`);
     
     const { data, error } = await supabase
       .from('follows')
@@ -573,13 +535,11 @@ export async function follow(profileId: string): Promise<{ data: boolean | null;
       console.error(`❌ [Follow] Error following user:`, error);
       // Check if already following (unique constraint violation)
       if (error.code === '23505') {
-        console.log(`✅ [Follow] Already following, treating as success`);
         return { data: true, error: null }; // Already following, treat as success
       }
       return { data: null, error };
     }
 
-    console.log(`✅ [Follow] Successfully followed user. Inserted data:`, data);
     return { data: true, error: null };
   } catch (error: any) {
     console.error(`❌ [Follow] Exception:`, error);

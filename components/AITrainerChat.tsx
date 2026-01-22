@@ -10,11 +10,28 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
+  Dimensions,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "../constants/theme";
 import { sendMessageToAI } from "../lib/api/ai-trainer";
+import * as Haptics from "expo-haptics";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  withDelay,
+  Easing,
+} from "react-native-reanimated";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 /* ---- Fonts ---- */
 import {
@@ -43,6 +60,8 @@ interface AITrainerChatProps {
   onClose: () => void;
 }
 
+const MESSAGES_STORAGE_KEY = '@ai_trainer_messages';
+
 export default function AITrainerChat({ onClose }: AITrainerChatProps) {
   const insets = useSafeAreaInsets();
   const [geistLoaded] = useGeist({
@@ -53,17 +72,121 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
   });
   const fontsReady = geistLoaded;
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: "Hi! I'm your AI Trainer. I have access to all your workouts, games, and practices. How can I help you improve today?",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Load messages from storage on mount
+  useEffect(() => {
+    loadMessages();
+  }, []);
+
+  // Save messages to storage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveMessages(messages);
+    }
+  }, [messages]);
+
+  const loadMessages = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(MESSAGES_STORAGE_KEY);
+      if (stored) {
+        const parsedMessages = JSON.parse(stored);
+        // Convert timestamp strings back to Date objects
+        const messagesWithDates = parsedMessages.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp),
+        }));
+        setMessages(messagesWithDates);
+      }
+    } catch (error) {
+      console.error('❌ [AI Trainer] Error loading messages:', error);
+    }
+  };
+
+  const saveMessages = async (msgs: Message[]) => {
+    try {
+      await AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(msgs));
+    } catch (error) {
+      console.error('❌ [AI Trainer] Error saving messages:', error);
+    }
+  };
+
+  const clearMessages = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      "Clear Chat",
+      "Are you sure you want to clear all messages?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem(MESSAGES_STORAGE_KEY);
+              setMessages([]);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            } catch (error) {
+              console.error('❌ [AI Trainer] Error clearing messages:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+  
+  // Animation for input focus
+  const inputScale = useSharedValue(1);
+
+  // Bouncing dots animation for loading
+  const dot1Opacity = useSharedValue(1);
+  const dot2Opacity = useSharedValue(1);
+  const dot3Opacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (isLoading) {
+      // Animate dots in sequence - each dot bounces with a delay
+      const bounceAnimation = () => {
+        return withRepeat(
+          withSequence(
+            withTiming(0.3, { duration: 300, easing: Easing.ease }),
+            withTiming(1, { duration: 300, easing: Easing.ease }),
+          ),
+          -1, // Infinite loop
+          false // Don't reverse
+        );
+      };
+
+      // Start animations with delays for sequential bounce effect
+      dot1Opacity.value = withDelay(0, bounceAnimation());
+      dot2Opacity.value = withDelay(200, bounceAnimation());
+      dot3Opacity.value = withDelay(400, bounceAnimation());
+    } else {
+      dot1Opacity.value = withTiming(1, { duration: 200 });
+      dot2Opacity.value = withTiming(1, { duration: 200 });
+      dot3Opacity.value = withTiming(1, { duration: 200 });
+    }
+  }, [isLoading]);
+
+  const dot1Style = useAnimatedStyle(() => ({
+    opacity: dot1Opacity.value,
+  }));
+
+  const dot2Style = useAnimatedStyle(() => ({
+    opacity: dot2Opacity.value,
+  }));
+
+  const dot3Style = useAnimatedStyle(() => ({
+    opacity: dot3Opacity.value,
+  }));
+  
+  const inputAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: inputScale.value }],
+  }));
 
   useEffect(() => {
     // Scroll to bottom when new messages arrive
@@ -74,6 +197,8 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
 
   const handleSend = async () => {
     if (!inputText.trim() || isLoading) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -128,12 +253,28 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
     );
   }
 
+  const hasMessages = messages.length > 0;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={insets.top}
-    >
+    <View style={styles.container}>
+      {/* Blue gradient background (like account-basics) */}
+      <LinearGradient
+        colors={['#0B0F1A', '#0F1A2E', '#0F2A4A', '#070B10']}
+        locations={[0, 0.3, 0.6, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Vignette overlay */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent', 'rgba(0,0,0,0.5)']}
+        locations={[0, 0.15, 0.85, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      {/* Subtle grain */}
+      <View style={styles.grainOverlay} pointerEvents="none" />
+
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable
@@ -143,82 +284,130 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
         >
           <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
         </Pressable>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>AI Trainer</Text>
-          <Text style={styles.headerSubtitle}>Your personalized training coach</Text>
-        </View>
+        {messages.length > 0 && (
+          <Pressable
+            onPress={clearMessages}
+            style={styles.deleteButton}
+            hitSlop={10}
+          >
+            <Ionicons name="trash-outline" size={22} color={theme.colors.textLo} />
+          </Pressable>
+        )}
       </View>
 
-      {/* Messages */}
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.messagesContainer}
-        contentContainerStyle={styles.messagesContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        {messages.map((message) => (
-          <View
-            key={message.id}
-            style={[
-              styles.messageWrapper,
-              message.role === 'user' ? styles.userMessageWrapper : styles.assistantMessageWrapper,
-            ]}
+        {/* Messages or Welcome Screen */}
+        {hasMessages ? (
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.messagesContainer}
+            contentContainerStyle={styles.messagesContent}
+            keyboardShouldPersistTaps="handled"
           >
-            <View
-              style={[
-                styles.messageBubble,
-                message.role === 'user' ? styles.userBubble : styles.assistantBubble,
-              ]}
-            >
-              <Text
+            {messages.map((message) => (
+              <View
+                key={message.id}
                 style={[
-                  styles.messageText,
-                  message.role === 'user' ? styles.userMessageText : styles.assistantMessageText,
+                  styles.messageWrapper,
+                  message.role === 'user' ? styles.userMessageWrapper : styles.assistantMessageWrapper,
                 ]}
               >
-                {message.content}
-              </Text>
-            </View>
-          </View>
-        ))}
+                {message.role === 'assistant' && (
+                  <Image
+                    source={require("../assets/star.png")}
+                    style={styles.messageStarIcon}
+                    resizeMode="contain"
+                  />
+                )}
+                <View
+                  style={[
+                    styles.messageBubble,
+                    message.role === 'user' ? styles.userBubble : styles.assistantBubble,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.messageText,
+                      message.role === 'user' ? styles.userMessageText : styles.assistantMessageText,
+                    ]}
+                  >
+                    {message.content}
+                  </Text>
+                </View>
+              </View>
+            ))}
 
-        {isLoading && (
-          <View style={styles.assistantMessageWrapper}>
-            <View style={styles.assistantBubble}>
-              <ActivityIndicator size="small" color={theme.colors.textHi} />
-            </View>
+            {isLoading && (
+              <View style={styles.loadingWrapper}>
+                <Image
+                  source={require("../assets/star.png")}
+                  style={styles.messageStarIcon}
+                  resizeMode="contain"
+                />
+                <View style={styles.bouncingDotsContainer}>
+                  <Animated.View style={[styles.bouncingDot, dot1Style]} />
+                  <Animated.View style={[styles.bouncingDot, dot2Style]} />
+                  <Animated.View style={[styles.bouncingDot, dot3Style]} />
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        ) : (
+          <View style={styles.welcomeContainer}>
+            <Image
+              source={require("../assets/star.png")}
+              style={styles.welcomeStar}
+              resizeMode="contain"
+            />
+            <Text style={styles.welcomeText}>How can I help you today!</Text>
           </View>
         )}
-      </ScrollView>
 
-      {/* Input */}
-      <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 16 }]}>
-        <TextInput
-          style={styles.input}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Ask me anything about your training..."
-          placeholderTextColor={theme.colors.textLo}
-          multiline
-          maxLength={500}
-          editable={!isLoading}
-        />
-        <Pressable
-          onPress={handleSend}
-          disabled={!inputText.trim() || isLoading}
-          style={[
-            styles.sendButton,
-            (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
-          ]}
-        >
-          <Ionicons
-            name="send"
-            size={20}
-            color={(!inputText.trim() || isLoading) ? theme.colors.textLo : theme.colors.textHi}
-          />
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+        {/* Floating Input Box */}
+        <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
+          <Animated.View style={[styles.floatingInputBox, inputAnimatedStyle]}>
+            <TextInput
+              style={styles.input}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Ask me anything about your training..."
+              placeholderTextColor={theme.colors.textLo}
+              multiline
+              maxLength={500}
+              editable={!isLoading}
+              onFocus={() => {
+                setInputFocused(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                inputScale.value = withTiming(1.02, { duration: 250 });
+              }}
+              onBlur={() => {
+                setInputFocused(false);
+                inputScale.value = withTiming(1, { duration: 250 });
+              }}
+            />
+            <Pressable
+              onPress={handleSend}
+              disabled={!inputText.trim() || isLoading}
+              style={[
+                styles.sendButton,
+                (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
+              ]}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="send"
+                size={20}
+                color={(!inputText.trim() || isLoading) ? theme.colors.textLo : theme.colors.textHi}
+              />
+            </Pressable>
+          </Animated.View>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -227,39 +416,48 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  grainOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    opacity: 0.06,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
+    zIndex: 10,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
+    padding: 8,
+    // No box styling - matches onboarding screens
   },
-  headerContent: {
+  deleteButton: {
+    padding: 8,
+    // No box styling - matches onboarding screens
+  },
+  keyboardView: {
     flex: 1,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: theme.colors.textHi,
-    fontFamily: FONT.uiBold,
+  welcomeContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: theme.colors.textLo,
-    marginTop: 2,
-    fontFamily: FONT.uiRegular,
+  welcomeStar: {
+    width: 192,
+    height: 192,
+    marginBottom: 40,
+  },
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: "600",
+    color: theme.colors.textHi,
+    fontFamily: FONT.uiSemi,
+    textAlign: "center",
+    marginTop: -84,
   },
   messagesContainer: {
     flex: 1,
@@ -270,18 +468,26 @@ const styles = StyleSheet.create({
   },
   messageWrapper: {
     marginBottom: 16,
-  },
-  userMessageWrapper: {
+    flexDirection: "row",
     alignItems: "flex-end",
   },
+  userMessageWrapper: {
+    justifyContent: "flex-end",
+  },
   assistantMessageWrapper: {
-    alignItems: "flex-start",
+    justifyContent: "flex-start",
+  },
+  messageStarIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 10,
+    marginBottom: -18,
   },
   messageBubble: {
-    maxWidth: "80%",
-    paddingHorizontal: 16,
+    maxWidth: "65%",
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 16,
+    borderRadius: 18,
   },
   userBubble: {
     backgroundColor: theme.colors.primary600,
@@ -305,40 +511,68 @@ const styles = StyleSheet.create({
     color: theme.colors.textHi,
   },
   inputContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  floatingInputBox: {
     flexDirection: "row",
     alignItems: "flex-end",
+    backgroundColor: theme.colors.surface1,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.strokeSoft,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.strokeSoft,
-    backgroundColor: theme.colors.bg0,
+    paddingVertical: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   input: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 40,
     maxHeight: 120,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 22,
-    backgroundColor: theme.colors.surface1,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
+    paddingVertical: 8,
     color: theme.colors.textHi,
     fontSize: 16,
     fontFamily: FONT.uiRegular,
-    marginRight: 8,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: theme.colors.primary600,
     alignItems: "center",
     justifyContent: "center",
+    marginLeft: 8,
   },
   sendButtonDisabled: {
     backgroundColor: theme.colors.surface2,
     opacity: 0.5,
   },
+  loadingWrapper: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 16,
+  },
+  bouncingDotsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginLeft: 8,
+  },
+  bouncingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.textHi,
+  },
 });
-

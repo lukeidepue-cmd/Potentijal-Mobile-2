@@ -14,6 +14,7 @@ import {
   Image,
   ImageBackground,
   Dimensions,
+  RefreshControl,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -26,10 +27,13 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withRepeat,
+  Easing,
 } from "react-native-reanimated";
 
 import { Card } from "../../../components/Card";
 import { theme } from "../../../constants/theme";
+import { Skeleton, SkeletonCard } from "../../../components/Skeleton";
 import {
   listWorkouts,
   listPractices,
@@ -129,6 +133,7 @@ export default function HistoryIndex() {
   const [historyType, setHistoryType] = useState<HistoryType>("workouts");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   
   // Animation for sliding underline
@@ -137,6 +142,35 @@ export default function HistoryIndex() {
   const [containerWidth, setContainerWidth] = useState(0);
   const screenWidth = Dimensions.get("window").width;
 
+  // Animation for spinning star loading
+  const starRotation = useSharedValue(0);
+  
+  // Animation for search input focus
+  const searchScale = useSharedValue(1);
+  
+  useEffect(() => {
+    if (loading) {
+      starRotation.value = withRepeat(
+        withTiming(360, {
+          duration: 800,
+          easing: Easing.linear,
+        }),
+        -1,
+        false
+      );
+    } else {
+      starRotation.value = 0;
+    }
+  }, [loading]);
+
+  const starAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${starRotation.value}deg` }],
+  }));
+  
+  const searchAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: searchScale.value }],
+  }));
+
   // Data state
   const [workouts, setWorkouts] = useState<HistoryWorkout[]>([]);
   const [practices, setPractices] = useState<HistoryPractice[]>([]);
@@ -144,13 +178,17 @@ export default function HistoryIndex() {
   const [stats, setStats] = useState({ total: 0, streak: 0 });
 
   // Load data
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isRefresh = false) => {
     if (!user) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       if (historyType === "workouts") {
         const { data, error } = await listWorkouts({ search: query || undefined });
@@ -241,8 +279,15 @@ export default function HistoryIndex() {
       console.error("Error loading history:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [user, historyType, query]);
+
+  // Pull-to-refresh handler
+  const onRefresh = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    loadData(true);
+  }, [loadData]);
 
   // Reload when type changes or on focus
   useFocusEffect(
@@ -366,7 +411,13 @@ export default function HistoryIndex() {
 
         {/* Search bar - surfaced tool */}
         <View style={styles.searchContainer}>
-          <View style={[styles.searchWrap, searchFocused && styles.searchWrapFocused]}>
+          <Animated.View
+            style={[
+              styles.searchWrap,
+              searchFocused && styles.searchWrapFocused,
+              searchAnimatedStyle,
+            ]}
+          >
             <Ionicons name="search" size={20} color={theme.color.dim} style={styles.searchIcon} />
             <TextInput
               value={query}
@@ -374,10 +425,17 @@ export default function HistoryIndex() {
               placeholder={searchPlaceholder}
               placeholderTextColor={theme.color.dim}
               style={styles.searchInput}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
+              onFocus={() => {
+                setSearchFocused(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                searchScale.value = withTiming(1.02, { duration: 250 });
+              }}
+              onBlur={() => {
+                setSearchFocused(false);
+                searchScale.value = withTiming(1, { duration: 250 });
+              }}
             />
-          </View>
+          </Animated.View>
         </View>
       </View>
 
@@ -388,16 +446,36 @@ export default function HistoryIndex() {
           padding: 16,
         }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#22C55E"
+            colors={["#22C55E"]}
+          />
+        }
       >
         {loading ? (
-          <Card>
-            <ActivityIndicator size="small" color={theme.color.brand} />
-            <Text style={{ color: "#666", marginTop: 8 }}>Loading...</Text>
-          </Card>
+          <View style={styles.skeletonContainer}>
+            {[...Array(5)].map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </View>
         ) : items.length === 0 ? (
-          <Card>
-            <Text style={{ color: "#666", fontWeight: "700" }}>No {historyType} found.</Text>
-          </Card>
+          <View style={styles.emptyContainer}>
+            <Image
+              source={require("../../../assets/empty-star.png")}
+              style={styles.emptyStar}
+              resizeMode="contain"
+            />
+            <Text style={styles.emptyText}>
+              {historyType === "workouts" 
+                ? "No workouts yet" 
+                : historyType === "games" 
+                ? "No games yet" 
+                : "No practices yet"}
+            </Text>
+          </View>
         ) : (
           items.map((item) => {
             if (historyType === "workouts") {
@@ -410,20 +488,20 @@ export default function HistoryIndex() {
                   <Pressable
                     key={workout.id}
                     onPress={() => {
-                      Haptics.selectionAsync();
-                      router.push({
-                        pathname: "/(tabs)/history/[id]",
-                        params: {
-                          id: workout.id,
-                          type: "workout",
-                          name: workout.name,
-                          when: workout.performed_at,
-                          mode: workout.mode,
-                        },
-                      });
-                    }}
-                    style={styles.newCardContainer}
-                  >
+                        Haptics.selectionAsync();
+                        router.push({
+                          pathname: "/(tabs)/history/[id]",
+                          params: {
+                            id: workout.id,
+                            type: "workout",
+                            name: workout.name,
+                            when: workout.performed_at,
+                            mode: workout.mode,
+                          },
+                        });
+                      }}
+                      style={styles.newCardContainer}
+                    >
                     <View style={styles.basketballCard}>
                       {/* Layer 1: Base gradient background (darker top-left → deeper bottom-right) */}
                       <LinearGradient
@@ -2736,5 +2814,35 @@ const styles = StyleSheet.create({
     width: 86, // Sized appropriately (same as basketball)
     height: 86,
     opacity: 0.30, // Slightly more subtle than primary
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 400,
+  },
+  loadingStar: {
+    width: 82,
+    height: 82,
+  },
+  skeletonContainer: {
+    padding: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 400,
+    paddingVertical: 60,
+  },
+  emptyStar: {
+    width: 182,
+    height: 182,
+    marginBottom: -30,
+  },
+  emptyText: {
+    fontSize: 26,
+    color: theme.color.dim,
+    fontFamily: FONT.uiMedium,
   },
 });

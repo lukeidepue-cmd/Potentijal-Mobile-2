@@ -16,6 +16,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../../constants/theme";
 import { getUserPreferences, updateUserPreferences } from "../../../../lib/api/settings";
 import { Alert } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { PROFILE_FEATURES_ENABLED } from "../../../../constants/features";
+import * as Haptics from "expo-haptics";
+import * as Notifications from 'expo-notifications';
+import { 
+  cancelNotification, 
+  cancelAllNotifications,
+  NOTIFICATION_IDS,
+  scheduleAllWorkoutNotifications,
+  scheduleConsistencyScoreNotification,
+} from "../../../../lib/notifications/notifications";
 
 /* ---- Fonts ---- */
 import {
@@ -48,10 +59,7 @@ export default function NotificationsSettings() {
   const [notifications, setNotifications] = useState({
     push_enabled: true,
     workout_reminders: true,
-    practice_reminders: true,
-    goal_reminders: true,
-    social_follower: true,
-    social_highlight_views: true,
+    email_notifications: true,
     ai_trainer_insights: true,
   });
 
@@ -64,7 +72,14 @@ export default function NotificationsSettings() {
     try {
       const { data, error } = await getUserPreferences();
       if (data?.notification_preferences) {
-        setNotifications(data.notification_preferences);
+        // Map old structure to new structure, defaulting to true for missing fields
+        const prefs = data.notification_preferences;
+        setNotifications({
+          push_enabled: prefs.push_enabled ?? true,
+          workout_reminders: prefs.workout_reminders ?? true,
+          email_notifications: prefs.email_notifications ?? true,
+          ai_trainer_insights: prefs.ai_trainer_insights ?? true,
+        });
       }
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -74,19 +89,47 @@ export default function NotificationsSettings() {
   };
 
   const updateNotification = async (key: string, value: boolean) => {
+    // Optimistic update - update UI immediately for instant feedback
+    const updated = { ...notifications, [key]: value };
+    setNotifications(updated);
+    
     setSaving(true);
     try {
-      const updated = { ...notifications, [key]: value };
       const { error } = await updateUserPreferences({
         notification_preferences: updated,
       });
       if (error) {
+        // Revert on error
         Alert.alert("Error", "Failed to update notification setting");
         loadNotifications();
       } else {
-        setNotifications(updated);
+        // Handle notification cancellation/scheduling based on setting changes
+        if (key === 'workout_reminders' && !value) {
+          // Cancel all workout-related notifications (scheduled workouts and consistency score)
+          const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
+          for (const notification of allScheduled) {
+            if (notification.identifier.startsWith(NOTIFICATION_IDS.SCHEDULED_WORKOUT) || 
+                notification.identifier === NOTIFICATION_IDS.CONSISTENCY_SCORE) {
+              await cancelNotification(notification.identifier);
+            }
+          }
+          console.log('✅ [Notifications] Canceled all workout reminder notifications');
+        } else if (key === 'workout_reminders' && value) {
+          // Reschedule workout notifications if re-enabled
+          scheduleAllWorkoutNotifications().catch((error) => {
+            console.error('❌ [Notifications] Error rescheduling workout notifications:', error);
+          });
+          scheduleConsistencyScoreNotification().catch((error) => {
+            console.error('❌ [Notifications] Error rescheduling consistency score notification:', error);
+          });
+        } else if (key === 'ai_trainer_insights' && !value) {
+          // Cancel AI Trainer reminder notification
+          await cancelNotification(NOTIFICATION_IDS.AI_TRAINER_REMINDER);
+          console.log('✅ [Notifications] Canceled AI Trainer reminder notification');
+        }
       }
     } catch (error) {
+      // Revert on error
       Alert.alert("Error", "Failed to update notification setting");
       loadNotifications();
     } finally {
@@ -104,131 +147,131 @@ export default function NotificationsSettings() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Gradient Background */}
+      <LinearGradient
+        colors={["#1A4A3A", "rgba(18, 48, 37, 0.5)", "transparent", theme.colors.bg0]}
+        locations={[0, 0.2, 0.4, 0.7]}
+        style={styles.gradientBackground}
+      />
+
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Notifications</Text>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <View style={{ width: 40, alignItems: "flex-start" }}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={20} color={theme.colors.textHi} />
+          </Pressable>
+        </View>
+        <Text style={styles.headerTitle}>Notification Preferences</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 16 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.section}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Push Notifications</Text>
-              <Text style={styles.settingDescription}>
-                Enable or disable all push notifications
+        {/* Push Notifications Card */}
+        <View style={styles.notificationCard}>
+          <View style={styles.cardContent}>
+            <View style={styles.cardText}>
+              <Text style={styles.cardTitle}>Push Notifications</Text>
+              <Text style={styles.cardDescription}>
+                Receive notifications on your device for app updates and new features
               </Text>
             </View>
-            <Switch
-              value={notifications.push_enabled}
-              onValueChange={(value) => updateNotification('push_enabled', value)}
-              trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-              thumbColor="#fff"
-            />
+            <View style={styles.switchContainer}>
+              <Switch
+                value={notifications.push_enabled}
+                onValueChange={(value) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  updateNotification('push_enabled', value);
+                }}
+                trackColor={{ false: "#767577", true: theme.colors.primary600 }}
+                thumbColor="#fff"
+                ios_backgroundColor="#767577"
+                style={styles.switch}
+              />
+            </View>
           </View>
         </View>
 
-        {notifications.push_enabled && (
-          <>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Workout & Training</Text>
-              
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Workout Reminders</Text>
-                </View>
-                <Switch
-                  value={notifications.workout_reminders}
-                  onValueChange={(value) => updateNotification('workout_reminders', value)}
-                  trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-                  thumbColor="#fff"
-                />
-              </View>
-
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Practice Reminders</Text>
-                </View>
-                <Switch
-                  value={notifications.practice_reminders}
-                  onValueChange={(value) => updateNotification('practice_reminders', value)}
-                  trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-                  thumbColor="#fff"
-                />
-              </View>
-
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Goal Reminders</Text>
-                </View>
-                <Switch
-                  value={notifications.goal_reminders}
-                  onValueChange={(value) => updateNotification('goal_reminders', value)}
-                  trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-                  thumbColor="#fff"
-                />
-              </View>
+        {/* Workout Reminders Card */}
+        <View style={styles.notificationCard}>
+          <View style={styles.cardContent}>
+            <View style={styles.cardText}>
+              <Text style={styles.cardTitle}>Workout Reminders</Text>
+              <Text style={styles.cardDescription}>
+                Get reminded about your scheduled workouts and training sessions
+              </Text>
             </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Social</Text>
-              
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>New Follower</Text>
-                </View>
-                <Switch
-                  value={notifications.social_follower}
-                  onValueChange={(value) => updateNotification('social_follower', value)}
-                  trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-                  thumbColor="#fff"
-                />
-              </View>
-
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Highlight Views</Text>
-                </View>
-                <Switch
-                  value={notifications.social_highlight_views}
-                  onValueChange={(value) => updateNotification('social_highlight_views', value)}
-                  trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-                  thumbColor="#fff"
-                />
-              </View>
+            <View style={styles.switchContainer}>
+              <Switch
+                value={notifications.workout_reminders}
+                onValueChange={(value) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  updateNotification('workout_reminders', value);
+                }}
+                trackColor={{ false: "#767577", true: theme.colors.primary600 }}
+                thumbColor="#fff"
+                ios_backgroundColor="#767577"
+                style={styles.switch}
+              />
             </View>
+          </View>
+        </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>AI Trainer</Text>
-              
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>AI Trainer Insights</Text>
-                  <Text style={styles.settingDescription}>
-                    Get notified about personalized insights
-                  </Text>
-                </View>
-                <Switch
-                  value={notifications.ai_trainer_insights}
-                  onValueChange={(value) => updateNotification('ai_trainer_insights', value)}
-                  trackColor={{ false: theme.colors.strokeSoft, true: theme.colors.primary600 }}
-                  thumbColor="#fff"
-                />
-              </View>
+        {/* Email Notifications Card */}
+        <View style={styles.notificationCard}>
+          <View style={styles.cardContent}>
+            <View style={styles.cardText}>
+              <Text style={styles.cardTitle}>Email Notifications</Text>
+              <Text style={styles.cardDescription}>
+                Receive emails from the Potential team about the app and special deals
+              </Text>
             </View>
-          </>
-        )}
+            <View style={styles.switchContainer}>
+              <Switch
+                value={notifications.email_notifications}
+                onValueChange={(value) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  updateNotification('email_notifications', value);
+                }}
+                trackColor={{ false: "#767577", true: theme.colors.primary600 }}
+                thumbColor="#fff"
+                ios_backgroundColor="#767577"
+                style={styles.switch}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* AI Trainer Insights Card */}
+        <View style={styles.notificationCard}>
+          <View style={styles.cardContent}>
+            <View style={styles.cardText}>
+              <Text style={styles.cardTitle}>AI Trainer Insights</Text>
+              <Text style={styles.cardDescription}>
+                Get notified about personalized training insights and recommendations
+              </Text>
+            </View>
+            <View style={styles.switchContainer}>
+              <Switch
+                value={notifications.ai_trainer_insights}
+                onValueChange={(value) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  updateNotification('ai_trainer_insights', value);
+                }}
+                trackColor={{ false: "#767577", true: theme.colors.primary600 }}
+                thumbColor="#fff"
+                ios_backgroundColor="#767577"
+                style={styles.switch}
+              />
+            </View>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -239,24 +282,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 360,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
+    paddingTop: 8,
+    paddingBottom: 12,
+    zIndex: 10,
   },
   headerTitle: {
     fontSize: 20,
@@ -268,46 +308,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
-  section: {
-    marginBottom: 32,
+  notificationCard: {
+    backgroundColor: theme.colors.surface1,
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: "hidden",
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.textLo,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 12,
-    fontFamily: FONT.uiSemi,
-  },
-  settingRow: {
+  cardContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: theme.colors.surface1,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    marginBottom: 8,
+    padding: 20,
   },
-  settingInfo: {
+  cardText: {
     flex: 1,
+    marginRight: 16,
   },
-  settingLabel: {
+  cardTitle: {
     fontSize: 16,
+    fontWeight: "600",
     color: theme.colors.textHi,
-    fontFamily: FONT.uiRegular,
-    marginBottom: 4,
+    fontFamily: FONT.uiSemi,
+    marginBottom: 6,
   },
-  settingDescription: {
-    fontSize: 12,
+  cardDescription: {
+    fontSize: 14,
     color: theme.colors.textLo,
     fontFamily: FONT.uiRegular,
+    lineHeight: 20,
+  },
+  switchContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  switch: {
+    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
   },
 });
 

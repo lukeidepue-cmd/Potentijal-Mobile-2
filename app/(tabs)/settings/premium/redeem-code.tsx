@@ -80,7 +80,7 @@ export default function RedeemCode() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg0 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.strokeSoft },
-  backButton: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", backgroundColor: "rgba(0,0,0,0.3)", alignItems: "center", justifyContent: "center" },
+  backButton: { /* No box styling - matches onboarding screens */ },
   headerTitle: { fontSize: 20, fontWeight: "700", color: theme.colors.textHi, fontFamily: FONT.uiBold },
   scrollView: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 40 },
