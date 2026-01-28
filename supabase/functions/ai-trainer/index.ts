@@ -109,9 +109,22 @@ serve(async (req) => {
 
     // Get user context from database (respecting permissions)
     const userContext = await getUserContext(supabase, user.id, permissions);
+    
+    // Log data counts for debugging
+    console.log(`🔵 [AI Trainer] Data counts - All workouts: ${userContext.allWorkouts?.length || 0}, Recent: ${userContext.recentWorkouts?.length || 0}`);
+    console.log(`🔵 [AI Trainer] Data counts - All games: ${userContext.allGames?.length || 0}, Recent: ${userContext.recentGames?.length || 0}`);
+    console.log(`🔵 [AI Trainer] Data counts - All practices: ${userContext.allPractices?.length || 0}, Recent: ${userContext.recentPractices?.length || 0}`);
 
     // Format context into system prompt (with personality and memory)
     const systemPrompt = formatUserContextForAI(userContext, personality, aiMemory);
+    
+    // Log prompt length for debugging (approximate token count: ~4 chars per token)
+    const promptLength = systemPrompt.length;
+    const estimatedTokens = Math.ceil(promptLength / 4);
+    console.log(`🔵 [AI Trainer] System prompt length: ${promptLength} chars (~${estimatedTokens} tokens)`);
+    console.log(`🔵 [AI Trainer] Total workouts in prompt: ${userContext.allWorkouts?.length || 0}`);
+    console.log(`🔵 [AI Trainer] Recent workouts (detailed): ${userContext.recentWorkouts?.length || 0}`);
+    console.log(`🔵 [AI Trainer] Older workouts (detailed): ${(userContext.allWorkouts?.length || 0) - (userContext.recentWorkouts?.length || 0)}`);
 
     // Build messages array for OpenAI
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -205,22 +218,50 @@ async function getUserContext(
     .eq("id", userId)
     .single();
 
-  // Get recent workouts (last 10) - only if permission is enabled
+  // Get ALL workouts - only if permission is enabled
+  // NOTE: Supabase has a default limit of 1000 rows, so we need to fetch in batches if there are more
   let workouts: any[] = [];
+  let recentWorkouts: any[] = [];
   if (permissions.use_workouts) {
-    const { data: workoutsData } = await supabase
-      .from("workouts")
-      .select("id, name, mode, performed_at")
-      .eq("user_id", userId)
-      .order("performed_at", { ascending: false })
-      .limit(10);
-    workouts = workoutsData || [];
+    // Fetch all workouts using pagination to bypass the 1000 row limit
+    let allWorkoutsData: any[] = [];
+    let offset = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const { data: workoutsData, error } = await supabase
+        .from("workouts")
+        .select("id, name, mode, performed_at")
+        .eq("user_id", userId)
+        .order("performed_at", { ascending: false })
+        .range(offset, offset + batchSize - 1);
+      
+      if (error) {
+        console.error(`❌ [getUserContext] Error fetching workouts at offset ${offset}:`, error);
+        break;
+      }
+      
+      if (workoutsData && workoutsData.length > 0) {
+        allWorkoutsData = allWorkoutsData.concat(workoutsData);
+        offset += batchSize;
+        hasMore = workoutsData.length === batchSize; // If we got a full batch, there might be more
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    workouts = allWorkoutsData;
+    console.log(`🔵 [getUserContext] Fetched ${workouts.length} total workouts (using pagination to bypass 1000 limit)`);
+    // Get last 15 for prioritization
+    recentWorkouts = workouts.slice(0, 15);
+    console.log(`🔵 [getUserContext] Recent workouts (for prioritization): ${recentWorkouts.length}`);
   }
 
-  // Get workout details for each workout - only if permission is enabled
+  // Get workout details for ALL workouts - only if permission is enabled
   const workoutsWithDetails = permissions.use_workouts
     ? await Promise.all(
-        (workouts || []).map(async (workout: any) => {
+        workouts.map(async (workout: any) => {
           const { data: exercises } = await supabase
             .from("workout_exercises")
             .select(
@@ -270,28 +311,84 @@ async function getUserContext(
       )
     : [];
 
-  // Get recent games (last 20) - only if permission is enabled
+  // Get ALL games - only if permission is enabled
+  // NOTE: Supabase has a default limit of 1000 rows, so we need to fetch in batches if there are more
   let games: any[] = [];
+  let recentGames: any[] = [];
   if (permissions.use_games) {
-    const { data: gamesData } = await supabase
-      .from("games")
-      .select("mode, played_at, result, stats, notes")
-      .eq("user_id", userId)
-      .order("played_at", { ascending: false })
-      .limit(20);
-    games = gamesData || [];
+    // Fetch all games using pagination to bypass the 1000 row limit
+    let allGamesData: any[] = [];
+    let offset = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const { data: gamesData, error } = await supabase
+        .from("games")
+        .select("mode, played_at, result, stats, notes")
+        .eq("user_id", userId)
+        .order("played_at", { ascending: false })
+        .range(offset, offset + batchSize - 1);
+      
+      if (error) {
+        console.error(`❌ [getUserContext] Error fetching games at offset ${offset}:`, error);
+        break;
+      }
+      
+      if (gamesData && gamesData.length > 0) {
+        allGamesData = allGamesData.concat(gamesData);
+        offset += batchSize;
+        hasMore = gamesData.length === batchSize; // If we got a full batch, there might be more
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    games = allGamesData;
+    console.log(`🔵 [getUserContext] Fetched ${games.length} total games (using pagination to bypass 1000 limit)`);
+    // Get last 15 for prioritization
+    recentGames = games.slice(0, 15);
+    console.log(`🔵 [getUserContext] Recent games (for prioritization): ${recentGames.length}`);
   }
 
-  // Get recent practices (last 20) - only if permission is enabled
+  // Get ALL practices - only if permission is enabled
+  // NOTE: Supabase has a default limit of 1000 rows, so we need to fetch in batches if there are more
   let practices: any[] = [];
+  let recentPractices: any[] = [];
   if (permissions.use_practices) {
-    const { data: practicesData } = await supabase
-      .from("practices")
-      .select("mode, practiced_at, drill, notes")
-      .eq("user_id", userId)
-      .order("practiced_at", { ascending: false })
-      .limit(20);
-    practices = practicesData || [];
+    // Fetch all practices using pagination to bypass the 1000 row limit
+    let allPracticesData: any[] = [];
+    let offset = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const { data: practicesData, error } = await supabase
+        .from("practices")
+        .select("mode, practiced_at, drill, notes")
+        .eq("user_id", userId)
+        .order("practiced_at", { ascending: false })
+        .range(offset, offset + batchSize - 1);
+      
+      if (error) {
+        console.error(`❌ [getUserContext] Error fetching practices at offset ${offset}:`, error);
+        break;
+      }
+      
+      if (practicesData && practicesData.length > 0) {
+        allPracticesData = allPracticesData.concat(practicesData);
+        offset += batchSize;
+        hasMore = practicesData.length === batchSize; // If we got a full batch, there might be more
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    practices = allPracticesData;
+    console.log(`🔵 [getUserContext] Fetched ${practices.length} total practices (using pagination to bypass 1000 limit)`);
+    // Get last 15 for prioritization
+    recentPractices = practices.slice(0, 15);
+    console.log(`🔵 [getUserContext] Recent practices (for prioritization): ${recentPractices.length}`);
   }
 
   return {
@@ -302,15 +399,29 @@ async function getUserContext(
       primarySport: profile?.primary_sport || null,
       bio: profile?.bio || null,
     },
-    recentWorkouts: workoutsWithDetails.filter((w) => w !== null),
-    recentGames: (games || []).map((game: any) => ({
+    allWorkouts: workoutsWithDetails.filter((w) => w !== null),
+    recentWorkouts: workoutsWithDetails.slice(0, 15).filter((w) => w !== null),
+    allGames: (games || []).map((game: any) => ({
       mode: game.mode,
       playedAt: game.played_at || "",
       result: game.result || "",
       stats: game.stats || null,
       notes: game.notes || null,
     })),
-    recentPractices: (practices || []).map((practice: any) => ({
+    recentGames: (recentGames || []).map((game: any) => ({
+      mode: game.mode,
+      playedAt: game.played_at || "",
+      result: game.result || "",
+      stats: game.stats || null,
+      notes: game.notes || null,
+    })),
+    allPractices: (practices || []).map((practice: any) => ({
+      mode: practice.mode,
+      practicedAt: practice.practiced_at || "",
+      drill: practice.drill || "",
+      notes: practice.notes || null,
+    })),
+    recentPractices: (recentPractices || []).map((practice: any) => ({
       mode: practice.mode,
       practicedAt: practice.practiced_at || "",
       drill: practice.drill || "",
@@ -326,6 +437,32 @@ function formatUserContextForAI(
   aiMemory: any[] = []
 ): string {
   let prompt = `You are an AI Trainer, a personalized fitness and sports performance coach with PROFESSIONAL ATHLETE SPECIALIST-LEVEL expertise. Your role is to help athletes improve their performance through data-driven insights and personalized advice.\n\n`;
+  
+  // CRITICAL: Add data access summary at the very beginning
+  const hasWorkouts = context.allWorkouts && context.allWorkouts.length > 0;
+  const hasGames = context.allGames && context.allGames.length > 0;
+  const hasPractices = context.allPractices && context.allPractices.length > 0;
+  
+  prompt += `📊 DATA ACCESS SUMMARY - READ THIS CAREFULLY:\n`;
+  if (hasWorkouts) {
+    prompt += `- You have access to ALL ${context.allWorkouts.length} workouts in the athlete's complete history\n`;
+    prompt += `- The recent ${Math.min(context.recentWorkouts?.length || 0, 15)} workouts are shown in detail below for immediate reference\n`;
+    prompt += `- You can reference ANY workout from all ${context.allWorkouts.length} workouts when answering questions\n`;
+  }
+  if (hasGames) {
+    prompt += `- You have access to ALL ${context.allGames.length} games in the athlete's complete history\n`;
+    prompt += `- The recent ${Math.min(context.recentGames?.length || 0, 15)} games are shown in detail below for immediate reference\n`;
+    prompt += `- You can reference ANY game from all ${context.allGames.length} games when answering questions\n`;
+  }
+  if (hasPractices) {
+    prompt += `- You have access to ALL ${context.allPractices.length} practices in the athlete's complete history\n`;
+    prompt += `- The recent ${Math.min(context.recentPractices?.length || 0, 15)} practices are shown in detail below for immediate reference\n`;
+    prompt += `- You can reference ANY practice from all ${context.allPractices.length} practices when answering questions\n`;
+  }
+  if (!hasWorkouts && !hasGames && !hasPractices) {
+    prompt += `- Note: The athlete has restricted data access, so you only have their profile information\n`;
+  }
+  prompt += `\n🚨 CRITICAL INSTRUCTION: NEVER tell the athlete you can only see recent data (like "last 10 workouts" or "last 15 workouts"). You have access to their COMPLETE history of ALL ${hasWorkouts ? context.allWorkouts.length : 0} workouts, ${hasGames ? context.allGames.length : 0} games, and ${hasPractices ? context.allPractices.length : 0} practices. If asked about data access, tell them you can see their complete training history.\n\n`;
   
   // CRITICAL SAFETY AND CONTENT POLICY
   prompt += `🚨 CRITICAL SAFETY AND CONTENT POLICY - YOU MUST FOLLOW THESE RULES ABSOLUTELY:\n`;
@@ -399,10 +536,10 @@ function formatUserContextForAI(
   
   prompt += `You provide expert-level coaching advice that reflects this deep, professional athlete specialist knowledge across all sports.\n\n`;
   
-  // Determine what data is available
-  const hasWorkouts = context.recentWorkouts && context.recentWorkouts.length > 0;
-  const hasGames = context.recentGames && context.recentGames.length > 0;
-  const hasPractices = context.recentPractices && context.recentPractices.length > 0;
+  // Determine what data is available (already declared above, but need recent flags)
+  const hasRecentWorkouts = context.recentWorkouts && context.recentWorkouts.length > 0;
+  const hasRecentGames = context.recentGames && context.recentGames.length > 0;
+  const hasRecentPractices = context.recentPractices && context.recentPractices.length > 0;
   
   // Personality-specific instructions
   let personalityInstructions = "";
@@ -427,10 +564,22 @@ function formatUserContextForAI(
   // Core instructions for the AI
   prompt += `YOUR ROLE AND BEHAVIOR:\n`;
   prompt += `- You are knowledgeable about fitness, sports training, and athletic performance\n`;
-  prompt += `- You have access to the athlete's training data based on their privacy settings\n`;
-  if (hasWorkouts) prompt += `- You can access their workout history and exercise data\n`;
-  if (hasGames) prompt += `- You can access their game performance and statistics\n`;
-  if (hasPractices) prompt += `- You can access their practice logs and training sessions\n`;
+  prompt += `- You have access to the athlete's COMPLETE training data based on their privacy settings\n`;
+  if (hasWorkouts) {
+    prompt += `- IMPORTANT: You have access to ALL ${context.allWorkouts.length} workouts in their complete history - not just recent ones\n`;
+    prompt += `- The recent ${context.recentWorkouts.length} workouts are shown in detail below, but you can reference ANY workout from their full history of ${context.allWorkouts.length} workouts\n`;
+    prompt += `- Use the complete history to identify long-term trends, patterns, and improvements across all ${context.allWorkouts.length} workouts\n`;
+  }
+  if (hasGames) {
+    prompt += `- IMPORTANT: You have access to ALL ${context.allGames.length} games in their complete history - not just recent ones\n`;
+    prompt += `- The recent ${context.recentGames.length} games are shown in detail below, but you can reference ANY game from their full history of ${context.allGames.length} games\n`;
+    prompt += `- Use the complete history to identify long-term trends, patterns, and improvements across all ${context.allGames.length} games\n`;
+  }
+  if (hasPractices) {
+    prompt += `- IMPORTANT: You have access to ALL ${context.allPractices.length} practices in their complete history - not just recent ones\n`;
+    prompt += `- The recent ${context.recentPractices.length} practices are shown in detail below, but you can reference ANY practice from their full history of ${context.allPractices.length} practices\n`;
+    prompt += `- Use the complete history to identify long-term trends, patterns, and improvements across all ${context.allPractices.length} practices\n`;
+  }
   if (!hasWorkouts && !hasGames && !hasPractices) {
     prompt += `- Note: The athlete has restricted data access, so you only have their profile information\n`;
   }
@@ -445,7 +594,16 @@ function formatUserContextForAI(
   prompt += `- If asked about medical issues or injuries, recommend consulting a healthcare professional\n`;
   prompt += `- Use the athlete's name (${context.profile.displayName}) when appropriate to personalize responses\n\n`;
   
-  prompt += `Here is their profile and recent activity:\n\n`;
+  prompt += `Here is their profile and training data:\n\n`;
+  if (hasWorkouts) {
+    prompt += `NOTE: You have access to ALL ${context.allWorkouts.length} workouts. The recent ${context.recentWorkouts.length} are shown in detail below, with older workouts summarized.\n\n`;
+  }
+  if (hasGames) {
+    prompt += `NOTE: You have access to ALL ${context.allGames.length} games. The recent ${context.recentGames.length} are shown in detail below, with older games summarized.\n\n`;
+  }
+  if (hasPractices) {
+    prompt += `NOTE: You have access to ALL ${context.allPractices.length} practices. The recent ${context.recentPractices.length} are shown in detail below, with older practices summarized.\n\n`;
+  }
 
   // AI Memory (persistent across conversations)
   if (aiMemory && aiMemory.length > 0) {
@@ -473,9 +631,9 @@ function formatUserContextForAI(
   }
   prompt += `\n`;
 
-  // Recent workouts
-  if (context.recentWorkouts.length > 0) {
-    prompt += `RECENT WORKOUTS (last ${context.recentWorkouts.length}):\n`;
+  // Recent workouts (prioritized - last 15)
+  if (hasRecentWorkouts) {
+    prompt += `RECENT WORKOUTS (last ${context.recentWorkouts.length} - PRIORITIZE THESE):\n`;
     context.recentWorkouts.forEach((workout: any, idx: number) => {
       prompt += `${idx + 1}. ${workout.name} (${workout.mode} mode, ${workout.performedAt})\n`;
       workout.exercises.forEach((exercise: any) => {
@@ -500,9 +658,38 @@ function formatUserContextForAI(
     prompt += `\n`;
   }
 
-  // Recent games
-  if (context.recentGames.length > 0) {
-    prompt += `RECENT GAMES (last ${context.recentGames.length}):\n`;
+  // All other workouts (if there are more than 15) - include FULL details
+  if (context.allWorkouts.length > 15) {
+    const olderWorkouts = context.allWorkouts.slice(15);
+    console.log(`🔵 [formatUserContextForAI] Including ${olderWorkouts.length} older workouts with FULL details in prompt`);
+    prompt += `ADDITIONAL WORKOUTS (${olderWorkouts.length} older workouts from your COMPLETE history of ${context.allWorkouts.length} total - FULL DETAILS BELOW - reference ANY of these when needed for long-term trends, patterns, or historical context):\n`;
+    olderWorkouts.forEach((workout: any, idx: number) => {
+      prompt += `${idx + 16}. ${workout.name} (${workout.mode} mode, ${workout.performedAt})\n`;
+      workout.exercises.forEach((exercise: any) => {
+        prompt += `   - ${exercise.name} (${exercise.type}): ${exercise.sets.length} sets\n`;
+        exercise.sets.forEach((set: any, setIdx: number) => {
+          const setData: string[] = [];
+          if (set.reps !== undefined) setData.push(`${set.reps} reps`);
+          if (set.weight !== undefined) setData.push(`${set.weight} lbs`);
+          if (set.attempted !== undefined) setData.push(`${set.attempted} attempted`);
+          if (set.made !== undefined) setData.push(`${set.made} made`);
+          if (set.distance !== undefined) setData.push(`${set.distance} distance`);
+          if (set.timeMin !== undefined) setData.push(`${set.timeMin} min`);
+          if (set.avgTimeSec !== undefined) setData.push(`${set.avgTimeSec} sec avg`);
+          if (set.completed !== undefined) setData.push(set.completed ? "completed" : "not completed");
+          if (set.points !== undefined) setData.push(`${set.points} points`);
+          if (setData.length > 0) {
+            prompt += `     Set ${setIdx + 1}: ${setData.join(", ")}\n`;
+          }
+        });
+      });
+    });
+    prompt += `\n`;
+  }
+
+  // Recent games (prioritized - last 15)
+  if (hasRecentGames) {
+    prompt += `RECENT GAMES (last ${context.recentGames.length} - PRIORITIZE THESE):\n`;
     context.recentGames.forEach((game: any, idx: number) => {
       prompt += `${idx + 1}. ${game.mode} game (${game.playedAt}): ${game.result}\n`;
       if (game.stats) {
@@ -532,9 +719,39 @@ function formatUserContextForAI(
     prompt += `\n`;
   }
 
-  // Recent practices
-  if (context.recentPractices.length > 0) {
-    prompt += `RECENT PRACTICES (last ${context.recentPractices.length}):\n`;
+  // All other games (if there are more than 15)
+  if (context.allGames.length > 15) {
+    const olderGames = context.allGames.slice(15);
+    prompt += `ADDITIONAL GAMES (${olderGames.length} older games from your COMPLETE history of ${context.allGames.length} total - reference ANY of these when needed for long-term trends, patterns, or historical context):\n`;
+    olderGames.forEach((game: any, idx: number) => {
+      prompt += `${idx + 16}. ${game.mode} game (${game.playedAt}): ${game.result}`;
+      if (game.stats) {
+        let statsText = "";
+        if (typeof game.stats === "string") {
+          statsText = game.stats;
+        } else if (typeof game.stats === "object" && game.stats !== null) {
+          const statsEntries = Object.entries(game.stats);
+          if (statsEntries.length > 0) {
+            statsText = statsEntries
+              .map(([key, value]) => {
+                const formattedKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");
+                return `${formattedKey}: ${value}`;
+              })
+              .join(", ");
+          }
+        }
+        if (statsText) {
+          prompt += ` - Stats: ${statsText}`;
+        }
+      }
+      prompt += `\n`;
+    });
+    prompt += `\n`;
+  }
+
+  // Recent practices (prioritized - last 15)
+  if (hasRecentPractices) {
+    prompt += `RECENT PRACTICES (last ${context.recentPractices.length} - PRIORITIZE THESE):\n`;
     context.recentPractices.forEach((practice: any, idx: number) => {
       prompt += `${idx + 1}. ${practice.mode} practice (${practice.practicedAt})\n`;
       if (practice.drill) {
@@ -547,13 +764,45 @@ function formatUserContextForAI(
     prompt += `\n`;
   }
 
+  // All other practices (if there are more than 15)
+  if (context.allPractices.length > 15) {
+    const olderPractices = context.allPractices.slice(15);
+    prompt += `ADDITIONAL PRACTICES (${olderPractices.length} older practices from your COMPLETE history of ${context.allPractices.length} total - reference ANY of these when needed for long-term trends, patterns, or historical context):\n`;
+    olderPractices.forEach((practice: any, idx: number) => {
+      prompt += `${idx + 16}. ${practice.mode} practice (${practice.practicedAt})`;
+      if (practice.drill) {
+        prompt += ` - Drill: ${practice.drill}`;
+      }
+      prompt += `\n`;
+    });
+    prompt += `\n`;
+  }
+
   // Final instructions
   prompt += `\nREMEMBER:\n`;
   prompt += `- Always base your advice on the actual data provided above\n`;
-  prompt += `- Only reference data that is actually available in the context above\n`;
-  if (hasWorkouts) prompt += `- You can reference their workout history and specific exercises\n`;
-  if (hasGames) prompt += `- You can reference their game performance and statistics\n`;
-  if (hasPractices) prompt += `- You can reference their practice sessions and drills\n`;
+  prompt += `- You have access to the COMPLETE history - all ${hasWorkouts ? context.allWorkouts.length : 0} workouts, ${hasGames ? context.allGames.length : 0} games, and ${hasPractices ? context.allPractices.length : 0} practices\n`;
+  if (hasWorkouts) {
+    prompt += `- CRITICAL: You can reference ANY of the ${context.allWorkouts.length} workouts in their history, not just the recent ${context.recentWorkouts.length} shown in detail\n`;
+    prompt += `- Use ALL ${context.allWorkouts.length} workouts to identify long-term trends, improvements, and patterns across their entire training history\n`;
+    if (hasRecentWorkouts) {
+      prompt += `- When discussing recent progress, prioritize the most recent ${context.recentWorkouts.length} workouts for immediate feedback\n`;
+    }
+  }
+  if (hasGames) {
+    prompt += `- CRITICAL: You can reference ANY of the ${context.allGames.length} games in their history, not just the recent ${context.recentGames.length} shown in detail\n`;
+    prompt += `- Use ALL ${context.allGames.length} games to identify long-term trends, improvements, and patterns across their entire game history\n`;
+    if (hasRecentGames) {
+      prompt += `- When discussing recent performance, prioritize the most recent ${context.recentGames.length} games for immediate feedback\n`;
+    }
+  }
+  if (hasPractices) {
+    prompt += `- CRITICAL: You can reference ANY of the ${context.allPractices.length} practices in their history, not just the recent ${context.recentPractices.length} shown in detail\n`;
+    prompt += `- Use ALL ${context.allPractices.length} practices to identify long-term trends, improvements, and patterns across their entire practice history\n`;
+    if (hasRecentPractices) {
+      prompt += `- When discussing recent training, prioritize the most recent ${context.recentPractices.length} practices for immediate feedback\n`;
+    }
+  }
   if (!hasWorkouts && !hasGames && !hasPractices) {
     prompt += `- The athlete has restricted data access, so focus on general advice based on their profile\n`;
   }
@@ -572,10 +821,10 @@ function formatUserContextForAI(
   }
   
   if (hasWorkouts || hasGames || hasPractices) {
-    prompt += `- If you notice patterns (e.g., consistent progress, plateaus, imbalances), point them out\n`;
+    prompt += `- When analyzing patterns, use the COMPLETE history to identify long-term trends, but emphasize recent data (last 15 items) for immediate insights\n`;
   }
   if (hasWorkouts || hasGames || hasPractices) {
-    prompt += `- For training questions, reference their actual workout history, games, and practices when available\n`;
+    prompt += `- For training questions, reference their actual workout history, games, and practices when available - prioritize recent data but use all data for comprehensive analysis\n`;
   }
   
   // Final safety reminder

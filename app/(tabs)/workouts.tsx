@@ -41,6 +41,7 @@ import { useSettings } from "../../providers/SettingsContext";
 import { mapModeKeyToSportMode, mapItemKindToExerciseType } from "../../lib/types";
 import { ErrorToast } from "../../components/ErrorToast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Swipeable } from "react-native-gesture-handler";
 
 /* ---------------- Fonts (match Home pages) ---------------- */
 import {
@@ -123,44 +124,44 @@ const FIELD_SETS: Record<ItemKind, { key: string; label: string; numeric?: boole
   ],
   fb_sprint: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "distance", label: "Distance", numeric: false },
-    { key: "avgTime", label: "Avg. Time", numeric: false },
+    { key: "distance", label: "Distance (ft)", numeric: true },
+    { key: "avgTime", label: "Avg. Time (sec)", numeric: true },
   ],
   // Soccer
   sc_drill: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "time", label: "Time", numeric: false },
+    { key: "time", label: "Time (min)", numeric: true },
   ],
   sc_shoot: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "distance", label: "Distance", numeric: false },
+    { key: "distance", label: "Distance (ft)", numeric: true },
   ],
   // Baseball
   bs_hit: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "avgDistance", label: "Avg. Distance", numeric: true },
+    { key: "avgDistance", label: "Avg. Distance (ft)", numeric: true },
   ],
   bs_field: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "distance", label: "Distance", numeric: false },
+    { key: "distance", label: "Distance (ft)", numeric: true },
   ],
   // Hockey
   hk_drill: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "time", label: "Time", numeric: false },
+    { key: "time", label: "Time (min)", numeric: true },
   ],
   hk_shoot: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "distance", label: "Distance", numeric: false },
+    { key: "distance", label: "Distance (ft)", numeric: true },
   ],
   // Tennis
   tn_drill: [
     { key: "reps", label: "Reps", numeric: true },
-    { key: "time", label: "Time", numeric: false },
+    { key: "time", label: "Time (min)", numeric: true },
   ],
   tn_rally: [
     { key: "points", label: "Points", numeric: true },
-    { key: "time", label: "Time", numeric: false },
+    { key: "time", label: "Time (min)", numeric: true },
   ],
 };
 
@@ -662,6 +663,17 @@ export default function WorkoutsScreen() {
     setList((cur) => cur.map((x) => (x.id === id ? { ...x, sets: [...x.sets, { ...empty }] } : x)));
   };
 
+  const removeSet = (id: string, setIndex: number) => {
+    setList((cur) =>
+      cur.map((x) =>
+        x.id === id
+          ? { ...x, sets: x.sets.filter((_, i) => i !== setIndex) }
+          : x
+      )
+    );
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   const updateSet = (id: string, index: number, key: string, value: string) => {
     setList((cur) =>
       cur.map((x) =>
@@ -1124,6 +1136,7 @@ export default function WorkoutsScreen() {
                 onName={(v) => updateName(item.id, v)}
                 onAddSet={() => addSet(item.id)}
                 onChange={(setIdx, key, v) => updateSet(item.id, setIdx, key, v)}
+                onRemoveSet={(setIdx) => removeSet(item.id, setIdx)}
               />
             ))}
           </ScrollView>
@@ -1198,15 +1211,19 @@ function FullWidthCard({
   onName,
   onAddSet,
   onChange,
+  onRemoveSet,
 }: {
   item: AnyItem;
   onRemove: () => void;
   onName: (v: string) => void;
   onAddSet: () => void;
   onChange: (setIdx: number, key: string, value: string) => void;
+  onRemoveSet: (setIdx: number) => void;
 }) {
   const { unitsWeight } = useSettings();
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
+  // Store refs for each Swipeable component (one per set)
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
   
   const fields = FIELD_SETS[item.kind].map(f => {
     // Update weight label based on user preference
@@ -1322,25 +1339,60 @@ function FullWidthCard({
 
         {/* Sets list - rows */}
         <View style={styles.setsListContainer}>
-          {item.sets.map((s, idx) => (
-            <Pressable
-              key={idx}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setEditingSetIndex(idx);
-              }}
-              style={({ pressed }) => [
-                styles.setRow,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <View style={styles.setRowContent}>
-                <Text style={styles.setRowLabel}>Set {idx + 1}</Text>
-                <Text style={styles.setRowValue}>{formatSetDisplay(s)}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.4)" />
-            </Pressable>
-          ))}
+          {item.sets.map((s, idx) => {
+            const renderRightActions = () => {
+              return (
+                <View style={styles.swipeDeleteContainer}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      onRemoveSet(idx);
+                      // Close the swipeable after a short delay to allow animation
+                      setTimeout(() => {
+                        swipeableRefs.current.get(idx)?.close();
+                      }, 100);
+                    }}
+                    style={styles.swipeDeleteButton}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              );
+            };
+
+            return (
+              <Swipeable
+                key={idx}
+                ref={(ref) => {
+                  if (ref) {
+                    swipeableRefs.current.set(idx, ref);
+                  } else {
+                    swipeableRefs.current.delete(idx);
+                  }
+                }}
+                renderRightActions={renderRightActions}
+                rightThreshold={40}
+                overshootRight={false}
+              >
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setEditingSetIndex(idx);
+                  }}
+                  style={({ pressed }) => [
+                    styles.setRow,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <View style={styles.setRowContent}>
+                    <Text style={styles.setRowLabel}>Set {idx + 1}</Text>
+                    <Text style={styles.setRowValue}>{formatSetDisplay(s)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.4)" />
+                </Pressable>
+              </Swipeable>
+            );
+          })}
         </View>
       </Animated.View>
 
@@ -1712,6 +1764,20 @@ const styles = StyleSheet.create({
     color: theme.colors.textHi,
     fontSize: 15,
     fontFamily: "Geist_600SemiBold",
+  },
+  swipeDeleteContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "flex-end",
+    paddingRight: 16,
+    backgroundColor: "rgba(255, 59, 48, 0.15)",
+  },
+  swipeDeleteButton: {
+    width: 60,
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    // No background color - just the icon on the gradient
   },
 
   /* Bottom sheet */

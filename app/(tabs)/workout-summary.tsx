@@ -300,7 +300,20 @@ export default function WorkoutSummaryScreen() {
             {String(workout.name || '')}
           </Text>
           <Text style={[styles.workoutDate, { color: theme.colors.textLo }]}>
-            {workout.performedAt ? new Date(workout.performedAt).toLocaleDateString() : ''}
+            {workout.performedAt ? (() => {
+              // Parse date string manually to avoid timezone issues
+              // performedAt is in YYYY-MM-DD format
+              const parts = workout.performedAt.split('-');
+              if (parts.length === 3) {
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10);
+                const day = parseInt(parts[2], 10);
+                // Format as M/D/YYYY
+                return `${month}/${day}/${year}`;
+              }
+              // Fallback to Date parsing if format is unexpected
+              return new Date(workout.performedAt).toLocaleDateString();
+            })() : ''}
           </Text>
         </View>
 

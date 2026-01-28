@@ -9,6 +9,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets, SafeAreaProvider } from "react-native-safe-area-context";
@@ -389,36 +390,67 @@ export default function HomeIndex() {
 
       {/* Mode chooser */}
       <Modal visible={showChooser} transparent animationType="fade" onRequestClose={() => setShowChooser(false)}>
-        <Pressable onPress={() => setShowChooser(false)} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.25)" }} />
+        <Pressable onPress={() => setShowChooser(false)} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.2)" }} />
         <View
           style={{
             position: "absolute",
             right: 12,
             top: 92,
-            backgroundColor: "#0f1317",
-            borderRadius: 16,
-            paddingVertical: 8,
-            paddingHorizontal: 8,
-            borderWidth: 1,
-            borderColor: "#1a222b",
-            minWidth: 220,
+            alignItems: "flex-end",
           }}
         >
-          <Text style={{ fontSize: 12, color: theme.colors.textLo, marginBottom: 6, marginLeft: 6, fontWeight: "700" }}>
-            Switch mode
-          </Text>
-          {availableModesWithIcons.map(({ key, label, icon }) => (
-            <ModeItem
-              key={key}
-              icon={icon}
-              label={label}
-              onPress={() => {
-                Haptics.selectionAsync();
-                setMode(key as any);
-                setShowChooser(false);
+          {/* Triangle Arrow pointing to button */}
+          <View
+            style={{
+              width: 0,
+              height: 0,
+              backgroundColor: "transparent",
+              borderStyle: "solid",
+              borderLeftWidth: 12,
+              borderRightWidth: 12,
+              borderBottomWidth: 12,
+              borderLeftColor: "transparent",
+              borderRightColor: "transparent",
+              borderBottomColor: "rgba(0, 0, 0, 0.6)",
+              marginBottom: -1,
+              marginRight: 8,
+              zIndex: 1,
+            }}
+          />
+          <BlurView
+            intensity={120}
+            tint="dark"
+            style={{
+              borderRadius: 16,
+              overflow: "hidden",
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: "rgba(0, 0, 0, 0.25)",
+                borderRadius: 16,
+                paddingVertical: 8,
+                paddingHorizontal: 8,
+                minWidth: 180,
               }}
-            />
-          ))}
+            >
+              <Text style={{ fontSize: 12, color: theme.colors.textLo, marginBottom: 6, marginLeft: 6, fontWeight: "700" }}>
+                Switch mode
+              </Text>
+              {availableModesWithIcons.map(({ key, label, icon }) => (
+                <ModeItem
+                  key={key}
+                  icon={icon}
+                  label={label}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setMode(key as any);
+                    setShowChooser(false);
+                  }}
+                />
+              ))}
+            </View>
+          </BlurView>
         </View>
       </Modal>
 

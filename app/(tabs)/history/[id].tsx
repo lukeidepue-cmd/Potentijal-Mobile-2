@@ -13,6 +13,9 @@ import Animated, {
   withTiming,
   runOnJS,
   withRepeat,
+  withDelay,
+  withSequence,
+  cancelAnimation,
   Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
@@ -166,6 +169,10 @@ const formatSetDisplay = (
     }
   } else if (exerciseType === "drill") {
     if (set.reps != null) parts.push(`Reps: ${set.reps}`);
+    // completed is for football drills
+    if (set.completed != null && mode === "football") {
+      parts.push(`Completed: ${set.completed}`);
+    }
     if (set.timeMin != null) parts.push(`Time: ${set.timeMin} min`);
   } else if (exerciseType === "sprints") {
     if (set.reps != null) parts.push(`Reps: ${set.reps}`);
@@ -388,20 +395,20 @@ export default function HistoryDetail() {
   const [copyError, setCopyError] = useState<string | null>(null);
   const [animationComplete, setAnimationComplete] = useState(false);
 
-  // Animation for spinning star loading
+  // Loading star animation - simple and clean
   const starRotation = useSharedValue(0);
   
   useEffect(() => {
     if (loading) {
+      cancelAnimation(starRotation);
+      starRotation.value = 0;
       starRotation.value = withRepeat(
-        withTiming(360, {
-          duration: 800,
-          easing: Easing.linear,
-        }),
+        withTiming(360, { duration: 1000, easing: Easing.linear }),
         -1,
         false
       );
     } else {
+      cancelAnimation(starRotation);
       starRotation.value = 0;
     }
   }, [loading]);
@@ -419,8 +426,28 @@ export default function HistoryDetail() {
   const cardHeight = useSharedValue(120); // Card height
   const cardBorderRadius = useSharedValue(24); // Start with card border radius
   const formY = useSharedValue(SCREEN_HEIGHT);
+  
+  // Set formY to visible position immediately when loading starts (for practice/game screens)
+  useEffect(() => {
+    if (loading && (params.type === "practice" || params.type === "game")) {
+      cancelAnimation(formY);
+      formY.value = IMAGE_HEIGHT;
+    }
+  }, [loading, params.type, params.id]);
 
   useEffect(() => {
+    // Clear previous data immediately when params change
+    setWorkout(null);
+    setPractice(null);
+    setGame(null);
+    setAnimationComplete(false);
+    // Reset formY for practice/game screens
+    if (params.type === "practice" || params.type === "game") {
+      formY.value = IMAGE_HEIGHT; // Set to visible position immediately
+    }
+    // Set loading to true immediately when params change, so star appears instantly
+    setLoading(true);
+    setError(null);
     loadDetail();
   }, [params.id, params.type]);
 
@@ -442,19 +469,23 @@ export default function HistoryDetail() {
       cardHeight.value = withSpring(finalHeight, { damping: 35, stiffness: 50 });
       cardBorderRadius.value = withSpring(0, { damping: 35, stiffness: 50 }); // Animate to 0 when at top
 
-      // Animate form sliding up from bottom - starts immediately
-      formY.value = withSpring(IMAGE_HEIGHT, {
-        damping: 35,
-        stiffness: 50,
-      }, () => {
-        runOnJS(setAnimationComplete)(true);
-      });
+      // Animate form sliding up from bottom - but only if not loading
+      // If loading, the separate useEffect will set it to IMAGE_HEIGHT immediately
+      if (!loading) {
+        cancelAnimation(formY);
+        formY.value = withSpring(IMAGE_HEIGHT, {
+          damping: 35,
+          stiffness: 50,
+        }, () => {
+          runOnJS(setAnimationComplete)(true);
+        });
+      }
     } else {
       // For workout screens, content is already visible
       formY.value = 0;
       setAnimationComplete(true);
     }
-  }, [params.type]); // Trigger immediately when type is practice or game, don't wait for data
+  }, [params.type, loading]); // Include loading in dependencies
 
   const cardAnimatedStyle = useAnimatedStyle(() => ({
     position: "absolute",
@@ -719,8 +750,14 @@ export default function HistoryDetail() {
         {/* Content - Slides up from bottom */}
         <Animated.View style={[styles.contentContainer, formAnimatedStyle]}>
           {loading ? (
-            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 40 }}>
-              <ActivityIndicator size="large" color={theme.color.brand} />
+            <View style={[styles.loadingContainer, { backgroundColor: theme.colors.bg0, paddingTop: 40 }]}>
+              <Animated.View style={starAnimatedStyle}>
+                <Image
+                  source={require("../../../assets/star.png")}
+                  style={styles.loadingStar}
+                  resizeMode="contain"
+                />
+              </Animated.View>
             </View>
           ) : error ? (
             <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16, paddingTop: 40 }}>
@@ -840,7 +877,7 @@ export default function HistoryDetail() {
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
+        <View style={[styles.loadingContainer, { backgroundColor: theme.color.bg }]}>
           <Animated.View style={starAnimatedStyle}>
             <Image
               source={require("../../../assets/star.png")}
@@ -1239,7 +1276,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingStar: {
-    width: 82,
-    height: 82,
+    width: 150,
+    height: 150,
   },
 });

@@ -179,7 +179,16 @@ export async function upsertSets(params: UpsertSetsParams): Promise<{ error: any
         distance: set.distance ? parseFloat(String(set.distance)) : null,
         time_min: set.timeMin ? parseFloat(String(set.timeMin)) : null,
         avg_time_sec: set.avgTimeSec ? parseFloat(String(set.avgTimeSec)) : null,
-        completed: set.completed ?? null,
+        // Store completed as numeric (number of completed reps)
+        // Handle number, boolean, or null/undefined
+        completed: (() => {
+          if (set.completed == null) return null;
+          if (typeof set.completed === 'number') return set.completed;
+          if (typeof set.completed === 'boolean') return set.completed ? 1 : 0;
+          // Try to parse as number (handles string numbers)
+          const parsed = parseFloat(String(set.completed));
+          return isNaN(parsed) ? null : parsed;
+        })(),
         points: set.points ? parseFloat(String(set.points)) : null,
       }));
 
@@ -293,15 +302,15 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
           sets: (sets || []).map(set => ({
             id: set.id,
             setIndex: set.set_index,
-            reps: set.reps ?? undefined,
-            weight: set.weight ?? undefined,
-            attempted: set.attempted ?? undefined,
-            made: set.made ?? undefined,
-            distance: set.distance ?? undefined,
-            timeMin: set.time_min ?? undefined,
-            avgTimeSec: set.avg_time_sec ?? undefined,
-            completed: set.completed ?? undefined,
-            points: set.points ?? undefined,
+            reps: set.reps ? Number(set.reps) : undefined,
+            weight: set.weight ? Number(set.weight) : undefined,
+            attempted: set.attempted ? Number(set.attempted) : undefined,
+            made: set.made ? Number(set.made) : undefined,
+            distance: set.distance ? Number(set.distance) : undefined,
+            timeMin: set.time_min ? Number(set.time_min) : undefined,
+            avgTimeSec: set.avg_time_sec ? Number(set.avg_time_sec) : undefined,
+            completed: set.completed != null ? (typeof set.completed === 'number' ? set.completed : Number(set.completed)) : undefined,
+            points: set.points ? Number(set.points) : undefined,
           })),
         };
       })
@@ -392,7 +401,19 @@ export async function saveCompleteWorkout(params: {
           }
           if (set.time) setData.timeMin = parseFloat(set.time);
           if (set.avgTime) setData.avgTimeSec = parseFloat(set.avgTime);
-          if (set.completed !== undefined) setData.completed = set.completed === 'true' || set.completed === true;
+          // Parse completed as a number (number of completed reps)
+          if (set.completed !== undefined && set.completed !== '' && set.completed !== null) {
+            const completedStr = String(set.completed).trim();
+            if (completedStr !== '') {
+              const completedNum = parseFloat(completedStr);
+              if (!isNaN(completedNum) && isFinite(completedNum)) {
+                setData.completed = completedNum; // Store as number
+              } else {
+                // Fallback: treat boolean/string as 1 (true) or 0 (false)
+                setData.completed = (set.completed === 'true' || set.completed === true) ? 1 : 0;
+              }
+            }
+          }
           if (set.points) setData.points = parseFloat(set.points);
 
           return setData;

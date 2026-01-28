@@ -19,7 +19,9 @@ export type ViewCalculationType =
   | 'sprints'                // Total reps logged (football sprints)
   | 'hits'                   // Total reps logged (baseball hitting)
   | 'distance'               // Average avg_distance per set (baseball hitting)
-  | 'fielding'               // Average (reps × distance) / sets (baseball fielding)
+  | 'fielding'               // Average (reps × distance) / sets (baseball fielding) - DEPRECATED, use fielding_reps or fielding_distance
+  | 'fielding_reps'          // Total reps logged (baseball fielding)
+  | 'fielding_distance'       // Average distance per set (baseball fielding)
   | 'shots'                  // Total reps logged (soccer/hockey shooting)
   | 'shot_distance'           // Average distance per set (soccer/hockey shooting)
   | 'rally';                 // Average points per set (tennis rally)
@@ -85,7 +87,7 @@ const VIEW_CONFIGURATIONS: Record<SportMode, ProgressView[]> = {
       exerciseTypeRestriction: 'shooting',
       calculationType: 'jumpshot',
       mode: 'basketball',
-      description: 'Average attempted per shooting square (basketball specific)',
+      description: 'Total attempted shots in all shooting squares',
     },
     {
       name: 'Drill',
@@ -118,6 +120,13 @@ const VIEW_CONFIGURATIONS: Record<SportMode, ProgressView[]> = {
       calculationType: 'completion',
       mode: 'football',
       description: 'Average completion % per set (football drill specific)',
+    },
+    {
+      name: 'Drill',
+      exerciseTypeRestriction: 'drill',
+      calculationType: 'drill',
+      mode: 'football',
+      description: 'Total reps logged for all drill squares',
     },
     {
       name: 'Speed',
@@ -168,9 +177,16 @@ const VIEW_CONFIGURATIONS: Record<SportMode, ProgressView[]> = {
     {
       name: 'Fielding',
       exerciseTypeRestriction: 'fielding',
-      calculationType: 'fielding',
+      calculationType: 'fielding_reps',
       mode: 'baseball',
-      description: 'Average (reps × distance) / sets',
+      description: 'Total reps logged for all fielding squares',
+    },
+    {
+      name: 'Fielding Distance',
+      exerciseTypeRestriction: 'fielding',
+      calculationType: 'fielding_distance',
+      mode: 'baseball',
+      description: 'Average distance per set',
     },
   ],
 

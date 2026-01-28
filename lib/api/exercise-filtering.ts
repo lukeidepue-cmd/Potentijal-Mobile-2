@@ -6,18 +6,32 @@
 import { supabase } from '../supabase';
 import { SportMode, ExerciseType, mapModeKeyToSportMode } from '../types';
 import { getExerciseTypeRestrictionForView } from './progress-views';
+import { TimeInterval } from '../utils/time-intervals';
+
+/**
+ * Format date as YYYY-MM-DD for database queries
+ */
+function formatDateForDB(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 /**
  * Get available exercises for a specific view
  * Returns unique exercise names that match the view's exercise type restriction
+ * Filters by time interval: only shows exercises logged within the past N days
  * 
  * @param mode - Sport mode
  * @param viewName - View name (e.g., "Performance", "Tonnage", "Shooting %")
+ * @param timeInterval - Time interval in days (30, 90, 180, 360) - filters exercises to only those logged within this range
  * @returns Array of unique exercise names
  */
 export async function getAvailableExercisesForView(
   mode: SportMode | string,
-  viewName: string
+  viewName: string,
+  timeInterval?: TimeInterval
 ): Promise<{ data: string[]; error: any }> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -40,14 +54,36 @@ export async function getAvailableExercisesForView(
       mode: sportMode,
       view: viewName,
       exerciseTypeRestriction,
+      timeInterval,
     });
 
-    // Fetch workouts for this user and mode
-    const { data: workouts, error: workoutError } = await supabase
+    // Build workout query with time interval filter
+    let workoutQuery = supabase
       .from('workouts')
-      .select('id')
+      .select('id, performed_at')
       .eq('user_id', user.id)
-      .eq('mode', sportMode)
+      .eq('mode', sportMode);
+
+    // Apply time interval filter if provided
+    // This ensures exercises only appear if they were logged within the selected time range
+    if (timeInterval !== undefined) {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - timeInterval);
+      startDate.setHours(0, 0, 0, 0);
+
+      const startDateStr = formatDateForDB(startDate);
+      const endDateStr = formatDateForDB(today);
+
+      workoutQuery = workoutQuery
+        .gte('performed_at', startDateStr)
+        .lte('performed_at', endDateStr);
+    }
+
+    // Fetch workouts for this user and mode
+    const { data: workouts, error: workoutError } = await workoutQuery
       .limit(1000); // Reasonable limit
 
     if (workoutError) {
@@ -92,13 +128,16 @@ export async function getAvailableExercisesForView(
       for (const [norm, original] of normalizedNames.entries()) {
         // If names are very similar (fuzzy match), use the existing one
         if (areNamesSimilar(normalized, norm)) {
+          console.log(`🔍 [ExerciseFiltering] Grouping similar names: "${name}" with "${original}"`);
           // Use the longer/more complete version
           if (name.length > original.length) {
             exerciseNames.delete(original);
             exerciseNames.add(name);
             normalizedNames.set(normalized, name);
+            console.log(`   → Kept longer name: "${name}"`);
           } else {
             // Keep existing
+            console.log(`   → Kept existing name: "${original}"`);
           }
           found = true;
           break;
@@ -110,6 +149,8 @@ export async function getAvailableExercisesForView(
         normalizedNames.set(normalized, name);
       }
     });
+
+    console.log('🔍 [ExerciseFiltering] Final exercise names:', Array.from(exerciseNames).sort());
 
     const uniqueNames = Array.from(exerciseNames).sort();
 
@@ -125,6 +166,7 @@ export async function getAvailableExercisesForView(
 /**
  * Check if two exercise names are similar (for grouping)
  * Used to group variations like "bench press" and "Bench Press"
+ * BUT: Don't group exercises that differ by numbers (e.g., "5ft" vs "11ft")
  */
 function areNamesSimilar(name1: string, name2: string): boolean {
   const n1 = name1.toLowerCase().replace(/\s+/g, '');
@@ -133,7 +175,27 @@ function areNamesSimilar(name1: string, name2: string): boolean {
   // Exact match (after normalization)
   if (n1 === n2) return true;
   
+  // Extract numbers from both names
+  const extractNumbers = (str: string): string => {
+    return str.replace(/\D/g, ''); // Remove all non-digits
+  };
+  
+  const n1Numbers = extractNumbers(n1);
+  const n2Numbers = extractNumbers(n2);
+  
+  // If both have numbers and they differ, don't group (e.g., "5ft" vs "11ft")
+  if (n1Numbers.length > 0 && n2Numbers.length > 0) {
+    if (n1Numbers !== n2Numbers) {
+      return false; // Numbers differ, so don't group
+    }
+  }
+  // If one has numbers and the other doesn't, don't group (e.g., "5ft" vs "ft")
+  else if (n1Numbers.length > 0 || n2Numbers.length > 0) {
+    return false;
+  }
+  
   // One contains the other (e.g., "benchpress" contains "bench press")
+  // Only for non-numeric names
   if (n1.includes(n2) || n2.includes(n1)) {
     // Only consider similar if the difference is small (e.g., just spacing/casing)
     const lengthDiff = Math.abs(n1.length - n2.length);

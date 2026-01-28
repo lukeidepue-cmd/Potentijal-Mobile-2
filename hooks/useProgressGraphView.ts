@@ -43,42 +43,88 @@ export interface UseProgressGraphViewParams {
 }
 
 /**
- * Fuzzy match exercise names (similar to existing logic)
+ * Fuzzy match exercise names - STRICT matching (matches Skill Map logic)
+ * Only matches:
+ * 1. Exact match (case-insensitive)
+ * 2. One character difference (typos) - BUT numbers must match exactly
+ * 3. Normalized whitespace differences (spaces, hyphens, underscores)
  */
 function fuzzyMatchExerciseName(exerciseName: string, query: string): boolean {
-  const nameLower = exerciseName.toLowerCase().trim();
-  const queryLower = query.toLowerCase().trim();
+  if (!query || !query.trim()) return false; // Empty query matches nothing
   
-  if (!queryLower) return true; // Empty query matches all
+  // Normalize both strings: lowercase, trim, normalize whitespace
+  const normalize = (str: string): string => {
+    return str
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, ' ') // Multiple spaces to single space
+      .replace(/[-_]/g, ' '); // Hyphens and underscores to spaces
+  };
   
-  const nameNoSpaces = nameLower.replace(/\s+/g, '');
-  const queryNoSpaces = queryLower.replace(/\s+/g, '');
+  const nameNormalized = normalize(exerciseName);
+  const queryNormalized = normalize(query);
   
-  // Split into words for better matching
-  const nameWords = nameLower.split(/\s+/).filter(w => w.length > 2);
-  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
-  
-  // Exact or substring match
-  if (nameLower.includes(queryLower) || 
-      queryLower.includes(nameLower) ||
-      nameNoSpaces.includes(queryNoSpaces) ||
-      queryNoSpaces.includes(nameNoSpaces)) {
+  // 1. Exact match (case-insensitive, normalized)
+  if (nameNormalized === queryNormalized) {
     return true;
   }
   
-  // Word-based matching
-  if (queryWords.length > 0) {
-    const wordMatch = queryWords.some(qw => 
-      nameWords.some(nw => nw.includes(qw) || qw.includes(nw))
-    );
-    if (wordMatch) return true;
+  // 2. Extract numbers from both strings and compare them
+  // If numbers differ, don't match (e.g., "Route 67" vs "Route 42" should not match)
+  const extractNumbers = (str: string): string => {
+    return str.replace(/\D/g, ''); // Remove all non-digits
+  };
+  
+  const nameNumbers = extractNumbers(nameNormalized);
+  const queryNumbers = extractNumbers(queryNormalized);
+  
+  // If both have numbers and they differ, don't match
+  if (nameNumbers.length > 0 && queryNumbers.length > 0) {
+    if (nameNumbers !== queryNumbers) {
+      return false; // Numbers differ, so don't match
+    }
+  }
+  // If one has numbers and the other doesn't, don't match (e.g., "Route 67" vs "Route")
+  else if (nameNumbers.length > 0 || queryNumbers.length > 0) {
+    return false;
   }
   
-  // Starts with match
-  if (nameLower.startsWith(queryLower) ||
-      queryLower.startsWith(nameLower) ||
-      nameWords.some(nw => nw.startsWith(queryLower)) ||
-      queryWords.some(qw => nameWords.some(nw => nw.startsWith(qw)))) {
+  // 3. One character difference (typo tolerance) - only for non-numeric characters
+  // Calculate Levenshtein distance for single character differences
+  const levenshteinDistance = (s1: string, s2: string): number => {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const matrix: number[][] = [];
+    
+    // Initialize matrix
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+    
+    // Fill matrix
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        if (s1[i - 1] === s2[j - 1]) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j] + 1,     // deletion
+            matrix[i][j - 1] + 1,     // insertion
+            matrix[i - 1][j - 1] + 1   // substitution
+          );
+        }
+      }
+    }
+    
+    return matrix[len1][len2];
+  };
+  
+  // Allow only 1 character difference (typo) - but numbers must match exactly (checked above)
+  const distance = levenshteinDistance(nameNormalized, queryNormalized);
+  if (distance <= 1) {
     return true;
   }
   
@@ -259,7 +305,16 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
           distance: s.distance ? Number(s.distance) : null,
           time_min: s.time_min ? Number(s.time_min) : null,
           avg_time_sec: s.avg_time_sec ? Number(s.avg_time_sec) : null,
-          completed: s.completed === true || s.completed === 'true',
+          // Handle completed as numeric (number of completed reps)
+          // Supabase may return numeric values as strings, so always parse them
+          completed: (() => {
+            if (s.completed == null || s.completed === '') return null;
+            if (typeof s.completed === 'number') return s.completed;
+            if (typeof s.completed === 'boolean') return s.completed ? 1 : 0;
+            // Try to parse as number (handles string numbers like "5")
+            const parsed = parseFloat(String(s.completed));
+            return isNaN(parsed) ? null : parsed;
+          })(),
           points: s.points ? Number(s.points) : null,
         }));
 

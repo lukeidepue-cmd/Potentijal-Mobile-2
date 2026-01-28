@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { View, StyleSheet, Image } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -260,15 +261,17 @@ export default function RootLayout() {
                       process.env.EXPO_PUBLIC_POSTHOG_HOST || 
                       'https://us.i.posthog.com';
 
-  // Only wrap with PostHogProvider if API key is provided
+  // Wrap with GestureHandlerRootView for swipe gestures
   const appContent = (
-    <AuthProvider>
-      <SettingsProvider>
-        <ModeProvider>
-          <RootLayoutNav />
-        </ModeProvider>
-      </SettingsProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <SettingsProvider>
+          <ModeProvider>
+            <RootLayoutNav />
+          </ModeProvider>
+        </SettingsProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 
   if (!posthogApiKey) {

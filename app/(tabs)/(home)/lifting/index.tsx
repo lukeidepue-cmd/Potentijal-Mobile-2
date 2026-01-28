@@ -13,18 +13,17 @@ import {
   Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, router } from "expo-router";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
 import { getScheduleWithStatus, getCurrentWeekStart } from "../../../../lib/api/schedule";
 import { useAuth } from "../../../../providers/AuthProvider";
 import { getHistoryStats } from "../../../../lib/api/history";
-import { useExerciseProgressGraphDirect } from "../../../../hooks/useExerciseProgressGraphDirect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMode } from "../../../../providers/ModeContext";
 import { useAvailableModes } from "../../../../hooks/useAvailableModes";
 import { useBottomTabOverflow } from "../../../../components/ui/TabBarBackground";
-import type { ProgressMetric } from "../../../../hooks/useExerciseProgressGraph";
 import { Confetti } from "../../../../components/Confetti";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from "react-native-reanimated";
 
@@ -98,14 +97,6 @@ function formatDateUTC(date: Date): string {
   return `${utcYear}-${utcMonth}-${utcDay}`;
 }
 
-function yTicksFrom(avg: number) {
-  const step = Math.max(1, Math.round(avg * 0.06));
-  const arr = [
-    avg - step * 4, avg - step * 3, avg - step * 2, avg - step,
-    avg, avg + step, avg + step * 2, avg + step * 3, avg + step * 4,
-  ].map((n) => Math.max(0, n));
-  return Array.from(new Set(arr)).sort((a, b) => a - b);
-}
 
 /* -------------------------------- Component -------------------------------- */
 export default function LiftingHome() {
@@ -246,77 +237,6 @@ export default function LiftingHome() {
     return "Recovery matters too";
   }, [todayScheduleItem]);
 
-  // Progress state
-  const [metric, setMetric] = useState<MetricKey>("weight");
-  const [range, setRange] = useState<RangeKey>("90d");
-  const [exercise, setExercise] = useState("");
-  const [openMetric, setOpenMetric] = useState(false);
-  const [openRange, setOpenRange] = useState(false);
-
-  // Map to backend
-  const backendMetric: ProgressMetric = 
-    metric === "reps" ? "reps" :
-    metric === "weight" ? "weight" :
-    "reps_x_weight";
-  
-  const backendDays = 
-    range === "7d" ? 7 :
-    range === "30d" ? 30 :
-    range === "90d" ? 90 :
-    range === "180d" ? 180 :
-    360;
-
-  // Fetch progress data
-  const { data: progressData } = useExerciseProgressGraphDirect({
-    mode: 'lifting',
-    query: exercise,
-    metric: backendMetric,
-    days: backendDays as 7 | 30 | 90 | 180 | 360,
-  });
-
-  // Convert to graph series
-  const { data: series, avg } = useMemo(() => {
-    if (!progressData || progressData.length === 0 || !exercise.trim()) {
-      return { data: [], avg: 0 };
-    }
-
-    const graphSeries = progressData
-      .filter(p => p.value !== null)
-      .map(p => {
-        const bucketStart = (p as any).bucketStart ?? (p as any).bucket_start ?? '';
-        const date = bucketStart ? new Date(bucketStart) : new Date();
-        return {
-          x: (p as any).bucketIndex ?? (p as any).bucket_index ?? 0,
-          y: Number(p.value) || 0,
-          date: date,
-        };
-      })
-      .sort((a, b) => a.x - b.x);
-
-    const values = graphSeries.map(s => s.y);
-    const average = values.length > 0 
-      ? values.reduce((sum, v) => sum + v, 0) / values.length 
-      : 0;
-
-    return { data: graphSeries, avg: average };
-  }, [progressData, exercise]);
-
-  const yTicks = useMemo(() => yTicksFrom(avg), [avg]);
-
-  // Chart layout
-  const H = 220;
-  const M = { top: 10, bottom: 32, left: 42, right: 16 };
-  const [w, setW] = useState(0);
-  const innerW = Math.max(0, w - M.left - M.right);
-  const innerH = H - M.top - M.bottom;
-  const yMin = yTicks[0];
-  const yMax = yTicks[yTicks.length - 1];
-  const xFor = (i: number) => M.left + (series.length <= 1 ? 0 : (i * innerW) / (series.length - 1));
-  const yFor = (val: number) => M.top + innerH - (innerH * (val - yMin)) / Math.max(1, yMax - yMin);
-  const linePath = useMemo(() => {
-    if (series.length === 0) return "";
-    return series.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.y)}`).join(" ");
-  }, [series, w, yMin, yMax]);
 
   const { mode, setMode } = useMode();
   const [showModeChooser, setShowModeChooser] = useState(false);
@@ -512,140 +432,6 @@ export default function LiftingHome() {
         {/* FIX #6: Divider line between hero and content */}
         <View style={styles.sectionDivider} />
 
-        {/* FIX #2: Content card with different surface */}
-        <View style={styles.progressCard}>
-          {/* FIX #4: Section heading with action on right */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionHeaderLeft}>
-              <View style={styles.progressTick} />
-              <Text style={styles.sectionTitle}>Progress</Text>
-            </View>
-            <Pressable onPress={() => {}}>
-              <Text style={styles.sectionAction}>See all →</Text>
-            </Pressable>
-          </View>
-
-          <TextInput
-            placeholder="Search an Exercise (e.g. bench press)…"
-            placeholderTextColor="#6B7280"
-            value={exercise}
-            onChangeText={setExercise}
-            style={styles.searchInput}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-
-          <View style={styles.dropdownRow}>
-            <View style={styles.dropdownWrapper}>
-              <Pressable
-                onPress={() => {
-                  setOpenMetric(!openMetric);
-                  setOpenRange(false);
-                }}
-                style={[styles.dropdown, openMetric && styles.dropdownActive]}
-              >
-                <Text style={styles.dropdownText}>
-                  {metric === "volume" ? "Reps × Weight" : metric[0].toUpperCase() + metric.slice(1)}
-                </Text>
-                <Ionicons name="chevron-down" size={12} color={openMetric ? "#4A9EFF" : "#9E9E9E"} />
-              </Pressable>
-              {openMetric && (
-                <View style={styles.dropdownMenu}>
-                  {(["reps", "weight", "volume"] as MetricKey[]).map((k) => (
-                    <Pressable
-                      key={k}
-                      onPress={() => {
-                        setMetric(k);
-                        setOpenMetric(false);
-                      }}
-                      style={styles.dropdownMenuItem}
-                    >
-                      <Text style={styles.dropdownMenuText}>
-                        {k === "volume" ? "Reps × Weight" : k[0].toUpperCase() + k.slice(1)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            <View style={styles.dropdownWrapper}>
-              <Pressable
-                onPress={() => {
-                  setOpenRange(!openRange);
-                  setOpenMetric(false);
-                }}
-                style={[styles.dropdown, openRange && styles.dropdownActive]}
-              >
-                <Text style={styles.dropdownText}>
-                  {range === "7d" ? "7 Days" : range === "30d" ? "30 Days" : range === "90d" ? "90 Days" : "180 Days"}
-                </Text>
-                <Ionicons name="chevron-down" size={12} color={openRange ? "#4A9EFF" : "#9E9E9E"} />
-              </Pressable>
-              {openRange && (
-                <View style={styles.dropdownMenu}>
-                  {(["7d", "30d", "90d", "180d"] as RangeKey[]).map((k) => (
-                    <Pressable
-                      key={k}
-                      onPress={() => {
-                        setRange(k);
-                        setOpenRange(false);
-                      }}
-                      style={styles.dropdownMenuItem}
-                    >
-                      <Text style={styles.dropdownMenuText}>
-                        {k === "7d" ? "7 Days" : k === "30d" ? "30 Days" : k === "90d" ? "90 Days" : "180 Days"}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
-
-          {/* Chart */}
-          <View style={styles.chartContainer} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
-            <Svg width="100%" height="100%">
-              <G>
-                {yTicks.map((t, i) => {
-                  const y = yFor(t);
-                  return (
-                    <React.Fragment key={`y-${i}`}>
-                      <SvgLine x1={M.left} x2={w - M.right} y1={y} y2={y} stroke="#2A2F38" strokeWidth={1} />
-                      <SvgText x={M.left - 6} y={y + 3} fill="#9E9E9E" fontSize={10} textAnchor="end">
-                        {String(t)}
-                      </SvgText>
-                    </React.Fragment>
-                  );
-                })}
-                {series.map((p, i) => {
-                  const x = xFor(i);
-                  const lbl = md(p.date);
-                  return (
-                    <SvgText key={`x-${i}`} x={x} y={H - 12} fill="#9E9E9E" fontSize={10} textAnchor="middle">
-                      {lbl}
-                    </SvgText>
-                  );
-                })}
-                <SvgLine x1={M.left} x2={w - M.right} y1={H - M.bottom} y2={H - M.bottom} stroke="#2A2F38" strokeWidth={1} />
-                <SvgLine x1={M.left} x2={M.left} y1={M.top} y2={H - M.bottom} stroke="#2A2F38" strokeWidth={1} />
-              </G>
-              {linePath ? <Path d={linePath} fill="none" stroke="#4A9EFF" strokeWidth={2} /> : null}
-              {series.map((p, i) => (
-                <Circle
-                  key={`pt-${i}`}
-                  cx={xFor(i)}
-                  cy={yFor(p.y)}
-                  r={4.5}
-                  stroke="#0F1419"
-                  strokeWidth={2}
-                  fill="#4A9EFF"
-                />
-              ))}
-            </Svg>
-          </View>
-        </View>
-        
         {/* Workout Stats Section */}
         <View style={styles.statsSection}>
           <View style={styles.statCard}>
@@ -699,40 +485,50 @@ export default function LiftingHome() {
         onRequestClose={() => setShowModeChooser(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setShowModeChooser(false)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Switch mode</Text>
-            {availableModes.map((m) => (
-              <Pressable
-                key={m.key}
-                style={styles.modalItem}
-                onPress={() => {
-                  setMode(m.key as any);
-                  setShowModeChooser(false);
-                }}
-              >
-                {(() => {
-                  // Map each mode to the correct icon library and name
-                  const iconMap: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
-                    "lifting": { lib: 'mci', name: 'dumbbell' },
-                    "basketball": { lib: 'ion', name: 'basketball-outline' },
-                    "football": { lib: 'ion', name: 'american-football-outline' },
-                    "baseball": { lib: 'mci', name: 'baseball' },
-                    "soccer": { lib: 'ion', name: 'football-outline' },
-                    "hockey": { lib: 'mci', name: 'hockey-sticks' },
-                    "tennis": { lib: 'ion', name: 'tennisball-outline' },
-                  };
-                  
-                  const iconConfig = iconMap[m.key] || { lib: 'mci', name: 'dumbbell' };
-                  
-                  return iconConfig.lib === 'ion' ? (
-                    <Ionicons name={iconConfig.name as any} size={18} color="#FFFFFF" />
-                  ) : (
-                    <MaterialCommunityIcons name={iconConfig.name as any} size={18} color="#FFFFFF" />
-                  );
-                })()}
-                <Text style={styles.modalItemText}>{m.label}</Text>
-              </Pressable>
-            ))}
+          <View style={styles.modalContentWrapper}>
+            {/* Triangle Arrow pointing to button */}
+            <View style={styles.modalTriangle} />
+            <BlurView
+              intensity={120}
+              tint="dark"
+              style={styles.modalContentBlur}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Switch mode</Text>
+                {availableModes.map((m) => (
+                  <Pressable
+                    key={m.key}
+                    style={styles.modalItem}
+                    onPress={() => {
+                      setMode(m.key as any);
+                      setShowModeChooser(false);
+                    }}
+                  >
+                    {(() => {
+                      // Map each mode to the correct icon library and name
+                      const iconMap: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
+                        "lifting": { lib: 'mci', name: 'dumbbell' },
+                        "basketball": { lib: 'ion', name: 'basketball-outline' },
+                        "football": { lib: 'ion', name: 'american-football-outline' },
+                        "baseball": { lib: 'mci', name: 'baseball' },
+                        "soccer": { lib: 'ion', name: 'football-outline' },
+                        "hockey": { lib: 'mci', name: 'hockey-sticks' },
+                        "tennis": { lib: 'ion', name: 'tennisball-outline' },
+                      };
+                      
+                      const iconConfig = iconMap[m.key] || { lib: 'mci', name: 'dumbbell' };
+                      
+                      return iconConfig.lib === 'ion' ? (
+                        <Ionicons name={iconConfig.name as any} size={18} color="#FFFFFF" />
+                      ) : (
+                        <MaterialCommunityIcons name={iconConfig.name as any} size={18} color="#FFFFFF" />
+                      );
+                    })()}
+                    <Text style={styles.modalItemText}>{m.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </BlurView>
           </View>
         </Pressable>
       </Modal>
@@ -1128,20 +924,41 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
     justifyContent: "flex-start",
     alignItems: "flex-end",
     paddingTop: 100,
     paddingRight: 12,
   },
+  modalContentWrapper: {
+    position: "relative",
+    alignItems: "flex-end",
+  },
+  modalTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: "transparent",
+    borderStyle: "solid",
+    borderLeftWidth: 12,
+    borderRightWidth: 12,
+    borderBottomWidth: 12,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderBottomColor: "rgba(0, 0, 0, 0.6)",
+    marginBottom: -1,
+    marginRight: 8,
+    zIndex: 1,
+  },
+  modalContentBlur: {
+    borderRadius: 16,
+    overflow: "hidden",
+  },
   modalContent: {
-    backgroundColor: "#1A1F28",
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
     borderRadius: 16,
     paddingVertical: 8,
     paddingHorizontal: 8,
-    minWidth: 220,
-    borderWidth: 1,
-    borderColor: "#2A2F38",
+    minWidth: 180,
   },
   modalTitle: {
     fontSize: 12,

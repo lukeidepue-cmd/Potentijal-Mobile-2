@@ -3326,3 +3326,65 @@ All 4 cards use vertical (top-to-bottom) gradients:
 ---
 
 **Ready to begin implementation!** 🚀
+
+---
+
+## HERO CARD DESIGN PATTERN
+
+### Consistency Score Hero Card (Reference Implementation)
+
+**Location:** `app/(tabs)/meals/consistency-score.tsx`
+
+**Design Pattern:**
+A premium card surface used to contain important visualizations and metrics. This pattern creates depth and hierarchy while maintaining a clean, modern aesthetic.
+
+**Specifications:**
+
+```typescript
+heroCard: {
+  backgroundColor: 'rgba(255, 255, 255, 0.05)',  // Subtle white overlay (5% opacity)
+  borderRadius: 28,                                // Large, soft radius (28px)
+  borderWidth: 1,                                  // Thin border
+  borderColor: 'rgba(255, 255, 255, 0.07)',      // Subtle border (7% opacity)
+  padding: 20,                                     // Generous internal padding
+  marginTop: 16,                                   // Top margin
+  marginBottom: 20,                                // Bottom margin
+  shadowColor: '#000',                             // Black shadow
+  shadowOffset: { width: 0, height: 4 },          // Slight downward offset
+  shadowOpacity: 0.15,                             // Subtle shadow (15% opacity)
+  shadowRadius: 12,                                // Soft shadow blur (12px)
+  elevation: 4,                                    // Android elevation
+}
+```
+
+**Key Design Principles:**
+1. **Subtle Background:** Very low opacity white (5%) creates depth without being heavy
+2. **Soft Borders:** 1px border at 7% opacity provides definition without harshness
+3. **Large Radius:** 28px creates modern, rounded appearance
+4. **Generous Padding:** 20px internal padding creates breathing room
+5. **Soft Shadow:** Wide, subtle shadow (12px radius, 15% opacity) creates floating effect
+6. **Elevation:** Android elevation: 4 for proper depth perception
+
+**Use Cases:**
+- Hero visualizations (gauges, charts, scores)
+- Primary content containers
+- Important metric displays
+- Premium feature showcases
+
+**When to Use:**
+- For the most important visual element on a screen
+- When you want to create clear visual hierarchy
+- For premium/premium-feeling content
+- When content needs to "float" above the background
+
+**When NOT to Use:**
+- For simple lists or secondary content
+- When you want a flatter, more minimal design
+- For content that should blend with background
+- When space is at a premium
+
+**Variations:**
+- Smaller radius (20-24px) for secondary cards
+- Reduced padding (16-18px) for compact layouts
+- Lighter shadows for less prominent elements
+- No border for even more subtle appearance

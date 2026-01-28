@@ -19,6 +19,10 @@ import Animated, {
   interpolate,
   withSpring,
   withTiming,
+  withRepeat,
+  withSequence,
+  withDelay,
+  Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -41,6 +45,10 @@ import {
   Geist_600SemiBold,
   Geist_700Bold,
 } from "@expo-google-fonts/geist";
+import {
+  useFonts as useSpaceGrotesk,
+  SpaceGrotesk_800ExtraBold,
+} from "@expo-google-fonts/space-grotesk";
 
 const FONT = {
   uiRegular: "Geist_400Regular",
@@ -105,59 +113,47 @@ const AnimatedCard = ({
   const isPremiumCard = index >= 2 && index <= 4;
   const isDisabled = isPremiumCard && !isPremium;
 
+  // Gradient border colors for cards 2, 3, 4
+  const gradientColors = 
+    index === 2 ? ["#98FB98", "#87CEEB", "#DDA0DD"] : // minty green, light blue, light purple
+    index === 3 ? ["#98FB98", "#87CEEB", "#DDA0DD"] :
+    index === 4 ? ["#98FB98", "#87CEEB", "#DDA0DD"] :
+    null;
+
   return (
     <Pressable onPress={onPress}>
-      <Animated.View style={[styles.card, animatedCardStyle, isDisabled && styles.cardDisabled]}>
-      <LinearGradient
-        colors={colors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.cardGradient, isDisabled && styles.cardGradientDisabled]}
-      >
-        {/* Vignette overlay - dark edges using gradient */}
+      {index === 1 ? (
+        // First card: white border
+        <Animated.View style={[styles.card, styles.cardWhiteBorder, animatedCardStyle, isDisabled && styles.cardDisabled]}>
+          <View style={[styles.cardGradient, isDisabled && styles.cardGradientDisabled]}>
+        {/* Card Image */}
+        {index === 1 && (
+          <Image
+            source={require("../../../assets/progress-graph.jpeg")}
+            style={[styles.cardImage, isDisabled && styles.cardImageDisabled]}
+            resizeMode="cover"
+          />
+        )}
+        {/* Card Image */}
+        {index === 1 && (
+          <Image
+            source={require("../../../assets/progress-graph.jpeg")}
+            style={[styles.cardImage, isDisabled && styles.cardImageDisabled]}
+            resizeMode="cover"
+          />
+        )}
+        
+        {/* Gradient Scrim Overlay */}
         <LinearGradient
-          colors={["transparent", "transparent", "rgba(0,0,0,0.15)", "rgba(0,0,0,0.25)"]}
-          locations={[0, 0.5, 0.8, 1]}
-          start={{ x: 0.5, y: 0.5 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.cardVignette}
+          colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.85)"]}
+          locations={[0, 0.65, 1]}
+          style={StyleSheet.absoluteFill}
         />
         
-        {/* Internal highlight - soft glow blob top-left */}
-        <View style={styles.cardHighlight} />
-        
-        {/* Noise texture overlay */}
-        <View style={styles.cardNoise} />
-        
-        {/* Hero art layer - upper half */}
-        <View style={styles.cardArtLayer}>
+        {/* Text Overlay - Bottom Left */}
+        <View style={styles.cardTextOverlay}>
           {index === 1 && (
-            <Image
-              source={require("../../../assets/progress-graph.png")}
-              style={[styles.cardImage, styles.progressGraphImage, isDisabled && styles.cardImageDisabled]}
-              resizeMode="contain"
-            />
-          )}
-          {index === 2 && (
-            <Image
-              source={require("../../../assets/skill-map.png")}
-              style={[styles.cardImage, styles.skillMapImage, isDisabled && styles.cardImageDisabled]}
-              resizeMode="contain"
-            />
-          )}
-          {index === 3 && (
-            <Image
-              source={require("../../../assets/consistency-chart.png")}
-              style={[styles.cardImage, styles.consistencyChartImage, isDisabled && styles.cardImageDisabled]}
-              resizeMode="contain"
-            />
-          )}
-          {index === 4 && (
-            <Image
-              source={require("../../../assets/training-stats.png")}
-              style={[styles.cardImage, styles.trainingStatsImage, isDisabled && styles.cardImageDisabled]}
-              resizeMode="contain"
-            />
+            <Text style={[styles.cardHeading, isDisabled && styles.cardHeadingDisabled]}>Progress Graph</Text>
           )}
         </View>
         
@@ -168,35 +164,73 @@ const AnimatedCard = ({
           </View>
         )}
         
-        {/* Text layer - bottom-left */}
-        <View style={styles.cardTextLayer}>
-          {index === 1 && (
-            <>
-              <Text style={[styles.cardTitle, isDisabled && styles.cardTitleDisabled]}>Progress Graphs</Text>
-              <Text style={[styles.cardSubtext, isDisabled && styles.cardSubtextDisabled]}>View progression in any exercise</Text>
-            </>
-          )}
-          {index === 2 && (
-            <>
-              <Text style={[styles.cardTitle, isDisabled && styles.cardTitleDisabled]}>Skill Map</Text>
-              <Text style={[styles.cardSubtext, isDisabled && styles.cardSubtextDisabled]}>Visually compare exercises</Text>
-            </>
-          )}
-          {index === 3 && (
-            <>
-              <Text style={[styles.cardTitle, isDisabled && styles.cardTitleDisabled]}>Consistency Score</Text>
-              <Text style={[styles.cardSubtext, isDisabled && styles.cardSubtextDisabled]}>Consistency is key</Text>
-            </>
-          )}
-          {index === 4 && (
-            <>
-              <Text style={[styles.cardTitle, isDisabled && styles.cardTitleDisabled]}>Training Statistics</Text>
-              <Text style={[styles.cardSubtext, isDisabled && styles.cardSubtextDisabled]}>Data down to every single rep</Text>
-            </>
-          )}
-        </View>
-      </LinearGradient>
+      </View>
     </Animated.View>
+      ) : (
+        // Cards 2, 3, 4: gradient border
+        <Animated.View style={[animatedCardStyle, isDisabled && styles.cardDisabled]}>
+          <LinearGradient
+            colors={gradientColors || ["#98FB98", "#87CEEB", "#DDA0DD"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.cardGradientBorder}
+          >
+            <View style={[styles.card, styles.cardInner]}>
+              <View style={[styles.cardGradient, isDisabled && styles.cardGradientDisabled]}>
+                {/* Card Image */}
+                {index === 2 && (
+                  <Image
+                    source={require("../../../assets/skill-map.jpeg")}
+                    style={[styles.cardImage, isDisabled && styles.cardImageDisabled]}
+                    resizeMode="cover"
+                  />
+                )}
+                {index === 3 && (
+                  <Image
+                    source={require("../../../assets/consistency-score.jpeg")}
+                    style={[styles.cardImage, isDisabled && styles.cardImageDisabled]}
+                    resizeMode="cover"
+                  />
+                )}
+                {index === 4 && (
+                  <Image
+                    source={require("../../../assets/training-statistics.jpeg")}
+                    style={[styles.cardImage, isDisabled && styles.cardImageDisabled]}
+                    resizeMode="cover"
+                  />
+                )}
+                
+                {/* Gradient Scrim Overlay */}
+                <LinearGradient
+                  colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.85)"]}
+                  locations={[0, 0.65, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+                
+                {/* Text Overlay - Bottom Left */}
+                <View style={styles.cardTextOverlay}>
+                  {index === 2 && (
+                    <Text style={[styles.cardHeading, isDisabled && styles.cardHeadingDisabled]}>Skill Map</Text>
+                  )}
+                  {index === 3 && (
+                    <Text style={[styles.cardHeading, isDisabled && styles.cardHeadingDisabled]}>Consistency Score</Text>
+                  )}
+                  {index === 4 && (
+                    <Text style={[styles.cardHeading, isDisabled && styles.cardHeadingDisabled]}>Training Stats</Text>
+                  )}
+                </View>
+                
+                {/* Lock Icon Overlay for non-premium */}
+                {isDisabled && (
+                  <View style={styles.cardLockOverlay}>
+                    <Ionicons name="lock-closed" size={40} color="#FFFFFF" />
+                  </View>
+                )}
+              </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+      )}
     </Pressable>
   );
 };
@@ -249,7 +283,10 @@ export default function ProgressScreen() {
     Geist_600SemiBold,
     Geist_700Bold,
   });
-  const fontsReady = geistLoaded;
+  const [sgLoaded] = useSpaceGrotesk({
+    SpaceGrotesk_800ExtraBold,
+  });
+  const fontsReady = geistLoaded && sgLoaded;
   const [showAITrainer, setShowAITrainer] = useState(false);
   const [aiTrainerEnabled, setAiTrainerEnabled] = useState(true); // Default to enabled
   const { canUseAITrainer, isPremium } = useFeatures();
@@ -277,8 +314,9 @@ export default function ProgressScreen() {
   // Animation values for AI Trainer button
   const aiButtonScale = useSharedValue(1);
   const aiButtonTranslateY = useSharedValue(0);
-  const aiButtonShadowOpacity = useSharedValue(0.6);
-  const aiButtonShadowOffset = useSharedValue(10);
+  
+  // Shimmer animation for sparkly effect
+  const shimmerTranslateX = useSharedValue(-200);
 
   const aiButtonAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -287,10 +325,27 @@ export default function ProgressScreen() {
     ],
   }));
 
-  const aiButtonShadowStyle = useAnimatedStyle(() => ({
-    shadowOpacity: aiButtonShadowOpacity.value,
-    shadowOffset: { width: 0, height: aiButtonShadowOffset.value },
+  // Removed shadow style - no shadows on button
+
+  const shimmerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmerTranslateX.value }],
   }));
+
+  // Start shimmer animation
+  useEffect(() => {
+    if (!fontsReady) return; // Don't start animations until fonts are ready
+    
+    if (aiTrainerEnabled && canUseAITrainer) {
+      // Shimmer animation
+      shimmerTranslateX.value = withRepeat(
+        withTiming(400, { duration: 2000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      shimmerTranslateX.value = withTiming(-200, { duration: 0 });
+    }
+  }, [aiTrainerEnabled, canUseAITrainer, fontsReady]);
 
   const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -299,6 +354,9 @@ export default function ProgressScreen() {
   const cardWidth = SCREEN_WIDTH * 0.75;
   const cardGap = 20;
   const cardTotalWidth = cardWidth + cardGap;
+  // Extra padding to show both sides when on middle cards (2nd and 3rd)
+  // This ensures both adjacent cards are visible when middle cards are centered
+  const sidePadding = (SCREEN_WIDTH - cardWidth) / 2;
 
   // Scroll handler
   const scrollHandler = useAnimatedScrollHandler({
@@ -326,39 +384,51 @@ export default function ProgressScreen() {
     router.push(routes[cardIndex] as any);
   };
 
-  if (!fontsReady) {
-    return null;
-  }
+  // Don't block rendering on fonts - they'll load asynchronously
 
   const cards = [
-    { index: 1, colors: ["#5AA6FF", "#3B82F6", "#2563EB"] }, // Blue
-    { index: 2, colors: ["#33D1B2", "#14B8A6", "#0D9488"] }, // Teal
-    { index: 3, colors: ["#B48CFF", "#A855F7", "#9333EA"] }, // Purple
-    { index: 4, colors: ["#64C878", "#4CAF50", "#2E7D32"] }, // Green
+    { index: 1, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
+    { index: 2, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
+    { index: 3, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
+    { index: 4, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
   ];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Background diagonal lines */}
       <DiagonalLines />
-      
-      {/* Hero Text - centered and floating */}
-      <View style={styles.heroTextContainer}>
-        {/* Hero title with floating depth effects */}
-        <View style={styles.heroTitleGlowWrapper}>
-          <Text style={styles.heroTitle}>Athletic Progress</Text>
-        </View>
-        <Text style={styles.heroSubtext}>
-          Every session, set, and rep - transformed into meaningful progress you can see
-        </Text>
-      </View>
 
-      {/* AI Trainer Button */}
+      {/* Cards Carousel - Animated - Middle of screen */}
+      <Animated.ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.carouselContainer, { paddingHorizontal: sidePadding }]}
+        style={styles.carousel}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        snapToInterval={cardTotalWidth}
+        decelerationRate="fast"
+      >
+        {cards.map(({ index, colors }, cardIndex) => (
+          <AnimatedCard
+            key={index}
+            index={index}
+            colors={colors}
+            scrollX={scrollX}
+            cardIndex={cardIndex}
+            cardWidth={cardWidth}
+            cardGap={cardGap}
+            onPress={() => handleCardPress(cardIndex)}
+            isPremium={isPremium}
+          />
+        ))}
+      </Animated.ScrollView>
+
+      {/* AI Trainer Button - Bottom of screen */}
       <View style={styles.aiTrainerButtonContainer}>
         <Animated.View
           style={[
-            styles.buttonShadowWrapper,
-            aiButtonShadowStyle,
+            styles.buttonWrapper,
             aiButtonAnimatedStyle,
             (!aiTrainerEnabled || !canUseAITrainer) && styles.buttonShadowWrapperDisabled,
           ]}
@@ -380,53 +450,84 @@ export default function ProgressScreen() {
                 // Allow press animation even when not premium (for navigation feedback)
                 aiButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
                 aiButtonTranslateY.value = withSpring(2, { damping: 15, stiffness: 300 });
-                aiButtonShadowOpacity.value = withTiming(0.3, { duration: 100 });
-                aiButtonShadowOffset.value = withTiming(6, { duration: 100 });
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 return;
               }
               if (!aiTrainerEnabled) return; // Do nothing if setting is disabled
               aiButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
               aiButtonTranslateY.value = withSpring(2, { damping: 15, stiffness: 300 });
-              aiButtonShadowOpacity.value = withTiming(0.3, { duration: 100 });
-              aiButtonShadowOffset.value = withTiming(6, { duration: 100 });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             }}
             onPressOut={() => {
               aiButtonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
               aiButtonTranslateY.value = withSpring(0, { damping: 15, stiffness: 300 });
-              aiButtonShadowOpacity.value = withTiming(0.6, { duration: 100 });
-              aiButtonShadowOffset.value = withTiming(10, { duration: 100 });
             }}
             style={[
               styles.aiTrainerButton,
               (!aiTrainerEnabled || !canUseAITrainer) && styles.aiTrainerButtonDisabled,
             ]}
           >
+            {/* Shiny gradient background - minty green, light blue, light purple (left to right) */}
             <LinearGradient
               colors={
                 (aiTrainerEnabled && canUseAITrainer)
-                  ? ["rgba(255,255,255,0.95)", "rgba(255,255,255,0.98)"]
+                  ? ["#98FB98", "#87CEEB", "#DDA0DD"] // Minty green → light blue → light purple
                   : ["rgba(200,200,200,0.5)", "rgba(180,180,180,0.5)"]
               }
               start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
+              end={{ x: 1, y: 0 }}
+              locations={[0, 0.5, 1]}
               style={StyleSheet.absoluteFill}
             />
-            <Ionicons
-              name={canUseAITrainer ? "sparkles" : "lock-closed"}
-              size={24}
-              color={(aiTrainerEnabled && canUseAITrainer) ? "#74C69D" : "#999999"}
-              style={{ zIndex: 1 }}
-            />
-            <Text
-              style={[
-                styles.aiTrainerButtonText,
-                (!aiTrainerEnabled || !canUseAITrainer) && styles.aiTrainerButtonTextDisabled,
-              ]}
-            >
-              AI Trainer
-            </Text>
+            {/* Sparkly texture overlay - animated shimmer effect */}
+            {(aiTrainerEnabled && canUseAITrainer) && (
+              <>
+                {/* Top highlight for glossy effect */}
+                <LinearGradient
+                  colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0.15)", "transparent"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 0.4 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                {/* Sparkle texture - noise/grain effect with more texture */}
+                <View style={styles.sparkleTexture} />
+                <View style={styles.sparkleTexture2} />
+                <View style={styles.sparkleTexture3} />
+                {/* Animated shimmer overlay - more intense */}
+                <Animated.View style={[styles.shimmerOverlay, shimmerAnimatedStyle]}>
+                  <LinearGradient
+                    colors={[
+                      "transparent",
+                      "rgba(255,255,255,0.5)",
+                      "rgba(255,255,255,0.8)",
+                      "rgba(255,255,255,0.5)",
+                      "transparent",
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
+              </>
+            )}
+            <View style={styles.aiTrainerButtonContent}>
+              {!canUseAITrainer && (
+                <Ionicons
+                  name="lock-closed"
+                  size={24}
+                  color="#999999"
+                  style={{ zIndex: 1 }}
+                />
+              )}
+              <Text
+                style={[
+                  styles.aiTrainerButtonText,
+                  (!aiTrainerEnabled || !canUseAITrainer) && styles.aiTrainerButtonTextDisabled,
+                ]}
+              >
+                AI Trainer
+              </Text>
+            </View>
           </AnimatedPressable>
         </Animated.View>
       </View>
@@ -440,32 +541,6 @@ export default function ProgressScreen() {
       >
         <AITrainerChat onClose={() => setShowAITrainer(false)} />
       </Modal>
-
-      {/* Cards Carousel - Animated */}
-      <Animated.ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.carouselContainer}
-        style={styles.carousel}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        snapToInterval={cardTotalWidth}
-        decelerationRate="fast"
-      >
-        {cards.map(({ index, colors }, cardIndex) => (
-          <AnimatedCard
-            key={index}
-            index={index}
-            colors={colors}
-            scrollX={scrollX}
-            cardIndex={cardIndex}
-            cardWidth={cardWidth}
-            cardGap={cardGap}
-            onPress={() => handleCardPress(cardIndex)}
-            isPremium={isPremium}
-          />
-        ))}
-      </Animated.ScrollView>
     </View>
   );
 }
@@ -530,59 +605,60 @@ const styles = StyleSheet.create({
   },
   aiTrainerButtonContainer: {
     position: "absolute",
-    top: "30%",
-    marginTop: 92, // Moved down by 12px (from 80 to 92)
-    left: 24,
-    right: 24,
+    bottom: 100,
+    left: 0, // No left padding - button goes to edge
+    right: 0, // No right padding - button goes to edge
     alignItems: "center",
     zIndex: 50,
+    paddingHorizontal: 20, // 6px more padding (14 + 6 = 20) to make button 6px smaller again
   },
-  buttonShadowWrapper: {
+  buttonWrapper: {
     width: "100%",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#74C69D", // Mint green glow for visibility on dark background
-        shadowRadius: 25,
-        shadowOffset: { width: 0, height: 10 },
-      },
-      android: {
-        elevation: 14,
-      },
-    }),
   },
   buttonShadowWrapperDisabled: {
-    ...Platform.select({
-      ios: {
-        shadowColor: "#666666",
-        shadowRadius: 10,
-        shadowOpacity: 0.3,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
+    // No shadow styles
   },
   aiTrainerButton: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     paddingVertical: 18,
     paddingHorizontal: 24,
+    width: "100%",
+    overflow: "hidden", // For gradient overlay
+    position: "relative",
+    // Shadows - reduced slightly
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 7 },
+        shadowOpacity: 0.45,
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
+  },
+  aiTrainerButtonContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    width: "100%",
-    borderWidth: 1,
-    borderColor: "rgba(116, 198, 157, 0.15)", // Subtle mint green border
-    overflow: "hidden", // For gradient overlay
-    position: "relative",
+    zIndex: 1,
   },
   aiTrainerButtonText: {
-    fontSize: 18,
+    fontSize: 20, // Increased from 18
     fontWeight: "600",
     color: "#000000",
     fontFamily: FONT.uiSemi,
     zIndex: 1, // Above gradient
+    includeFontPadding: false, // Prevent text cutoff on Android
+    textAlignVertical: "center", // Center text vertically
+    paddingRight: 4, // Extra padding on right to prevent cutoff
+    letterSpacing: 0.2, // Slight letter spacing to help with cutoff
+    // Text shadows - reduced slightly
+    textShadowColor: "rgba(0, 0, 0, 0.25)",
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 3,
   },
   aiTrainerButtonDisabled: {
     opacity: 0.5,
@@ -590,24 +666,51 @@ const styles = StyleSheet.create({
   aiTrainerButtonTextDisabled: {
     color: "#666666",
   },
+  sparkleTexture: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    opacity: 0.5,
+    // Create sparkle texture with noise pattern
+  },
+  sparkleTexture2: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    opacity: 0.4,
+    // Additional texture layer
+  },
+  sparkleTexture3: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    opacity: 0.3,
+    // Third texture layer for more depth
+  },
+  shimmerOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 200,
+    height: "100%",
+    backgroundColor: "rgba(255,255,255,0.3)",
+    // Diagonal gradient for shimmer
+    transform: [{ skewX: "-20deg" }],
+  },
   carousel: {
     position: "absolute",
-    bottom: 88, // Moved down by 12px (from 100 to 88)
+    top: "50%",
+    marginTop: -257, // Center vertically (half of 450px card height) - moved up 32px
     left: 0,
     right: 0,
   },
   carouselContainer: {
-    paddingHorizontal: 24,
     paddingVertical: 20,
     gap: 20,
+    // paddingHorizontal will be set dynamically to show both sides on middle cards
   },
   card: {
     width: SCREEN_WIDTH * 0.75, // Pretty big cards - 75% of screen width
-    height: 280,
+    height: 450, // Made a lot taller (from 280 to 450)
     borderRadius: 28, // Bigger radius for premium feel
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)", // Subtle border stroke
     // Enhanced floating effects
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 14 },
@@ -615,113 +718,65 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 12,
   },
+  cardWhiteBorder: {
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.4)", // Subtle white border like reference
+  },
+  cardGradientBorder: {
+    width: SCREEN_WIDTH * 0.75,
+    height: 450,
+    borderRadius: 28,
+    padding: 1.5, // Border width
+    // Shadow for gradient border cards
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  cardInner: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 26.5, // Slightly smaller to account for border
+    overflow: "hidden",
+  },
   cardGradient: {
     width: "100%",
     height: "100%",
     borderRadius: 28,
     position: "relative",
-  },
-  cardVignette: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 28,
-    // Vignette using gradient overlay - dark edges
-    backgroundColor: "transparent",
-    borderWidth: 0,
-  },
-  cardHighlight: {
-    position: "absolute",
-    top: -30,
-    left: -30,
-    width: 120,
-    height: 120,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.10)",
-    opacity: 0.8,
-  },
-  cardNoise: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 28,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    opacity: 0.08,
-  },
-  cardArtLayer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: "60%", // Upper 60% for art
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  objectShadow: {
-    position: "absolute",
-    bottom: 20,
-    width: 200,
-    height: 40,
-    borderRadius: 999,
-    backgroundColor: "rgba(0, 0, 0, 0.35)",
-    transform: [{ scaleX: 1.2 }, { scaleY: 0.6 }],
-    opacity: 0.6,
+    overflow: "hidden",
   },
   cardImage: {
-    width: 350,
-    height: 350,
-    position: "relative",
-    zIndex: 2,
-  },
-  progressGraphImage: {
-    width: 300, // Smaller size
-    height: 300,
-    marginTop: 48, // Moved down 48px total (36px + 12px more)
-  },
-  consistencyChartImage: {
-    width: 260, // 8px smaller (from 268)
-    height: 260,
-    marginTop: 48, // Moved down 48px
-  },
-  trainingStatsImage: {
-    width: 224, // 8px smaller (from 232)
-    height: 224,
-    marginTop: 44, // Moved down 44px (40px + 4px more)
-  },
-  skillMapImage: {
-    width: 308, // 10px smaller (from 318)
-    height: 308,
-    marginTop: 48, // Moved down 48px
-  },
-  cardTextLayer: {
+    width: "100%",
+    height: "100%",
     position: "absolute",
-    bottom: 24,
-    left: 24,
-    right: 24,
-    // Bottom 40-45% for text (quiet zone)
+    top: 0,
+    left: 0,
   },
-  cardTitle: {
-    fontSize: 22, // Reduced by 2px (from 24)
+  cardTextOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 22,
+    paddingBottom: 24,
+    justifyContent: "flex-end",
+    alignItems: "flex-start",
+  },
+  cardHeading: {
+    fontSize: 28, // Smaller than Log Game (42px) but same style
+    fontFamily: "SpaceGrotesk_800ExtraBold",
     fontWeight: "800",
     color: "#FFFFFF",
-    fontFamily: FONT.uiBold,
-    marginBottom: 4,
-    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    letterSpacing: -1,
+    textShadowColor: "rgba(0, 0, 0, 0.7)",
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    textShadowRadius: 8,
+    transform: [{ skewX: "-5deg" }], // Slight italic-like slant
   },
-  cardSubtext: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.85)",
-    fontFamily: FONT.uiRegular,
-    textShadowColor: "rgba(0, 0, 0, 0.2)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+  cardHeadingDisabled: {
+    opacity: 0.5,
   },
   
   // Disabled styles for non-premium cards

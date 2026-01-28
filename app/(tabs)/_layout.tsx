@@ -86,6 +86,13 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
+        name="test-onboarding"
+        options={{
+          href: null, // Hide from tab bar (testing tab - removed from frontend)
+        }}
+      />
+
+      <Tabs.Screen
         name="meals"
         options={{
           title: "Progress",
@@ -144,17 +151,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
-          tabBarIcon: ({ color, focused, size }) => (
-            <AnimatedTabBarIcon focused={focused}>
-              <Ionicons 
-                name={focused ? "person-circle" : "person-circle-outline"} 
-                color={color} 
-                size={size} 
-              />
-            </AnimatedTabBarIcon>
-          ),
-          href: PROFILE_FEATURES_ENABLED ? undefined : null, // Hide from tab bar if profile features disabled
+          href: null, // Hide from tab bar (testing tab - removed from frontend)
         }}
       />
 

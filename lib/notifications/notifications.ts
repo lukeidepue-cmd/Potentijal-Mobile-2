@@ -141,53 +141,100 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     // Get today's date for comparison
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayDayIndex = today.getDay(); // 0 = Sunday, 6 = Saturday
 
     // Calculate week start date
     const [year, month, day] = weekStart.split('-').map(Number);
     const weekStartDate = new Date(year, month - 1, day);
     weekStartDate.setHours(0, 0, 0, 0);
 
-    // Schedule notifications for each day in the week that has a scheduled workout
-    for (const scheduleItem of schedule) {
-      // Skip rest days, empty days, and days that are already completed
-      if (scheduleItem.status === 'rest' || scheduleItem.status === 'empty' || scheduleItem.status === 'completed') {
-        continue;
-      }
-
-      // Calculate the date for this day
-      const dayDate = new Date(weekStartDate);
-      dayDate.setDate(weekStartDate.getDate() + scheduleItem.dayIndex);
-      dayDate.setHours(12, 0, 0, 0); // 12:00 PM
-
-      // Only schedule if the day hasn't passed yet (or is today and it's before 12PM)
-      const now = new Date();
-      if (dayDate < now) {
-        continue; // Skip past days
-      }
-
-      // Create unique identifier for this day (use local date format)
-      const year = dayDate.getFullYear();
-      const month = String(dayDate.getMonth() + 1).padStart(2, '0');
-      const day = String(dayDate.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-      const identifier = `${modeIdentifier}-${dateStr}`;
-
-      await Notifications.scheduleNotificationAsync({
-        identifier,
-        content: {
-          title: 'Your Workout Awaits!',
-          body: "Don't forget to complete your scheduled workout for today.",
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: dayDate,
-        },
-      });
-
-      console.log(`✅ [Notifications] Scheduled workout notification for ${mode} on ${dateStr} at 12PM`);
+    // Find today's schedule item
+    const todayScheduleItem = schedule.find(item => item.dayIndex === todayDayIndex);
+    
+    if (!todayScheduleItem) {
+      console.log(`🔵 [Notifications] No schedule item found for today (dayIndex: ${todayDayIndex})`);
+      return;
     }
+
+    console.log(`🔵 [Notifications] Today's schedule item: dayIndex=${todayScheduleItem.dayIndex}, label="${todayScheduleItem.label}", status=${todayScheduleItem.status}`);
+
+    // Check if today has a scheduled workout (has label, not rest)
+    const hasLabel = todayScheduleItem.label && todayScheduleItem.label.trim() !== '';
+    const isRest = todayScheduleItem.status === 'rest';
+    const isCompleted = todayScheduleItem.status === 'completed';
+
+    console.log(`🔵 [Notifications] Today check: hasLabel=${hasLabel}, isRest=${isRest}, isCompleted=${isCompleted}, status=${todayScheduleItem.status}`);
+
+    // Only schedule if:
+    // 1. Today has a scheduled workout (has label, not rest)
+    // 2. Today does NOT have a workout logged (status is not 'completed')
+    // Note: status='empty' with a label means they have a planned workout but haven't logged it yet - this is when we want to send the notification!
+    if (!hasLabel || isRest || isCompleted) {
+      console.log(`⏭️ [Notifications] Skipping notification: hasLabel=${hasLabel}, isRest=${isRest}, isCompleted=${isCompleted}`);
+      return;
+    }
+
+    // Check if notification is already scheduled for today
+    const yearStr = today.getFullYear();
+    const monthStr = String(today.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${yearStr}-${monthStr}-${dayStr}`;
+    const identifier = `${modeIdentifier}-${dateStr}`;
+    
+    const allScheduledCheck = await Notifications.getAllScheduledNotificationsAsync();
+    const existingNotification = allScheduledCheck.find(n => n.identifier === identifier);
+    
+    if (existingNotification) {
+      console.log(`🔵 [Notifications] Notification already scheduled for today: ${identifier}, trigger=${JSON.stringify(existingNotification.trigger)}`);
+      // Don't reschedule if it already exists
+      return;
+    }
+
+    // Calculate today's date at 11:21 PM in local timezone
+    // Create a new date object for today at midnight, then set to 11:21 PM
+    const dayDate = new Date();
+    dayDate.setHours(0, 0, 0, 0); // Start with today at midnight
+    dayDate.setHours(23, 21, 0, 0); // 11:21 PM (TESTING - will revert to 12:00 PM)
+
+    // Only schedule if the notification time hasn't passed yet
+    const now = new Date();
+    const timeUntilNotification = dayDate.getTime() - now.getTime();
+    const minutesUntilNotification = Math.floor(timeUntilNotification / (1000 * 60));
+    
+    console.log(`🔵 [Notifications] Time check: now=${now.toLocaleString()}, scheduled=${dayDate.toLocaleString()}, minutesUntil=${minutesUntilNotification}`);
+    
+    if (dayDate < now) {
+      console.log(`⏭️ [Notifications] Too late to schedule for today (it's already past 11:21 PM, now=${now.toLocaleString()}, scheduled=${dayDate.toLocaleString()})`);
+      return;
+    }
+
+    // Identifier already created above
+
+    console.log(`🔵 [Notifications] Scheduling notification: identifier=${identifier}, triggerDate=${dayDate.toLocaleString()} (${dayDate.toISOString()} UTC), minutesUntil=${minutesUntilNotification}`);
+
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: 'Your Workout Awaits!',
+        body: "Don't forget to complete your scheduled workout for today.",
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: dayDate,
+      },
+    });
+
+    console.log(`✅ [Notifications] Scheduled workout notification for ${mode} on ${dateStr} at 11:21 PM (TESTING) - ID: ${notificationId}`);
+
+    // Verify scheduled notifications
+    const allScheduledAfter = await Notifications.getAllScheduledNotificationsAsync();
+    const modeNotifications = allScheduledAfter.filter(n => n.identifier.startsWith(`${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${mode}`));
+    console.log(`🔵 [Notifications] Total scheduled notifications for ${mode}: ${modeNotifications.length}`);
+    modeNotifications.forEach(n => {
+      console.log(`  - ${n.identifier}: trigger=${JSON.stringify(n.trigger)}`);
+    });
   } catch (error) {
     console.error('❌ [Notifications] Error scheduling workout notification:', error);
   }
@@ -344,15 +391,15 @@ export async function trackWorkoutAndScheduleAITrainerReminder(): Promise<void> 
 
 /**
  * Cancel today's workout notification for a specific mode
- * Called when a user logs a workout before 12PM
+ * Called when a user logs a workout before 11:21 PM (TESTING - will revert to 12:00 PM)
  */
 export async function cancelTodaysWorkoutNotification(mode: SportMode | string): Promise<void> {
   try {
     const today = new Date();
     const now = new Date();
     
-    // Only cancel if it's before 12PM today
-    if (now.getHours() >= 12) {
+    // Only cancel if it's before 11:21 PM today (TESTING - will revert to 12:00 PM)
+    if (now.getHours() > 23 || (now.getHours() === 23 && now.getMinutes() >= 21)) {
       return; // Too late, notification may have already been sent
     }
 

@@ -237,9 +237,14 @@ export function useExerciseProgressGraphDirect(params: {
                 value = set.made ? Number(set.made) : null;
                 break;
               case 'percentage':
-                value = (set.attempted && set.made && set.attempted > 0) 
-                  ? (Number(set.made) / Number(set.attempted)) * 100 
-                  : null;
+                if (set.attempted && set.made && set.attempted > 0) {
+                  const attempted = Number(set.attempted);
+                  const made = Number(set.made);
+                  // If made > attempted, treat as 100%
+                  value = made > attempted ? 100 : (made / attempted) * 100;
+                } else {
+                  value = null;
+                }
                 break;
               case 'distance':
                 value = set.distance ? Number(set.distance) : null;
