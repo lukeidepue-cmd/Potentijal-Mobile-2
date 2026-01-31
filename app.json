@@ -61,7 +61,6 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-barcode-scanner",
       "expo-font",
       "expo-web-browser",
       "expo-localization"
