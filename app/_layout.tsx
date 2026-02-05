@@ -39,6 +39,30 @@ function RootLayoutNav() {
   const router = useRouter();
   const [resumeStep, setResumeStep] = React.useState<string | null>(null);
 
+  // Steps 18–19: RevenueCat — configure at launch (use iOS Public API key from app.json, not Test Store).
+  useEffect(() => {
+    const apiKey = (Constants.expoConfig?.extra as Record<string, unknown>)?.revenueCatPublicApiKey as string | undefined;
+    if (!apiKey?.trim()) return;
+    try {
+      const Purchases = require('react-native-purchases').default;
+      Purchases.configure({ apiKey, appUserID: user?.id ?? 'anonymous' });
+    } catch (e) {
+      if (__DEV__) console.warn('[RevenueCat] Configure skipped:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    const apiKey = (Constants.expoConfig?.extra as Record<string, unknown>)?.revenueCatPublicApiKey as string | undefined;
+    if (!apiKey?.trim()) return;
+    try {
+      const Purchases = require('react-native-purchases').default;
+      if (user?.id) Purchases.logIn(user.id);
+      else Purchases.logOut();
+    } catch (e) {
+      if (__DEV__) console.warn('[RevenueCat] logIn/logOut skipped:', e);
+    }
+  }, [user?.id]);
+
   // Track user in PostHog when they log in/out
   usePostHogUserTracking();
 

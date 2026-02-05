@@ -17,8 +17,9 @@
 8. [API Structure](#api-structure)
 9. [Feature Flags](#feature-flags)
 10. [Recent UI/UX Improvements](#recent-uiux-improvements)
-11. [Important Patterns & Conventions](#important-patterns--conventions)
-12. [Next Steps: Loops & Notifications](#next-steps-loops--notifications)
+11. [Build & Distribution: Development Build (EAS)](#build--distribution-development-build-eas)
+12. [Important Patterns & Conventions](#important-patterns--conventions)
+13. [Next Steps: Loops & Notifications](#next-steps-loops--notifications)
 
 ---
 
@@ -481,6 +482,97 @@ The following improvements have been implemented (as of this session):
 
 ---
 
+## Build & Distribution: Development Build (EAS)
+
+**Status:** App runs on an **iOS Development Build** (EAS), not Expo Go. This section documents the migration and current build workflow so Cursor can continue building accordingly.
+
+### Goal of Migration
+
+Move the app from Expo Go to a real iOS Development Build so native SDKs (RevenueCat, push, etc.) can work.
+
+### 1) EAS Setup + Apple Developer Enrollment
+
+**What was done:**
+- Installed/used EAS CLI and configured the project: `eas build:configure`
+- Enrolled in the Apple Developer Program ($99/yr)
+- Registered the iPhone as an internal distribution device (Expo generated QR/profile install)
+
+**Result:** Project prepared for EAS builds; device registered to install dev builds.
+
+### 2) Fixed Corrupted Dependency (Broke All EAS Installs)
+
+**Root cause:** EAS failed at "Install dependencies" with:
+- `npm ERR! EINVALIDTAGNAME` — Invalid tag name `"\"` of package `"undefined@"\"`
+
+**Actual bug in package.json:**
+```json
+"dependencies": {
+  "undefined": "\\"
+}
+```
+
+**What was changed:** Removed this invalid dependency line from `package.json`. Cleaned installs and regenerated lockfile (`rm node_modules`, `rm package-lock.json`, `npm install`), then committed and pushed.
+
+**Result:** Dependency install phase stopped failing; EAS proceeded to native build steps.
+
+### 3) Fixed iOS Native Build Failure (Barcode Scanner Module)
+
+**Root cause:** EAS iOS build failed with Xcode errors:
+- `'ExpoModulesCore/EXBarcodeScannerInterface.h' file not found`
+- `could not build Objective-C module 'EXBarCodeScanner'`
+- Caused by deprecated/legacy module: `expo-barcode-scanner@13.0.1`
+
+**What was changed:**
+- Removed: `npm uninstall expo-barcode-scanner`
+- Removed: `npm uninstall expo-camera` (camera/scanner no longer needed)
+- Verified no remaining code references to `expo-barcode-scanner` or `BarCodeScanner`
+- Clean reinstall (removed `node_modules` + `package-lock.json`, `npm install`), committed and pushed
+
+**Result:** Native barcode/camera modules removed from dependency graph.
+
+### 4) Removed Leftover Expo Config Plugin Reference
+
+**Root cause:** After uninstalling packages, EAS still failed with:
+- `Failed to resolve plugin for module "expo-barcode-scanner"`
+- `npx expo config --json` exited with non-zero code (config still referenced the plugin)
+
+**What was changed:** Removed the `"expo-barcode-scanner"` entry from the Expo config (e.g. `app.json` or `config.json` under `expo.plugins`). Committed and pushed.
+
+**Result:** `npx expo config` worked again; EAS could proceed.
+
+### 5) Successful iOS Development Build + Install
+
+**What was done:**
+- Ran: `eas build --profile development --platform ios --clear-cache`
+- Scanned QR / installed the iOS dev build ("my-first-app") onto the phone
+- Enabled Developer Mode on iPhone (required for dev builds)
+- Started Metro locally: `npx expo start` — scanning QR now opens the dev build app instead of Expo Go
+
+**Result:** Dev build is installed and working; app loads from Metro; Cursor edits reflect via hot reload / reload.
+
+### Current Removed Packages / Config
+
+- **Removed:** `expo-barcode-scanner`
+- **Removed:** `expo-camera`
+- **Removed:** Invalid dependency `"undefined": "\\"` from `package.json`
+- **Removed:** `expo-barcode-scanner` from `expo.plugins` in app config (e.g. `app.json`)
+
+### Current Workflow (Important for Cursor)
+
+1. **Use development build on phone, not Expo Go.** The app runs in the custom dev build.
+2. **Run dev server:** `npx expo start` — connect device to Metro.
+3. **App updates:** Fast Refresh on save, or reload in the dev build if needed.
+4. **Rebuild dev build only when:** Adding/removing native modules (e.g. RevenueCat, new native SDKs). Normal JS/React changes do not require a new build.
+
+### Do Not Re-Introduce
+
+- Do not add `expo-barcode-scanner` or `expo-camera` back unless explicitly required.
+- Do not add the invalid `"undefined"` dependency back to `package.json`.
+- Do not add the barcode scanner plugin back to Expo config.
+- Assume the app runs in a **development build** (native code present); do not assume Expo Go–only workflows.
+
+---
+
 ## Important Patterns & Conventions
 
 ### Code Style
@@ -583,24 +675,26 @@ The following improvements have been implemented (as of this session):
 
 ## Important Notes for Next Chat
 
-1. **Profile Features:** Currently hidden (`PROFILE_FEATURES_ENABLED = false`). Don't modify profile-related code unless explicitly asked.
+1. **Build & Distribution:** The app runs on an **iOS Development Build** (EAS), not Expo Go. Use `npx expo start` for dev; only suggest `eas build` when adding/removing native modules. Do not re-add `expo-barcode-scanner`, `expo-camera`, or the invalid `undefined` dependency. See [Build & Distribution: Development Build (EAS)](#build--distribution-development-build-eas) for full context.
 
-2. **User Preferences:** Many UI improvements were user-approved. Don't revert changes unless user requests.
+2. **Profile Features:** Currently hidden (`PROFILE_FEATURES_ENABLED = false`). Don't modify profile-related code unless explicitly asked.
 
-3. **Loops Integration:** User sync is working. Focus on:
+3. **User Preferences:** Many UI improvements were user-approved. Don't revert changes unless user requests.
+
+4. **Loops Integration:** User sync is working. Focus on:
    - Setting up Loops Journeys for welcome emails
    - Implementing event tracking
    - Email preferences management
 
-4. **Notifications:** Package is installed but not implemented. Need to:
+5. **Notifications:** Package is installed but not implemented. Need to:
    - Request permissions
    - Register push tokens
    - Implement notification scheduling
    - Handle notification events
 
-5. **Code Quality:** The codebase is well-structured. Follow existing patterns when adding new features.
+6. **Code Quality:** The codebase is well-structured. Follow existing patterns when adding new features.
 
-6. **Testing:** Test on real devices when possible, especially for:
+7. **Testing:** Test on real devices when possible, especially for:
    - Haptic feedback
    - Animations
    - Notifications

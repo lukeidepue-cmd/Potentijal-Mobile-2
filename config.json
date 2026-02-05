@@ -34,7 +34,6 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-barcode-scanner",
       "expo-font"
     ],
     "experiments": {

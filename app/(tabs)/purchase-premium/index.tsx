@@ -1,8 +1,7 @@
 // app/(tabs)/purchase-premium.tsx
-// Premium Upgrade Screen - Full screen redesign
-// NOTE: Payment integration with Stripe will be added later
+// Premium Upgrade Screen — RevenueCat IAP (steps 20–26)
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,6 +10,8 @@ import {
   Pressable,
   Image,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -23,6 +24,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import Purchases from "react-native-purchases";
 
 /* ---- Fonts ---- */
 import {
@@ -53,17 +55,78 @@ export default function PurchasePremium() {
   const fontsReady = geistLoaded;
 
   const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly">("yearly");
+  const [offeringsLoading, setOfferingsLoading] = useState(true);
+  const [offeringsError, setOfferingsError] = useState<string | null>(null);
+  const [currentOffering, setCurrentOffering] = useState<{ monthly: any; annual: any } | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
+  const loadOfferings = useCallback(async () => {
+    setOfferingsError(null);
+    setOfferingsLoading(true);
+    try {
+      const offerings = await Purchases.getOfferings();
+      const current = offerings.current;
+      if (!current?.availablePackages?.length) {
+        setOfferingsError("Plans are not available right now. Please try again later.");
+        setCurrentOffering(null);
+        return;
+      }
+      const packages = current.availablePackages;
+      const monthly = packages.find((p: any) => p.packageType === Purchases.PACKAGE_TYPE.MONTHLY || p.identifier === "$monthly" || p.identifier?.toLowerCase().includes("monthly"));
+      const annual = packages.find((p: any) => p.packageType === Purchases.PACKAGE_TYPE.ANNUAL || p.identifier === "$annual" || p.identifier?.toLowerCase().includes("annual"));
+      setCurrentOffering({ monthly: monthly ?? null, annual: annual ?? null });
+    } catch (e: any) {
+      setOfferingsError(e?.message ?? "Unable to load plans. Pull down to retry.");
+      setCurrentOffering(null);
+    } finally {
+      setOfferingsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOfferings();
+  }, [loadOfferings]);
+
+  const selectedPackage = currentOffering ? (selectedPlan === "monthly" ? currentOffering.monthly : currentOffering.annual) : null;
+
+  const handleContinue = async () => {
+    setPurchaseError(null);
+    setPurchasing(true);
+    try {
+      let customerInfo: any;
+      if (selectedPackage) {
+        const result = await Purchases.purchasePackage(selectedPackage);
+        customerInfo = result.customerInfo;
+      } else {
+        const productId = selectedPlan === "monthly" ? "premium_monthly" : "premium_yearly";
+        const result = await Purchases.purchaseProduct(productId);
+        customerInfo = result.customerInfo;
+      }
+      if (customerInfo?.entitlements?.active?.premium != null) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("You're premium!", "Thanks for upgrading. Enjoy Potential Pro.", [
+          { text: "OK", onPress: () => router.back() },
+        ]);
+      } else {
+        Alert.alert("Success", "Purchase completed.", [{ text: "OK", onPress: () => router.back() }]);
+      }
+    } catch (e: any) {
+      if (e?.userCancelled) {
+        setPurchaseError(null);
+      } else {
+        setPurchaseError(e?.message ?? "Purchase failed. Please try again.");
+      }
+    } finally {
+      setPurchasing(false);
+    }
+  };
 
   // Animation for Continue button
   const continueButtonScale = useSharedValue(1);
   const continueButtonAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: continueButtonScale.value }],
   }));
-
-  const handleContinue = () => {
-    // TODO: Navigate to payment screen when implemented
-    console.log("Continue pressed - payment flow not yet implemented");
-  };
 
   if (!fontsReady) {
     return null;
@@ -164,82 +227,103 @@ export default function PurchasePremium() {
         </View>
 
         {/* Pricing Cards */}
-        <View style={styles.pricingContainer}>
-          {/* Monthly Plan */}
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setSelectedPlan("monthly");
-            }}
-            style={[
-              styles.pricingCard,
-              selectedPlan === "monthly" && styles.pricingCardSelected,
-            ]}
-          >
-            <View style={styles.pricingCardContent}>
-              <View style={styles.pricingCardHeader}>
-                <Text style={styles.pricingCardLabel}>Monthly</Text>
-                {selectedPlan === "monthly" && (
-                  <View style={styles.checkmarkContainer}>
-                    <Ionicons name="checkmark-circle" size={24} color={theme.colors.primary600} />
-                  </View>
-                )}
-              </View>
-              <View style={styles.pricingCardPriceRow}>
-                <Text style={styles.pricingCardPrice}>$9.99</Text>
-                <Text style={styles.pricingCardPeriod}>/mo</Text>
-              </View>
+        {offeringsLoading ? (
+          <View style={styles.pricingContainer}>
+            <View style={[styles.pricingCard, { opacity: 0.7 }]}>
+              <ActivityIndicator size="small" color={theme.colors.primary600} />
+              <Text style={[styles.pricingCardLabel, { marginTop: 8 }]}>Loading plans…</Text>
             </View>
-          </Pressable>
+          </View>
+        ) : offeringsError ? (
+          <View style={styles.pricingContainer}>
+            <View style={[styles.pricingCard, { opacity: 0.7 }]}>
+              <Ionicons name="alert-circle-outline" size={24} color={theme.colors.textLo} />
+              <Text style={[styles.pricingCardLabel, { marginTop: 8, color: theme.colors.textLo }]}>{offeringsError}</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.pricingContainer}>
+            {/* Monthly Plan */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSelectedPlan("monthly");
+              }}
+              style={[
+                styles.pricingCard,
+                selectedPlan === "monthly" && styles.pricingCardSelected,
+              ]}
+            >
+              <View style={styles.pricingCardContent}>
+                <View style={styles.pricingCardHeader}>
+                  <Text style={styles.pricingCardLabel}>Monthly</Text>
+                  {selectedPlan === "monthly" && (
+                    <View style={styles.checkmarkContainer}>
+                      <Ionicons name="checkmark-circle" size={24} color={theme.colors.primary600} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.pricingCardPriceRow}>
+                  <Text style={styles.pricingCardPrice}>{currentOffering?.monthly?.product?.priceString ?? "—"}</Text>
+                  <Text style={styles.pricingCardPeriod}>/mo</Text>
+                </View>
+              </View>
+            </Pressable>
 
-          {/* Yearly Plan */}
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setSelectedPlan("yearly");
-            }}
-            style={[
-              styles.pricingCard,
-              selectedPlan === "yearly" && styles.pricingCardSelected,
-            ]}
-          >
-            {/* Save 50% Badge */}
-            <View style={styles.saveBadge}>
-              <Text style={styles.saveBadgeText}>Save 50%</Text>
-            </View>
+            {/* Yearly Plan */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSelectedPlan("yearly");
+              }}
+              style={[
+                styles.pricingCard,
+                selectedPlan === "yearly" && styles.pricingCardSelected,
+              ]}
+            >
+              <View style={styles.saveBadge}>
+                <Text style={styles.saveBadgeText}>Save 50%</Text>
+              </View>
 
-            <View style={styles.pricingCardContent}>
-              <View style={styles.pricingCardHeader}>
-                <Text style={styles.pricingCardLabel}>Yearly</Text>
-                {selectedPlan === "yearly" && (
-                  <View style={styles.checkmarkContainer}>
-                    <Ionicons name="checkmark-circle" size={24} color={theme.colors.primary600} />
-                  </View>
-                )}
+              <View style={styles.pricingCardContent}>
+                <View style={styles.pricingCardHeader}>
+                  <Text style={styles.pricingCardLabel}>Yearly</Text>
+                  {selectedPlan === "yearly" && (
+                    <View style={styles.checkmarkContainer}>
+                      <Ionicons name="checkmark-circle" size={24} color={theme.colors.primary600} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.pricingCardPriceRow}>
+                  <Text style={styles.pricingCardPrice}>{currentOffering?.annual?.product?.priceString ?? "—"}</Text>
+                  <Text style={styles.pricingCardPeriod}>/yr</Text>
+                </View>
               </View>
-              <View style={styles.pricingCardPriceRow}>
-                <Text style={styles.pricingCardPrice}>$59.99</Text>
-                <Text style={styles.pricingCardPeriod}>/yr</Text>
-              </View>
-            </View>
-          </Pressable>
-        </View>
+            </Pressable>
+          </View>
+        )}
+
+        {purchaseError ? (
+          <Text style={[styles.pricingCardLabel, { color: theme.colors.error ?? "#ef4444", marginBottom: 12 }]}>{purchaseError}</Text>
+        ) : null}
 
         {/* Continue Button */}
         <AnimatedPressable
           onPress={() => {
+            if (purchasing) return;
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             handleContinue();
           }}
+          disabled={purchasing}
+          style={[styles.continueButton, continueButtonAnimatedStyle, purchasing && { opacity: 0.7 }]}
           onPressIn={() => {
             continueButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
           }}
           onPressOut={() => {
             continueButtonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
           }}
-          style={[styles.continueButton, continueButtonAnimatedStyle]}
         >
-          <Text style={styles.continueButtonText}>Continue</Text>
+          <Text style={styles.continueButtonText}>{purchasing ? "Processing…" : "Continue"}</Text>
         </AnimatedPressable>
       </ScrollView>
     </View>
