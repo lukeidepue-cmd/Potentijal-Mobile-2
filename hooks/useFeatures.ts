@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { getMyProfile, type Profile } from '../lib/api/profile';
 import { useAuth } from '../providers/AuthProvider';
+import { useProfileRefresh } from '../providers/ProfileRefreshContext';
 
 export interface FeatureAccess {
   isPremium: boolean;
@@ -24,6 +25,8 @@ export interface FeatureAccess {
  */
 export function useFeatures(): FeatureAccess & { loading: boolean } {
   const { user } = useAuth();
+  const profileRefresh = useProfileRefresh();
+  const refreshKey = profileRefresh?.refreshKey ?? 0;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +56,7 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
     };
 
     loadProfile();
-  }, [user?.id]); // Reload when user changes
+  }, [user?.id, refreshKey]); // Reload when user changes or profile refresh requested (e.g. after purchase)
 
   // Check premium status: user is premium if plan is 'premium' OR is_premium is true
   // OR if they're a creator (creators get free premium)

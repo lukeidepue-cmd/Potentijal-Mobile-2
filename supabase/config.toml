@@ -1,0 +1,5 @@
+# Allow RevenueCat to call the webhook without a Supabase JWT.
+# Our function verifies the request using REVENUECAT_WEBHOOK_SECRET instead.
+# https://supabase.com/docs/guides/functions/function-configuration#skipping-authorization-checks
+[functions.revenuecat-webhook]
+verify_jwt = false

@@ -1,7 +1,7 @@
 // app/_layout.tsx
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { View, StyleSheet, Image } from 'react-native';
+import { View, StyleSheet, Image, AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -15,6 +15,7 @@ import * as SplashScreen from 'expo-splash-screen';
 // these paths match what I see in your tree
 import { AuthProvider, useAuth } from '../providers/AuthProvider';
 import { ModeProvider } from '../providers/ModeContext';
+import { ProfileRefreshProvider, useProfileRefresh } from '../providers/ProfileRefreshContext';
 import { SettingsProvider } from '../providers/SettingsContext';
 import { PostHogProvider } from '../providers/PostHogProvider';
 import { usePostHogUserTracking } from '../lib/posthog/user-tracking';
@@ -62,6 +63,22 @@ function RootLayoutNav() {
       if (__DEV__) console.warn('[RevenueCat] logIn/logOut skipped:', e);
     }
   }, [user?.id]);
+
+  // Refetch profile when app comes to foreground so we pick up webhook updates
+  // (e.g. purchase completed and webhook set premium; user didn't go through in-app success flow)
+  const profileRefresh = useProfileRefresh();
+  useEffect(() => {
+    if (!profileRefresh?.refreshProfile) return;
+    let lastRefetch = 0;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const now = Date.now();
+      if (now - lastRefetch < 15000) return; // throttle: at most once per 15s
+      lastRefetch = now;
+      profileRefresh.refreshProfile();
+    });
+    return () => sub.remove();
+  }, [profileRefresh]);
 
   // Track user in PostHog when they log in/out
   usePostHogUserTracking();
@@ -290,9 +307,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <SettingsProvider>
-          <ModeProvider>
-            <RootLayoutNav />
-          </ModeProvider>
+          <ProfileRefreshProvider>
+            <ModeProvider>
+              <RootLayoutNav />
+            </ModeProvider>
+          </ProfileRefreshProvider>
         </SettingsProvider>
       </AuthProvider>
     </GestureHandlerRootView>

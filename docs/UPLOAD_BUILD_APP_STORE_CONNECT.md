@@ -55,7 +55,8 @@ This list is the full set of things that apply to fixing **"Error fetching offer
    - App Store Connect → **Users and Access** → **Sandbox** → **Testers**. Create a **sandbox tester** (use a unique email that's not your real Apple ID; set password). You need this to test IAP without using your real Apple ID.
 
 4. **Get sandbox to show up on the device**
-   - On your **iOS device**: **Settings → App Store → Sandbox Account** (or sign out of the App Store, then when the app triggers a purchase, sign in with the sandbox Apple ID). Until the device is using the sandbox account, the purchase sheet may not appear or may behave like production. So: sign in with the sandbox tester on the device before testing IAP.
+   - The **sandbox tester** you create in App Store Connect (Users and Access → Sandbox Testers) is the account you use: that **email + password** are your sandbox Apple ID. Use them when Apple prompts for sign-in.
+   - **If signing in at Settings doesn’t work:** Apple often doesn’t show the sandbox account in Settings until you’ve used it in the app. **Try making a purchase in the app first:** open the app → go to the purchase/premium screen → tap the purchase (Subscribe) button. Apple will show a **sign-in popup** — enter the **sandbox tester email and password** from App Store Connect there. After you sign in during that purchase attempt, the sandbox account may then appear under **Settings → Developer → Sandbox Apple Account** (iOS 18+) or **Settings → App Store → Sandbox Account** (iOS 13+). So: create the sandbox tester in App Store Connect, then use it when the app prompts you during a purchase; you don’t have to sign in under Settings first.
 
 5. **Link IAP products to the app version**
    - In App Store Connect, the **app version** (e.g. 1.0) must have the **In-App Purchases** linked. If you only created subscriptions but didn't add them to the version, Apple won't serve them. Go to your app → version 1.0 → find the **In-App Purchases** (or **Subscription** / **In-App Purchases**) section and add/link your subscription products (`premium_monthly`, `premium_yearly`) to this version. Save.
@@ -73,6 +74,41 @@ This list is the full set of things that apply to fixing **"Error fetching offer
    - App Store Connect → **Agreements, Tax, and Banking**. The **Paid Applications Agreement** must be signed. If it's not, IAP won't work.
 
 **What not to do again:** Don't change app code to "fix" the offerings error (no lazy-init RevenueCat, no Supabase placeholders, etc.). The fix is configuration and linking in App Store Connect + RevenueCat + build selection.
+
+---
+
+## Sandbox testing (physical device) — notes from RevenueCat
+
+Use this when testing IAP on a **physical device** (e.g. TestFlight build). Simulator notes are omitted.
+
+### Create a sandbox tester
+
+- **Where:** App Store Connect → **Users and Access** → **Sandbox** → **Testers**.
+- Create a sandbox tester: use a **valid email you can verify** and set a password. This is **not** your real Apple ID — it’s a test account only for IAP.
+- That **email + password** = your sandbox Apple ID. You use them when Apple prompts for sign-in (in the app or in Settings).
+
+### Add the sandbox account on your device
+
+- **iOS 18+:** Settings → **Developer** → **Sandbox Apple Account**.
+- **iOS 13+:** Settings → **App Store** → **Sandbox Account**.
+- **If you can’t sign in there or the option is missing:** Apple often doesn’t show the sandbox account in Settings until you’ve used it in the app. **Make a purchase in the app first:** open the app → go to the purchase/premium screen → tap Subscribe (or purchase). Apple will show a **popup to sign in** — enter your **sandbox tester email and password** from App Store Connect. After that, the sandbox account may appear in Settings. So you don’t have to sign in under Settings first; you can sign in when the app prompts you during a purchase.
+
+### Testing on device
+
+- **Make a purchase:** Build and run the app on the device (e.g. install from TestFlight). When you tap purchase, Apple may prompt you to sign in with an Apple ID — use the **sandbox tester** credentials. The SDK only triggers this when you call purchase or restore; you can’t control whether Apple shows Face ID, Touch ID, or password.
+- **Sandbox can be slow:** A sandbox purchase can take ~15 seconds; that’s normal. Production is usually much faster.
+- **Prices in sandbox:** In sandbox (and TestFlight), prices and metadata often don’t match App Store Connect. Focus on the **purchase flow** working, not exact prices.
+- **Verify in RevenueCat:** After a successful purchase, check the RevenueCat dashboard (with **View Sandbox Data** enabled) to see the transaction.
+
+### TestFlight
+
+- TestFlight uses your **production Apple Account** for the app, but **purchases still run in sandbox**. That can cause odd behavior; it’s undocumented by Apple.
+- As of Dec 2024, **TestFlight subscription renewals** occur once every 24 hours (not the accelerated sandbox rate). Sandbox on a dev build renews at accelerated rates (e.g. 1 month ≈ 5 minutes).
+
+### Other
+
+- **Log out of sandbox to test as a new user:** Deleting the user in RevenueCat doesn’t remove their purchase history with Apple. To simulate a brand‑new user, **log out of the sandbox account on the device** (Settings → Developer → Sandbox Apple Account or App Store → Sandbox Account) and, if needed, create a new sandbox tester in App Store Connect.
+- **Localization / region:** To test purchases in a specific region, set the sandbox user’s **App Store Country or Region** in App Store Connect (Sandbox Testers).
 
 ---
 

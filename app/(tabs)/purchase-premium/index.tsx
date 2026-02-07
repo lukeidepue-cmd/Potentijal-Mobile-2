@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../constants/theme";
+import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
@@ -46,6 +47,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function PurchasePremium() {
   const insets = useSafeAreaInsets();
+  const refreshProfile = useProfileRefresh()?.refreshProfile;
   const [geistLoaded] = useGeist({
     Geist_400Regular,
     Geist_500Medium,
@@ -105,10 +107,15 @@ export default function PurchasePremium() {
       }
       if (customerInfo?.entitlements?.active?.premium != null) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Give webhook time to update profiles, then refetch so useFeatures() shows premium
+        if (refreshProfile) {
+          setTimeout(() => refreshProfile(), 800);
+        }
         Alert.alert("You're premium!", "Thanks for upgrading. Enjoy Potential Pro.", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } else {
+        if (refreshProfile) setTimeout(() => refreshProfile(), 800);
         Alert.alert("Success", "Purchase completed.", [{ text: "OK", onPress: () => router.back() }]);
       }
     } catch (e: any) {
