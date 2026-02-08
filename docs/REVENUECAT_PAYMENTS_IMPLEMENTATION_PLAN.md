@@ -571,52 +571,69 @@ This section is **one end-to-end step-by-step guide** for implementing everythin
 
 This section covers **two** offers:
 
-1. **25% off first month** — For discount codes (reusable; many users can use the same code). User redeems a code, then subscribes at 25% off for the first billing period only.
+1. **20% off first month** — For discount codes (reusable; many users can use the same code). User redeems a code, then subscribes at 20% off for the first billing period only.
 2. **100% off forever (creators only)** — For creator codes. User redeems a creator code and gets Pro access forever with no payment. No App Store subscription product is used; your backend grants premium.
 
+**No auto-renewal — ever:** Subscriptions do **not** auto-renew. Both monthly and yearly are **Non-Renewing Subscriptions** in App Store Connect. When the paid period ends, **access ends** and the user is not charged again. If they want to continue, they must choose to purchase again themselves (at full price for any later purchase). So: monthly = pay for 1 month, access ends; yearly = pay for 1 year, access ends. No automatic renewal for either.
 ---
 
 #### Who sets the % off (discount codes)?
 
-**You** set it when you create each code. The `promoter_codes` table has `discount_percent` (0–100). You choose the value per code. The app uses it to pick which subscription offer to apply. You must have a **matching subscription offer** in App Store Connect for each percentage (e.g. one offer for 25% off first month).
+**You** set it when you create each code. The `promoter_codes` table has `discount_percent` (0–100). You choose the value per code. The app uses it to pick which subscription offer to apply. You must have a **matching subscription offer** in App Store Connect for each percentage (e.g. one offer for 20% off first month).
 
 ---
 
-#### Part A: 25% off first month (discount codes)
+#### Part A: 20% off first month (discount codes)
 
 **A1. App Store Connect — Create the promotional offer**
 
-1. Go to [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → your app → **Subscriptions** (left sidebar).
-2. Open your **subscription group** (e.g. "Premium"), then select the **subscription product** you want to discount (e.g. monthly, and optionally yearly).
-3. For each product (e.g. monthly):
-   - Under **Subscription Prices**, click the **"+"** button.
-   - Choose **Create Promotional Offer** (not Introductory Offer — that would apply to everyone; we only want it when the user has a code).
-4. Fill in:
-   - **Reference Name:** e.g. `25% off first month` (for your reference only).
-   - **Promotional Offer Product Code:** e.g. `first_month_25_off`. This is the **identifier you will use in the app** and in RevenueCat. Use only letters, numbers, underscores; no spaces. Write it down.
-5. Choose **Offer Type:**
-   - For "25% off for 1 month" use **Pay as you go**: reduced price each period for a number of periods.
-   - Set **Duration** to **1 month**.
-   - Set the **price** to 25% less than your normal monthly price (e.g. if monthly is $9.99, set this to $7.49 or the equivalent in your tier).
-6. Click **Save**. Submit the subscription/offer for review if required (promotional offers are part of the subscription product).
-7. Repeat for the **yearly** product if you want 25% off the first period for yearly too (duration 1 period, price 25% off the yearly price for that one period).
+**Monthly and yearly = both Non-Renewing:** Create **both** the monthly and yearly products as **Non-Renewing Subscriptions** (App Store Connect → Your App → **In-App Purchases** → **+** → **Non-Renewing Subscription**). Neither auto-renews; when the period ends, access ends. The user can purchase again later if they choose (at full price).
+
+1. Go to [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → your app → **In-App Purchases** (not Subscriptions). Create two **Non-Renewing Subscription** products: one for 1 month of access, one for 1 year of access.
+2. For each product, set the base price (e.g. monthly $9.99, yearly $60.00). Then add a **Promotional Offer** so users with a discount code can get 20% off. (Non-renewing subscriptions may use subscription offers differently; if your app uses a single “discount code” flow, you may instead create two price points or two products—e.g. “premium_monthly” and “premium_monthly_discounted”—and show the discounted one when they have a code. Check Apple’s current docs for **Non-Renewing Subscription** and promotional pricing.)
+3. **Monthly with discount:** Price for 1 month at 20% off (e.g. $7.99). Duration = 1 month. After that month, access ends; they can buy again at full price if they want.
+4. **Yearly with discount:** Price for the **entire year** at a discount (e.g. full price $60, promotional first year $58 so they get 20% off the “first month” of the year and full for the rest—i.e. one discounted year total). Duration = **1 year**. After that year, access ends; they can buy again at full price if they want.
+5. Fill in for each promotional offer (where applicable):
+   - **Reference Name:** e.g. `20% off first month` (monthly) or `20% off first year` (yearly).
+   - **Promotional Offer Product Code:** e.g. `first_month_20_off` (monthly) and `first_year_20_off` (yearly). Use these identifiers in the app and RevenueCat.
+6. **Monthly:** Duration 1 month, price 20% less than normal monthly.
+7. **Yearly:** Duration **1 year**, price = one discounted total for the year (e.g. $58.00 for one year). They are not charged again; after the year, access ends. If they purchase again later, it’s at full price (e.g. $60).
+8. Click **Save**. Submit for review if required.
 
 **A2. RevenueCat — In-App Purchase Key and products**
 
 1. **In-App Purchase Key (required for promotional offers):**
    - RevenueCat dashboard → **Project** → **Apps** → your iOS app → **App-specific shared secret / In-App Purchase**.
    - If not already done: In App Store Connect go to **Users and Access** → **Keys** (under Integrations) → create an **In-App Purchase** key, download the `.p8` file once, note Key ID and Issuer ID. In RevenueCat, upload the key (or enter Key ID, Issuer ID, path/contents). See RevenueCat docs: [In-App Purchase Key Configuration](https://www.revenuecat.com/docs/service-credentials/itunesconnect-app-specific-shared-secret/in-app-purchase-key-configuration).
-2. **Products:** Ensure your subscription products (e.g. `premium_monthly`, `premium_yearly`) are added in RevenueCat and linked to the same product IDs as in App Store Connect. The SDK will return `StoreProduct.discounts` for each product; the promotional offer you created will appear there (identified by the **Promotional Offer Product Code** you set).
-3. **Offerings:** Your default offering (e.g. "default") should include packages that use these products. No extra "discount" package is required — the app will take the same package’s `storeProduct`, get its `discounts`, find the one matching `first_month_25_off`, and call `getPromotionalOffer` then `purchaseDiscountedPackage`.
+2. **Products:** Already done in **step 12** (section 4). You added `premium_monthly` and `premium_yearly` in RevenueCat with the same IDs as App Store Connect. No action needed here. The promotional offers you created in A1 are attached to those same products in App Store Connect; RevenueCat will return them (e.g. via `storeProduct.discounts`) when your app fetches offerings.
+3. **Offerings:** Already done in **step 14** (section 4). Your default offering already has the Monthly and Annual packages linked to `premium_monthly` and `premium_yearly`. No action needed here. The app will use those same packages and apply the discount from `storeProduct.discounts` (when the user has a code) in the paywall logic (A3). No extra "discount" package is required — the app will take the same package’s `storeProduct`, get its `discounts`, find the one matching `first_month_20_off`, and call `getPromotionalOffer` then `purchaseDiscountedPackage`.
 
 **A3. App and backend implementation**
 
-1. **Backend — redeem:** When `redeemCode()` succeeds for `premium_discount`, keep recording the use in `profile_code_uses` (already done). Return in the success payload the `discount_percent` (e.g. 25) and/or a stable **offer identifier** (e.g. `first_month_25_off`) so the app knows which offer to apply.
-2. **App — store "has discount":** After a successful discount-code redeem, persist that this user has a pending discount: e.g. add a column to `profiles` such as `pending_discount_offer_id` (e.g. `first_month_25_off`) or use a small table `profile_pending_discount` with `discount_percent` and optional `promoter_code_id`. Clear it after they complete a purchase (or after the first billing period, via webhook).
-3. **Paywall — apply promotional offer:**
-   - When the user opens the paywall, if they have a pending discount (e.g. `first_month_25_off`), load offerings as usual, then for the selected package (e.g. monthly): get `package.storeProduct.discounts`, find the discount whose identifier matches `first_month_25_off`, call RevenueCat’s `Purchases.getPromotionalOffer(product, product.discounts[i])` (or equivalent in your SDK version), then call `Purchases.purchaseDiscountedPackage(package, paymentDiscount)` instead of `purchasePackage(package)`.
-   - If they have no discount, use the normal `purchasePackage(package)` flow.
-4. **Clear discount after purchase:** On successful purchase (or in the RevenueCat webhook when you see INITIAL_PURCHASE with the discounted offer), clear `pending_discount_offer_id` / pending discount for that user so renewals are full price.
+Do these in order. Each step tells you which file to edit and what to do.
+
+**A3.1 — Backend: return the offer identifier when a discount code is redeemed**
+
+- **File:** `lib/api/settings.ts` (the `redeemCode` function). When the code type is `premium_discount`, **add** to the success response an **offer identifier**, e.g. `offer_identifier: 'first_month_20_off'`, so the app knows which App Store offer to apply. Example: `return { data: { type: 'discount', message: '...', offer_identifier: 'first_month_20_off' }, error: null };`
+
+**A3.2 — Database: store “this user has a pending discount”**
+
+- **What to do:** Add a way to remember that the user redeemed a discount code. **Option A:** Add column `pending_discount_offer_id` (text, nullable) to `profiles`. When they redeem a discount code, set it to `'first_month_20_off'`; when they complete a purchase, set it to `null`. **Option B:** Create table `profile_pending_discount` (profile_id, offer_identifier) and clear it after purchase. Create a migration for Option A, then in the app (A3.3) update this when redeem succeeds, and (A3.4) clear it after purchase.
+
+**A3.3 — Redeem Code screen: save the pending discount when a discount code succeeds**
+
+- **File:** `app/(tabs)/settings/premium/redeem-code.tsx`. When `redeemPromoterCode(code)` succeeds and the response has type `discount` and `offer_identifier`: update the user's profile to set `pending_discount_offer_id = response.offer_identifier` (or insert into `profile_pending_discount`). Then show success and optionally navigate to the paywall.
+
+**A3.4 — Paywall: use the promotional offer when the user has a pending discount**
+
+- **File:** `app/(tabs)/purchase-premium/index.tsx`. (1) **On load:** Fetch the user's profile (or pending discount) and store `pendingOfferId` in state. (2) **When user taps Subscribe:** If `pendingOfferId` is set, get the matching discount from `selectedPackage.storeProduct.discounts`, call `Purchases.getPromotionalOffer(storeProduct, thatDiscount)`, then `Purchases.purchaseDiscountedPackage(selectedPackage, paymentDiscount)`. If no pending discount, call `Purchases.purchasePackage(selectedPackage)` as now. (3) **After successful purchase:** Clear the pending discount (set `pending_discount_offer_id` to `null`). Check RevenueCat React Native docs for exact method names.
+
+**A3.5 — Clear pending discount after purchase**
+
+- In the paywall, right after a successful purchase, clear the user's `pending_discount_offer_id` (or delete from `profile_pending_discount`). Optionally in the RevenueCat webhook on INITIAL_PURCHASE, clear it for that user too. So they only get 20% off once.
+
+**SDK method names (how to check):** By "exposed" we mean: the methods exist on the `Purchases` object so your code can call them (e.g. `Purchases.getPromotionalOffer(...)`). To see what your SDK actually provides, open `node_modules/react-native-purchases/dist/purchases.d.ts` and search for "Promotional" or "Discount". With **react-native-purchases 9.7.5** the names are: `getPromotionalOffer(product, discount)` and `purchaseDiscountedPackage(aPackage, discount)`. The paywall code uses these exact names.
+
 
 **A4. Reusability**
 
@@ -636,15 +653,25 @@ Do **not** create a subscription product or promotional offer for "free forever.
 
 RevenueCat continues to manage paid subscriptions only. Creator status is determined by your `profiles` table (`is_creator`, `plan`, `is_premium`).
 
-**B3. Create creator codes in your database**
+**B3. Create creator codes in your database (you do this)**
 
-1. In your `promoter_codes` table, insert a row for each creator code you want to give out:
-   - `code`: e.g. `CREATOR2024` (uppercase; your redeem-code API typically compares uppercase).
+**Yes — the flow is: a creator types in a code in the app (Settings → Premium → Redeem Code), and then they are switched to a creator account.** You (the app owner) create those codes by adding rows to `promoter_codes`; you do not create them in App Store Connect or RevenueCat.
+
+1. In Supabase: go to **Table Editor** → **promoter_codes** → **Insert row** (or run SQL in the SQL Editor).
+2. For each creator code, set:
+   - `code`: the exact string the creator will type (e.g. `CREATOR2024`). The API compares with uppercase, so `CREATOR2024` and `creator2024` both work.
    - `type`: `creator_signup`.
    - `is_active`: `true`.
    - `description`: optional (e.g. "Creator program").
-   - `discount_percent`, `duration_days`: can be null for creator codes.
-2. You can create as many creator codes as you want (e.g. one per creator or one shared code). Each **user** can only redeem a given code once (`profile_code_uses`); the **code** can be used by many users.
+   - Leave `discount_percent`, `duration_days`, `creator_profile_id` null.
+3. Example SQL to create one creator code (run in Supabase SQL Editor):
+
+   ```sql
+   insert into public.promoter_codes (code, type, is_active, description)
+   values ('CREATOR2024', 'creator_signup', true, 'Creator program');
+   ```
+
+4. You can create as many codes as you want (one per creator or one shared code). Each **user** can redeem a given code only once; the **code** can be used by many users.
 
 **B4. Backend behavior (already implemented)**
 
@@ -667,14 +694,14 @@ After redeem, refresh the user’s profile. Your feature gating (`useFeatures`) 
 2. **Device:** On your iOS device, sign in to the **Sandbox account** (Settings → App Store → Sandbox Account, or when prompted during purchase). Do not use your real Apple ID for IAP tests.
 3. **Build:** Use a development or TestFlight build that has RevenueCat and your redeem-code flow configured (same bundle ID and products as in App Store Connect / RevenueCat).
 
-**C2. Test 25% off first month (discount code)**
+**C2. Test 20% off first month (discount code)**
 
-1. **Create a discount code in your DB:** Insert into `promoter_codes`: e.g. `code = 'SAVE25'`, `type = 'premium_discount'`, `discount_percent = 25`, `is_active = true`. Ensure the app/backend will return the 25% offer identifier (e.g. `first_month_25_off`) when this code is redeemed, or that the app maps 25% to that offer.
-2. **Redeem the code in the app:** Settings → Premium → Redeem Code → enter `SAVE25` → Redeem. Expect success (e.g. "Code applied! 25% discount available" or similar).
-3. **Open the paywall:** Navigate to the subscription/paywall screen. The UI should reflect the 25% off (e.g. discounted price for the first period). If your paywall shows one "Subscribe" option, ensure the app is using `getPromotionalOffer` + `purchaseDiscountedPackage` when the user has a pending discount.
-4. **Purchase with sandbox:** Select monthly (or yearly), tap Subscribe/Continue. Complete the purchase with the **sandbox** Apple ID. Confirm the **price shown by Apple** is the reduced price (25% off) for the first period.
-5. **After purchase:** Confirm the app shows the user as premium (e.g. Pro features unlocked). In RevenueCat dashboard (with "Sandbox data" enabled), confirm the transaction. In your backend, confirm the user’s `pending_discount_offer_id` (or equivalent) is cleared so a future renewal would be full price.
-6. **Reuse (same code, different user):** With another sandbox tester (or another account in your app), redeem `SAVE25` again. Confirm it works and that the second user can also purchase at 25% off. Confirm the same user cannot redeem `SAVE25` twice (you should get "Code already used" or similar).
+1. **Create a discount code in your DB:** Insert into `promoter_codes`: e.g. `code = 'SAVE20'`, `type = 'premium_discount'`, `discount_percent = 20`, `is_active = true`. Ensure the app/backend will return the 20% offer identifier (e.g. `first_month_20_off`) when this code is redeemed, or that the app maps 20% to that offer.
+2. **Redeem the code in the app:** Settings → Premium → Redeem Code → enter `SAVE20` → Redeem. Expect success (e.g. "Code applied! 20% discount available" or similar).
+3. **Open the paywall:** Navigate to the subscription/paywall screen. The UI should reflect the 20% off (e.g. discounted price for the first period). If your paywall shows one "Subscribe" option, ensure the app is using `getPromotionalOffer` + `purchaseDiscountedPackage` when the user has a pending discount.
+4. **Purchase with sandbox:** Select monthly (or yearly), tap Subscribe/Continue. Complete the purchase with the **sandbox** Apple ID. Confirm the **price shown by Apple** is the reduced price (20% off) for the first period.
+5. **After purchase:** Confirm the app shows the user as premium (e.g. Pro features unlocked). In RevenueCat dashboard (with "Sandbox data" enabled), confirm the transaction. In your backend, confirm the user’s `pending_discount_offer_id` (or equivalent) is cleared. **No auto-renewal:** After the paid period (1 month or 1 year), access should end; they are not charged again. If they purchase again later, it should be at full price.
+6. **Reuse (same code, different user):** With another sandbox tester (or another account in your app), redeem `SAVE20` again. Confirm it works and that the second user can also purchase at 20% off. Confirm the same user cannot redeem `SAVE20` twice (you should get "Code already used" or similar).
 
 **C3. Test 100% off forever (creator code)**
 
@@ -697,7 +724,7 @@ After redeem, refresh the user’s profile. Your feature gating (`useFeatures`) 
 
 | Offer              | Where it’s defined              | Where it’s applied                    | Who can use it        |
 |--------------------|----------------------------------|----------------------------------------|------------------------|
-| 25% off first month| App Store Connect (promo offer) + RevenueCat (IAP key, products) + your DB (`promoter_codes` type `premium_discount`) | App: redeem code → paywall → purchase with promotional offer | Any user, one use per user per code; code reusable by many users |
+| 20% off first month| App Store Connect (promo offer) + RevenueCat (IAP key, products) + your DB (`promoter_codes` type `premium_discount`) | App: redeem code → paywall → purchase with promotional offer | Any user, one use per user per code; code reusable by many users |
 | 100% off forever   | Your DB only (`promoter_codes` type `creator_signup`) | Backend: redeem code → set `is_creator`, `plan`, `is_premium` | Creators you give the code to; one use per user per code |
 
 ---

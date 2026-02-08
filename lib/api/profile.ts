@@ -18,6 +18,8 @@ export interface Profile {
   plan: 'free' | 'premium' | 'creator';
   sports: string[];
   primary_sport: string | null;
+  /** Set when user redeemed a discount code; cleared after purchase. Used for promotional offer at paywall. */
+  pending_discount_offer_id?: string | null;
 }
 
 export interface ProfileStats {
@@ -38,7 +40,7 @@ export async function getMyProfile(): Promise<{ data: Profile | null; error: any
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, display_name, bio, profile_image_url, is_premium, is_creator, plan, sports, primary_sport')
+      .select('id, username, display_name, bio, profile_image_url, is_premium, is_creator, plan, sports, primary_sport, pending_discount_offer_id')
       .eq('id', user.id)
       .single();
 
@@ -90,6 +92,26 @@ export async function updateMyProfile(params: {
       return { data: null, error };
     }
 
+    return { data: true, error: null };
+  } catch (error: any) {
+    return { data: null, error };
+  }
+}
+
+/**
+ * Set or clear the pending discount offer ID (used after redeeming a discount code; cleared after purchase).
+ */
+export async function setPendingDiscountOfferId(offerId: string | null): Promise<{ data: boolean | null; error: any }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { data: null, error: { message: 'User not authenticated' } };
+    }
+    const { error } = await supabase
+      .from('profiles')
+      .update({ pending_discount_offer_id: offerId })
+      .eq('id', user.id);
+    if (error) return { data: null, error };
     return { data: true, error: null };
   } catch (error: any) {
     return { data: null, error };

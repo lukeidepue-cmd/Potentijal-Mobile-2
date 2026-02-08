@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../constants/theme";
 import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
+import { getMyProfile, setPendingDiscountOfferId } from "../../../lib/api/profile";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
@@ -62,6 +63,7 @@ export default function PurchasePremium() {
   const [currentOffering, setCurrentOffering] = useState<{ monthly: any; annual: any } | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [pendingOfferId, setPendingOfferId] = useState<string | null>(null);
 
   const loadOfferings = useCallback(async () => {
     setOfferingsError(null);
@@ -90,6 +92,17 @@ export default function PurchasePremium() {
     loadOfferings();
   }, [loadOfferings]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: profile } = await getMyProfile();
+      if (!cancelled && profile?.pending_discount_offer_id) {
+        setPendingOfferId(profile.pending_discount_offer_id);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const selectedPackage = currentOffering ? (selectedPlan === "monthly" ? currentOffering.monthly : currentOffering.annual) : null;
 
   const handleContinue = async () => {
@@ -98,8 +111,21 @@ export default function PurchasePremium() {
     try {
       let customerInfo: any;
       if (selectedPackage) {
-        const result = await Purchases.purchasePackage(selectedPackage);
-        customerInfo = result.customerInfo;
+        const pkg = selectedPackage as any;
+        const storeProduct = pkg.storeProduct ?? pkg.product;
+        const discounts = storeProduct?.discounts ?? [];
+        const discount = pendingOfferId ? discounts.find((d: any) => (d.identifier ?? d.offerIdentifier) === pendingOfferId) : null;
+        if (pendingOfferId && discount) {
+          const paymentDiscount = await Purchases.getPromotionalOffer(storeProduct, discount);
+          if (paymentDiscount) {
+            const result = await Purchases.purchaseDiscountedPackage(selectedPackage, paymentDiscount);
+            customerInfo = result.customerInfo;
+          }
+        }
+        if (!customerInfo) {
+          const result = await Purchases.purchasePackage(selectedPackage);
+          customerInfo = result.customerInfo;
+        }
       } else {
         const productId = selectedPlan === "monthly" ? "premium_monthly" : "premium_yearly";
         const result = await Purchases.purchaseProduct(productId);
@@ -107,7 +133,7 @@ export default function PurchasePremium() {
       }
       if (customerInfo?.entitlements?.active?.premium != null) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        // Give webhook time to update profiles, then refetch so useFeatures() shows premium
+        await setPendingDiscountOfferId(null);
         if (refreshProfile) {
           setTimeout(() => refreshProfile(), 800);
         }
@@ -115,6 +141,7 @@ export default function PurchasePremium() {
           { text: "OK", onPress: () => router.back() },
         ]);
       } else {
+        await setPendingDiscountOfferId(null);
         if (refreshProfile) setTimeout(() => refreshProfile(), 800);
         Alert.alert("Success", "Purchase completed.", [{ text: "OK", onPress: () => router.back() }]);
       }

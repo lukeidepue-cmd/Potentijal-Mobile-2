@@ -931,7 +931,11 @@ export async function reorderSports(sports: string[], primarySport?: string): Pr
 /**
  * Redeem a promoter code
  */
-export async function redeemCode(code: string): Promise<{ data: { type: string; message: string } | null; error: any }> {
+export type RedeemCodeResult = {
+  data: { type: string; message: string; offer_identifier?: string } | null;
+  error: any;
+};
+export async function redeemCode(code: string): Promise<RedeemCodeResult> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -992,8 +996,16 @@ export async function redeemCode(code: string): Promise<{ data: { type: string; 
 
       return { data: { type: 'creator', message: 'Creator account activated!' }, error: null };
     } else if (codeData.type === 'premium_discount') {
-      // Apply discount (this would be handled in payment flow)
-      return { data: { type: 'discount', message: `Code applied! ${codeData.discount_percent}% discount available.` }, error: null };
+      // Offer identifier for the app to apply at paywall (must match App Store Connect promotional offer code)
+      const offerIdentifier = 'first_month_20_off';
+      return {
+        data: {
+          type: 'discount',
+          message: `Code applied! ${codeData.discount_percent}% discount available.`,
+          offer_identifier: offerIdentifier,
+        },
+        error: null,
+      };
     }
 
     return { data: null, error: { message: 'Unknown code type' } };

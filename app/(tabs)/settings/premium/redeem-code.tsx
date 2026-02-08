@@ -20,6 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { theme } from "../../../../constants/theme";
 import { redeemCode as redeemPromoterCode } from "../../../../lib/api/settings";
+import { setPendingDiscountOfferId } from "../../../../lib/api/profile";
 import { useProfileRefresh } from "../../../../providers/ProfileRefreshContext";
 import { supabase } from "../../../../lib/supabase";
 import Purchases from "react-native-purchases";
@@ -33,6 +34,27 @@ export default function RedeemCode() {
   const [redeeming, setRedeeming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const handleRedeemWithApple = async () => {
+    if (Platform.OS !== "ios") return;
+    setError(null);
+    setRedeeming(true);
+    try {
+      await Purchases.presentCodeRedemptionSheet();
+      const { data: syncData } = await supabase.functions.invoke("sync-subscription");
+      refreshProfile?.();
+      Alert.alert(
+        "Code redeemed",
+        syncData?.is_premium ? "Your subscription has been updated." : "If you redeemed a code, your subscription has been updated.",
+        [{ text: "OK", onPress: () => router.back() }]
+      );
+    } catch (rcError: unknown) {
+      const isCancel = rcError && typeof rcError === "object" && "userCancelled" in rcError && (rcError as { userCancelled?: boolean }).userCancelled;
+      if (!isCancel) setError("Redeem was cancelled or the code was not valid.");
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
   const handleRedeem = async () => {
     const trimmed = code.trim();
     if (!trimmed) {
@@ -45,38 +67,21 @@ export default function RedeemCode() {
     setRedeeming(true);
 
     try {
-      // Step 45: Try RevenueCat (Apple offer codes). RN SDK has presentCodeRedemptionSheet() only — no redeemCode(code).
-      let revenueCatSucceeded = false;
-      if (Platform.OS === "ios") {
-        try {
-          await Purchases.presentCodeRedemptionSheet();
-          const { data: syncData } = await supabase.functions.invoke("sync-subscription");
-          refreshProfile?.();
-          revenueCatSucceeded = true;
-          Alert.alert(
-            "Code redeemed",
-            syncData?.is_premium ? "Your subscription has been updated." : "If you redeemed a code, your subscription has been updated.",
-            [{ text: "OK", onPress: () => router.back() }]
-          );
-        } catch (rcError: unknown) {
-          const isCancel = rcError && typeof rcError === "object" && "userCancelled" in rcError && (rcError as { userCancelled?: boolean }).userCancelled;
-          if (isCancel) {
-            setRedeeming(false);
-            return;
-          }
-          // Sheet failed (e.g. not configured); fall through to promoter_codes
-        }
-      }
-
-      if (revenueCatSucceeded) return;
-
-      // Step 46: On RevenueCat redeem failure (or non‑iOS): try promoter_codes API (creator_signup, premium_discount, etc.)
+      // Try our promoter_codes first (creator codes, discount codes). Only use Apple's sheet for Apple offer codes.
       const { data, error: apiError } = await redeemPromoterCode(trimmed.toUpperCase());
       if (apiError) {
         setError(apiError.message || "Invalid or expired code.");
         return;
       }
       if (data) {
+        const offerId = (data as { offer_identifier?: string }).offer_identifier;
+        if (data.type === "discount" && offerId) {
+          const { error: updateErr } = await setPendingDiscountOfferId(offerId);
+          if (updateErr) {
+            setError(updateErr.message ?? "Code applied but could not save discount. Try opening the paywall.");
+            return;
+          }
+        }
         refreshProfile?.();
         Alert.alert("Success", data.message);
         setCode("");
@@ -135,9 +140,14 @@ export default function RedeemCode() {
             <Text style={styles.redeemButtonText}>Redeem</Text>
           )}
         </Pressable>
+        {Platform.OS === "ios" ? (
+          <Pressable onPress={handleRedeemWithApple} disabled={redeeming} style={styles.appleLink}>
+            <Text style={styles.appleLinkText}>Redeem with Apple (App Store offer code)</Text>
+          </Pressable>
+        ) : null}
         <View style={styles.helpSection}>
           <Text style={styles.helpText}>
-            Enter a creator code or premium discount code. On iOS, you can also use Apple offer codes via the redemption sheet.
+            Enter a creator code or premium discount code above. Creator codes unlock your creator account; discount codes apply a discount on your next purchase.
           </Text>
         </View>
       </ScrollView>
@@ -211,6 +221,8 @@ const styles = StyleSheet.create({
   },
   redeemButtonDisabled: { opacity: 0.7 },
   redeemButtonText: { fontSize: 16, fontWeight: "600", color: "#06160D", fontFamily: FONT.uiSemi },
+  appleLink: { marginTop: 20 },
+  appleLinkText: { fontSize: 14, color: theme.colors.primary500 ?? theme.colors.primary600, fontFamily: FONT.uiSemi },
   helpSection: {
     marginTop: 24,
     padding: 16,
