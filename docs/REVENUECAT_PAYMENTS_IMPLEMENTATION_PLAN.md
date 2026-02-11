@@ -66,13 +66,13 @@ So: **payments for in-app Premium = Apple IAP + RevenueCat**. No Stripe for this
 
 - **Manage Subscription** — `app/(tabs)/settings/premium/manage-subscription.tsx` — Placeholder “Coming soon”.
 - **Restore Purchases** — `app/(tabs)/settings/premium/restore-purchases.tsx` — Placeholder “Coming soon”.
-- **Redeem Code** — `app/(tabs)/settings/premium/redeem-code.tsx` — Calls `redeemCode()` from `lib/api/settings.ts`; works for **promoter codes** in DB (`promoter_codes` table): types `creator_signup` and `premium_discount`. No RevenueCat yet.
+- **Code redemption** is on the **paywall** only: `app/(tabs)/purchase-premium/index.tsx` has an "Enter Code" line under monthly/yearly options; Continue redeems code (promoter_codes) then purchases or exits if creator.
 
 **Purchase entry points:**
 
 - **`app/(tabs)/purchase-premium/index.tsx`** — Premium purchase screen (likely placeholder or simple CTA).
 - **`components/UpgradeModal.tsx`** — Navigates to `/(tabs)/purchase-premium`.
-- Settings index links “Manage Subscription” to manage-subscription, “Restore” to restore-purchases, “Redeem Code” to redeem-code.
+- Settings index links “Manage Subscription” to manage-subscription, “Restore” to restore-purchases, “Redeem Code” (codes are entered on the paywall).
 
 **Loops:**
 
@@ -562,7 +562,7 @@ This section is **one end-to-end step-by-step guide** for implementing everythin
 
 ### 12. Discount / promo codes (custom names)
 
-47. [ ] **RevenueCat promo codes:** In RevenueCat dashboard, create promo codes that map to your subscription offers (see RevenueCat docs). These codes can be redeemed in the app via the Redeem Code screen (step 45).
+47. [ ] **RevenueCat promo codes:** In RevenueCat dashboard, create promo codes that map to your subscription offers (see RevenueCat docs). Your **promoter_codes** (creator/discount) are redeemed on the paywall when the user enters a code and taps Continue (step 44).
 48. [ ] **Custom code names:** To use your own code names (e.g. in `promoter_codes`), keep the fallback in step 46. For `premium_discount`, define how each DB code maps to RevenueCat (e.g. store a RevenueCat promo code or product id per row and have the backend return it, or show “Code applied — go to Premium” and open the paywall). Add or update rows in `promoter_codes` with the code names you want.
 
 ---
@@ -620,9 +620,9 @@ Do these in order. Each step tells you which file to edit and what to do.
 
 - **What to do:** Add a way to remember that the user redeemed a discount code. **Option A:** Add column `pending_discount_offer_id` (text, nullable) to `profiles`. When they redeem a discount code, set it to `'first_month_20_off'`; when they complete a purchase, set it to `null`. **Option B:** Create table `profile_pending_discount` (profile_id, offer_identifier) and clear it after purchase. Create a migration for Option A, then in the app (A3.3) update this when redeem succeeds, and (A3.4) clear it after purchase.
 
-**A3.3 — Redeem Code screen: save the pending discount when a discount code succeeds**
+**A3.3 — Paywall: save the pending discount when a discount code is entered and Continue is tapped**
 
-- **File:** `app/(tabs)/settings/premium/redeem-code.tsx`. When `redeemPromoterCode(code)` succeeds and the response has type `discount` and `offer_identifier`: update the user's profile to set `pending_discount_offer_id = response.offer_identifier` (or insert into `profile_pending_discount`). Then show success and optionally navigate to the paywall.
+- **File:** `app/(tabs)/purchase-premium/index.tsx`. When the user has entered a code and taps Continue, the app calls `redeemPromoterCode(code)`. If the response has type `discount` and `offer_identifier`, the app calls `setPendingDiscountOfferId(offer_identifier)` and then proceeds to purchase with that promotional offer. (Creator codes are handled by showing success and going back; no purchase.)
 
 **A3.4 — Paywall: use the promotional offer when the user has a pending discount**
 
@@ -655,7 +655,7 @@ RevenueCat continues to manage paid subscriptions only. Creator status is determ
 
 **B3. Create creator codes in your database (you do this)**
 
-**Yes — the flow is: a creator types in a code in the app (Settings → Premium → Redeem Code), and then they are switched to a creator account.** You (the app owner) create those codes by adding rows to `promoter_codes`; you do not create them in App Store Connect or RevenueCat.
+**Yes — the flow is: a creator types in a code on the paywall (Enter Code line → Continue), and then they are switched to a creator account (no purchase).** You (the app owner) create those codes by adding rows to `promoter_codes`; you do not create them in App Store Connect or RevenueCat.
 
 1. In Supabase: go to **Table Editor** → **promoter_codes** → **Insert row** (or run SQL in the SQL Editor).
 2. For each creator code, set:
@@ -697,7 +697,7 @@ After redeem, refresh the user’s profile. Your feature gating (`useFeatures`) 
 **C2. Test 20% off first month (discount code)**
 
 1. **Create a discount code in your DB:** Insert into `promoter_codes`: e.g. `code = 'SAVE20'`, `type = 'premium_discount'`, `discount_percent = 20`, `is_active = true`. Ensure the app/backend will return the 20% offer identifier (e.g. `first_month_20_off`) when this code is redeemed, or that the app maps 20% to that offer.
-2. **Redeem the code in the app:** Settings → Premium → Redeem Code → enter `SAVE20` → Redeem. Expect success (e.g. "Code applied! 20% discount available" or similar).
+2. **Apply the code on the paywall:** Open the paywall, enter `SAVE20` in the "Enter Code" line, tap Continue. The app redeems the code and proceeds to purchase with 20% off. Expect success (e.g. "Code applied! 20% discount available" or similar before purchase).
 3. **Open the paywall:** Navigate to the subscription/paywall screen. The UI should reflect the 20% off (e.g. discounted price for the first period). If your paywall shows one "Subscribe" option, ensure the app is using `getPromotionalOffer` + `purchaseDiscountedPackage` when the user has a pending discount.
 4. **Purchase with sandbox:** Select monthly (or yearly), tap Subscribe/Continue. Complete the purchase with the **sandbox** Apple ID. Confirm the **price shown by Apple** is the reduced price (20% off) for the first period.
 5. **After purchase:** Confirm the app shows the user as premium (e.g. Pro features unlocked). In RevenueCat dashboard (with "Sandbox data" enabled), confirm the transaction. In your backend, confirm the user’s `pending_discount_offer_id` (or equivalent) is cleared. **No auto-renewal:** After the paid period (1 month or 1 year), access should end; they are not charged again. If they purchase again later, it should be at full price.
@@ -706,7 +706,7 @@ After redeem, refresh the user’s profile. Your feature gating (`useFeatures`) 
 **C3. Test 100% off forever (creator code)**
 
 1. **Create a creator code in your DB:** Insert into `promoter_codes`: e.g. `code = 'CREATOR'`, `type = 'creator_signup'`, `is_active = true`.
-2. **Redeem in the app:** Use an account that is **not** premium and **not** creator. Settings → Premium → Redeem Code → enter `CREATOR` → Redeem. Expect success (e.g. "Creator account activated!").
+2. **Redeem on the paywall:** Use an account that is **not** premium and **not** creator. Open the paywall, enter `CREATOR` in the "Enter Code" line, tap Continue. Expect success (e.g. "Creator account activated!") and no purchase.
 3. **Verify no payment:** The user must **not** be sent to the paywall to complete a purchase. They should already have Pro access.
 4. **Verify profile and features:** Refresh profile; confirm `is_creator === true`, `plan === 'creator'`, `is_premium === true`. In the app, confirm Pro features (e.g. AI Trainer, log games, creator workouts) are unlocked.
 5. **Verify in RevenueCat:** This user should have **no** subscription in RevenueCat; entitlement is granted only in your backend.

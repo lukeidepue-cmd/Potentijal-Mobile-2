@@ -256,7 +256,7 @@ export default function Settings() {
 
                 <View style={styles.settingRowSeparator} />
                 <Pressable
-                  style={styles.settingRow}
+                  style={[styles.settingRow, styles.settingRowLast]}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     router.push("/(tabs)/settings/premium/restore-purchases");
@@ -269,18 +269,6 @@ export default function Settings() {
               </>
             )}
 
-            <View style={styles.settingRowSeparator} />
-            <Pressable
-              style={[styles.settingRow, styles.settingRowLast]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push("/(tabs)/settings/premium/redeem-code");
-              }}
-            >
-              <Ionicons name="gift-outline" size={20} color={theme.colors.textHi} />
-              <Text style={styles.settingRowText}>Redeem Code</Text>
-              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-            </Pressable>
           </View>
         </View>
 

@@ -20,7 +20,6 @@ export default function SettingsLayout() {
       <Stack.Screen name="privacy-security/blocked-users" />
       <Stack.Screen name="premium/manage-subscription" />
       <Stack.Screen name="premium/restore-purchases" />
-      <Stack.Screen name="premium/redeem-code" />
       <Stack.Screen name="app-preferences/units" />
       <Stack.Screen name="support-legal/help" />
       <Stack.Screen name="support-legal/contact" />

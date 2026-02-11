@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  TextInput,
   Image,
   Platform,
   ActivityIndicator,
@@ -19,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../constants/theme";
 import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
 import { getMyProfile, setPendingDiscountOfferId } from "../../../lib/api/profile";
+import { redeemCode as redeemPromoterCode, recordPromoterCodeUseAfterPurchase } from "../../../lib/api/settings";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
@@ -27,6 +29,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import Purchases from "react-native-purchases";
+import { supabase } from "../../../lib/supabase";
 
 /* ---- Fonts ---- */
 import {
@@ -64,6 +67,8 @@ export default function PurchasePremium() {
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [pendingOfferId, setPendingOfferId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   const loadOfferings = useCallback(async () => {
     setOfferingsError(null);
@@ -107,20 +112,93 @@ export default function PurchasePremium() {
 
   const handleContinue = async () => {
     setPurchaseError(null);
+    setCodeError(null);
     setPurchasing(true);
     try {
+      // If user already has an active subscription or is premium (e.g. creator), don't present purchase
+      const { data: profile } = await getMyProfile();
+      const alreadyPremiumFromProfile = profile?.is_premium === true || profile?.plan === "creator" || profile?.is_creator === true;
+      if (alreadyPremiumFromProfile) {
+        setPurchasing(false);
+        Alert.alert(
+          "You're already premium",
+          "Your account has premium access. To manage a subscription, go to Settings → Manage Subscription.",
+          [{ text: "OK", onPress: () => router.back() }]
+        );
+        return;
+      }
+      const existingCustomerInfo = await Purchases.getCustomerInfo();
+      const hasActivePremium = existingCustomerInfo?.entitlements?.active?.premium != null;
+      if (hasActivePremium) {
+        setPurchasing(false);
+        Alert.alert(
+          "You're currently subscribed",
+          "Your subscription is active. To manage or cancel, go to Settings → Manage Subscription.",
+          [{ text: "OK", onPress: () => router.back() }]
+        );
+        return;
+      }
+
+      let offerIdToUse = pendingOfferId;
+
+      // If user entered a code, redeem it first (creator or discount)
+      const trimmedCode = code.trim();
+      if (trimmedCode) {
+        const { data: redeemData, error: redeemError } = await redeemPromoterCode(trimmedCode.toUpperCase());
+        if (redeemError) {
+          setCodeError(redeemError.message ?? "Invalid or expired code.");
+          setPurchasing(false);
+          return;
+        }
+        if (redeemData) {
+          if (redeemData.type === "creator") {
+            if (refreshProfile) setTimeout(() => refreshProfile(), 300);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setPurchasing(false);
+            Alert.alert("Success", redeemData.message, [{ text: "OK", onPress: () => router.back() }]);
+            return;
+          }
+          if (redeemData.type === "discount") {
+            const offerId = (redeemData as { offer_identifier?: string }).offer_identifier;
+            if (offerId) {
+              const { error: updateErr } = await setPendingDiscountOfferId(offerId);
+              if (updateErr) {
+                setPurchaseError(updateErr.message ?? "Code applied but could not save discount. Please try again.");
+                setPurchasing(false);
+                return;
+              }
+              offerIdToUse = offerId;
+            }
+          }
+        }
+      }
+
+      // Proceed to purchase (with optional discount from code or profile)
       let customerInfo: any;
+      const usedDiscountCodeThisSession = Boolean(trimmedCode && offerIdToUse);
       if (selectedPackage) {
         const pkg = selectedPackage as any;
         const storeProduct = pkg.storeProduct ?? pkg.product;
         const discounts = storeProduct?.discounts ?? [];
-        const discount = pendingOfferId ? discounts.find((d: any) => (d.identifier ?? d.offerIdentifier) === pendingOfferId) : null;
-        if (pendingOfferId && discount) {
+        const discount = offerIdToUse ? discounts.find((d: any) => (d.identifier ?? d.offerIdentifier) === offerIdToUse) : null;
+        if (offerIdToUse && discount) {
           const paymentDiscount = await Purchases.getPromotionalOffer(storeProduct, discount);
           if (paymentDiscount) {
             const result = await Purchases.purchaseDiscountedPackage(selectedPackage, paymentDiscount);
             customerInfo = result.customerInfo;
           }
+        }
+        // If we had a discount but couldn't apply it: only block when they entered a code this session
+        if (offerIdToUse && !customerInfo) {
+          if (trimmedCode) {
+            setPurchaseError(
+              "This discount could not be applied to the selected plan. The offer may not be set up in the App Store for this product, or the plan may not support it. Try without the code or contact support."
+            );
+            setPurchasing(false);
+            return;
+          }
+          await setPendingDiscountOfferId(null);
+          offerIdToUse = null;
         }
         if (!customerInfo) {
           const result = await Purchases.purchasePackage(selectedPackage);
@@ -134,15 +212,29 @@ export default function PurchasePremium() {
       if (customerInfo?.entitlements?.active?.premium != null) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await setPendingDiscountOfferId(null);
+        if (usedDiscountCodeThisSession && trimmedCode) {
+          await recordPromoterCodeUseAfterPurchase(trimmedCode.toUpperCase());
+        }
+        setCode("");
+        // Sync RevenueCat entitlement to Supabase profile so is_premium updates and premium features unlock
+        try {
+          await supabase.functions.invoke("sync-subscription");
+        } catch (_) {}
         if (refreshProfile) {
-          setTimeout(() => refreshProfile(), 800);
+          setTimeout(() => refreshProfile(), 400);
         }
         Alert.alert("You're premium!", "Thanks for upgrading. Enjoy Potential Pro.", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } else {
         await setPendingDiscountOfferId(null);
-        if (refreshProfile) setTimeout(() => refreshProfile(), 800);
+        if (usedDiscountCodeThisSession && trimmedCode) {
+          await recordPromoterCodeUseAfterPurchase(trimmedCode.toUpperCase());
+        }
+        try {
+          await supabase.functions.invoke("sync-subscription");
+        } catch (_) {}
+        if (refreshProfile) setTimeout(() => refreshProfile(), 400);
         Alert.alert("Success", "Purchase completed.", [{ text: "OK", onPress: () => router.back() }]);
       }
     } catch (e: any) {
@@ -336,6 +428,24 @@ export default function PurchasePremium() {
             </Pressable>
           </View>
         )}
+
+        {/* Enter Code line (same style as email settings screen): under plans, above Continue */}
+        <View style={styles.inputLine}>
+          <TextInput
+            style={styles.lineInput}
+            value={code}
+            onChangeText={(t) => { setCode(t); setCodeError(null); setPurchaseError(null); }}
+            placeholder="Enter Code"
+            placeholderTextColor={theme.colors.textLo}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            editable={!purchasing}
+          />
+          <View style={styles.lineUnderline} />
+        </View>
+        {codeError ? (
+          <Text style={[styles.pricingCardLabel, { color: theme.colors.error ?? "#ef4444", marginBottom: 8 }]}>{codeError}</Text>
+        ) : null}
 
         {purchaseError ? (
           <Text style={[styles.pricingCardLabel, { color: theme.colors.error ?? "#ef4444", marginBottom: 12 }]}>{purchaseError}</Text>
@@ -594,6 +704,21 @@ const styles = StyleSheet.create({
     color: "#06160D",
     fontFamily: FONT.uiBold,
     letterSpacing: 0.5,
+  },
+  inputLine: {
+    marginBottom: 24,
+  },
+  lineInput: {
+    fontSize: 16,
+    color: theme.colors.textHi,
+    fontFamily: FONT.uiRegular,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+  },
+  lineUnderline: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginTop: 4,
   },
   continueButton: {
     width: "100%",

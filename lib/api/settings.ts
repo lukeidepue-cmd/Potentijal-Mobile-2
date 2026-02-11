@@ -966,16 +966,19 @@ export async function redeemCode(code: string): Promise<RedeemCodeResult> {
       return { data: null, error: { message: 'Code already used' } };
     }
 
-    // Record code use
-    const { error: useError } = await supabase
-      .from('profile_code_uses')
-      .insert({
-        profile_id: user.id,
-        promoter_code_id: codeData.id,
-      });
+    // Record code use only for creator_signup (they get the benefit immediately).
+    // For premium_discount we record use only after a successful purchase (see recordPromoterCodeUseAfterPurchase).
+    if (codeData.type === 'creator_signup') {
+      const { error: useError } = await supabase
+        .from('profile_code_uses')
+        .insert({
+          profile_id: user.id,
+          promoter_code_id: codeData.id,
+        });
 
-    if (useError) {
-      return { data: null, error: useError };
+      if (useError) {
+        return { data: null, error: useError };
+      }
     }
 
     // Apply code benefits based on type
@@ -1014,3 +1017,52 @@ export async function redeemCode(code: string): Promise<RedeemCodeResult> {
   }
 }
 
+/**
+ * Record that the user used a discount code after they have completed a purchase.
+ * Call this from the app only after a successful purchase that used a discount code.
+ * For discount codes we do not record use on redeem (so they can try again if they cancel the pay sheet).
+ */
+export async function recordPromoterCodeUseAfterPurchase(code: string): Promise<{ error: { message: string } | null }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { error: { message: 'User not authenticated' } };
+    }
+
+    const { data: codeData, error: codeError } = await supabase
+      .from('promoter_codes')
+      .select('id, type')
+      .eq('code', code.toUpperCase())
+      .eq('is_active', true)
+      .single();
+
+    if (codeError || !codeData || codeData.type !== 'premium_discount') {
+      return { error: null }; // ignore invalid code; purchase already succeeded
+    }
+
+    const { data: existingUse } = await supabase
+      .from('profile_code_uses')
+      .select('id')
+      .eq('profile_id', user.id)
+      .eq('promoter_code_id', codeData.id)
+      .single();
+
+    if (existingUse) {
+      return { error: null }; // already recorded (e.g. double call)
+    }
+
+    const { error: useError } = await supabase
+      .from('profile_code_uses')
+      .insert({
+        profile_id: user.id,
+        promoter_code_id: codeData.id,
+      });
+
+    if (useError) {
+      return { error: useError };
+    }
+    return { error: null };
+  } catch (error: any) {
+    return { error: error };
+  }
+}

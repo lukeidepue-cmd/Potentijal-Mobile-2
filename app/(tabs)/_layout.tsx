@@ -221,10 +221,6 @@ export default function TabsLayout() {
         options={{ href: null }}
       />
       <Tabs.Screen
-        name="settings/premium/redeem-code"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
         name="settings/app-preferences/units"
         options={{ href: null }}
       />
