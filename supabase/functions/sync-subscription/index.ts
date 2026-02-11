@@ -120,12 +120,21 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // Creators get premium for free (set manually in DB). Never overwrite them to free.
+  const { data: existingProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("plan, is_creator")
+    .eq("id", appUserId)
+    .single();
+
+  const isCreator = existingProfile?.plan === "creator" || existingProfile?.is_creator === true;
+  const updatePayload = isCreator
+    ? { is_premium: true, plan: "creator" }
+    : { is_premium: isPremium, plan: isPremium ? "premium" : "free" };
+
   const { error: updateError } = await supabaseAdmin
     .from("profiles")
-    .update({
-      is_premium: isPremium,
-      plan: isPremium ? "premium" : "free",
-    })
+    .update(updatePayload)
     .eq("id", appUserId)
     .select("id");
 

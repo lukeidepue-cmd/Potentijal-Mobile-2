@@ -1,6 +1,7 @@
 /**
  * Premium Features Hook
- * Checks user's premium/creator status and determines feature access
+ * Checks user's premium/creator status and determines feature access.
+ * Creator accounts get all premium features for free (set manually in DB); no subscription required.
  */
 
 import { useState, useEffect } from 'react';
@@ -58,11 +59,10 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
     loadProfile();
   }, [user?.id, refreshKey]); // Reload when user changes or profile refresh requested (e.g. after purchase)
 
-  // Check premium status: user is premium if plan is 'premium' OR is_premium is true
-  // OR if they're a creator (creators get free premium)
-  // Default to false if profile is not loaded yet or profile is null (safer for premium gating)
-  const isPremium = !loading && profile 
-    ? (profile.plan === 'premium' || profile.is_premium === true || profile.plan === 'creator' || profile.is_creator === true)
+  // Premium access: subscription (plan 'premium' / is_premium) OR creator (plan 'creator' / is_creator).
+  // Creators are set manually in the database and get all premium features without subscribing.
+  const isPremium = !loading && profile
+    ? (profile.plan === "premium" || profile.is_premium === true || profile.plan === "creator" || profile.is_creator === true)
     : false;
   const isCreator = !loading && profile
     ? (profile.plan === 'creator' || profile.is_creator === true)

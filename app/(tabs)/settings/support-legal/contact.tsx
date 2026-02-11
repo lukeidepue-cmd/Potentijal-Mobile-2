@@ -5,6 +5,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../../constants/theme";
 
 /* ---- Fonts ---- */
@@ -37,13 +38,18 @@ export default function ContactSupport() {
     return null;
   }
 
-  const supportEmail = "support@potentijal.app";
+  const supportEmail = "lukeidepue@gmail.com";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
+      <LinearGradient
+        colors={["#1A4A3A", "rgba(18, 48, 37, 0.5)", "transparent", theme.colors.bg0]}
+        locations={[0, 0.2, 0.4, 0.7]}
+        style={styles.gradientBackground}
+      />
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={10}>
+          <Ionicons name="chevron-back" size={20} color={theme.colors.textHi} />
         </Pressable>
         <Text style={styles.headerTitle}>Contact Support</Text>
         <View style={{ width: 40 }} />
@@ -63,7 +69,6 @@ export default function ContactSupport() {
         
         <Text style={styles.contentText}>
           <Text style={styles.emailText}>{supportEmail}</Text>
-          <Text style={styles.placeholderNote}> (placeholder)</Text>
         </Text>
 
         <Text style={styles.sectionTitle}>When you email us, it helps if you include:</Text>
@@ -86,18 +91,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 360,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
+    paddingTop: 8,
+    paddingBottom: 12,
+    zIndex: 10,
   },
-  backButton: {
-    // No box styling - matches onboarding screens
-  },
+  backButton: {},
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
@@ -137,12 +147,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.primary600,
     fontFamily: FONT.uiSemi,
-  },
-  placeholderNote: {
-    fontSize: 16,
-    color: theme.colors.textLo,
-    fontStyle: "italic",
-    fontFamily: FONT.uiRegular,
   },
   bulletPoint: {
     fontSize: 15,

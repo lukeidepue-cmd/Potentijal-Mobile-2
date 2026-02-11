@@ -138,6 +138,14 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // Fetch current profile so we never overwrite creator accounts (creators get premium for free, set manually in DB).
+  const { data: existingProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("plan, is_creator")
+    .eq("id", appUserId)
+    .single();
+  const isCreator = existingProfile?.plan === "creator" || existingProfile?.is_creator === true;
+
   if (eventType === "BILLING_ISSUE") {
     console.log("[revenuecat-webhook] BILLING_ISSUE for app_user_id:", appUserId, "- not revoking premium");
     return new Response(JSON.stringify({ received: true }), {
@@ -147,6 +155,13 @@ Deno.serve(async (req) => {
   }
 
   if (eventType === "CANCELLATION" || eventType === "EXPIRATION") {
+    if (isCreator) {
+      console.log("[revenuecat-webhook] Skipping set free for creator app_user_id:", appUserId);
+      return new Response(JSON.stringify({ received: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const { data: updated, error } = await supabaseAdmin
       .from("profiles")
       .update({ is_premium: false, plan: "free" })
@@ -167,9 +182,12 @@ Deno.serve(async (req) => {
   }
 
   if (PREMIUM_EVENT_TYPES.includes(eventType)) {
+    const updatePayload = isCreator
+      ? { is_premium: true, plan: "creator" }
+      : { is_premium: true, plan: "premium" };
     const { data: updated, error } = await supabaseAdmin
       .from("profiles")
-      .update({ is_premium: true, plan: "premium" })
+      .update(updatePayload)
       .eq("id", appUserId)
       .select("id");
 
@@ -178,7 +196,7 @@ Deno.serve(async (req) => {
     } else if (!updated?.length) {
       console.warn("[revenuecat-webhook] Set premium: no profile row found for app_user_id:", appUserId, "- ensure app_user_id is the Supabase auth user UUID (Purchases.logIn(user.id))");
     } else {
-      console.log("[revenuecat-webhook] Set premium for app_user_id:", appUserId, "type:", eventType);
+      console.log("[revenuecat-webhook] Set premium for app_user_id:", appUserId, "type:", eventType, isCreator ? "(creator kept)" : "");
     }
     return new Response(JSON.stringify({ received: true }), {
       status: 200,

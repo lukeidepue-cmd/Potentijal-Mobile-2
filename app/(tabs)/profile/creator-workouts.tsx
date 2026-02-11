@@ -56,10 +56,16 @@ export default function CreatorWorkouts() {
     const loadData = async () => {
       setLoading(true);
       
-      // Check if current user is premium
+      // Check if current user has premium access (subscription or creator; creators get premium for free)
       if (user) {
         const { data: profile } = await getMyProfile();
-        setIsPremium(profile?.is_premium || profile?.plan === 'premium' || false);
+        setIsPremium(
+          profile?.is_premium === true ||
+          profile?.plan === "premium" ||
+          profile?.plan === "creator" ||
+          profile?.is_creator === true ||
+          false
+        );
       }
 
       // Load workouts

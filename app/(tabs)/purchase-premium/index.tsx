@@ -15,12 +15,13 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../constants/theme";
 import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
-import { getMyProfile, setPendingDiscountOfferId } from "../../../lib/api/profile";
-import { redeemCode as redeemPromoterCode, recordPromoterCodeUseAfterPurchase } from "../../../lib/api/settings";
+import { useAuth } from "../../../providers/AuthProvider";
+import { getMyProfile } from "../../../lib/api/profile";
+import { completeOnboarding } from "../../../lib/api/onboarding";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
@@ -51,7 +52,10 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function PurchasePremium() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ fromOnboarding?: string }>();
+  const fromOnboarding = params.fromOnboarding === "1";
   const refreshProfile = useProfileRefresh()?.refreshProfile;
+  const { refreshOnboardingStatus } = useAuth();
   const [geistLoaded] = useGeist({
     Geist_400Regular,
     Geist_500Medium,
@@ -66,7 +70,6 @@ export default function PurchasePremium() {
   const [currentOffering, setCurrentOffering] = useState<{ monthly: any; annual: any } | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [pendingOfferId, setPendingOfferId] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
 
@@ -97,17 +100,6 @@ export default function PurchasePremium() {
     loadOfferings();
   }, [loadOfferings]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data: profile } = await getMyProfile();
-      if (!cancelled && profile?.pending_discount_offer_id) {
-        setPendingOfferId(profile.pending_discount_offer_id);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
   const selectedPackage = currentOffering ? (selectedPlan === "monthly" ? currentOffering.monthly : currentOffering.annual) : null;
 
   const handleContinue = async () => {
@@ -120,10 +112,19 @@ export default function PurchasePremium() {
       const alreadyPremiumFromProfile = profile?.is_premium === true || profile?.plan === "creator" || profile?.is_creator === true;
       if (alreadyPremiumFromProfile) {
         setPurchasing(false);
+        const onOk = async () => {
+          if (fromOnboarding && refreshOnboardingStatus) {
+            const { error } = await completeOnboarding();
+            if (!error) await refreshOnboardingStatus();
+            router.replace("/(tabs)");
+          } else {
+            router.back();
+          }
+        };
         Alert.alert(
           "You're already premium",
           "Your account has premium access. To manage a subscription, go to Settings → Manage Subscription.",
-          [{ text: "OK", onPress: () => router.back() }]
+          [{ text: "OK", onPress: onOk }]
         );
         return;
       }
@@ -131,111 +132,70 @@ export default function PurchasePremium() {
       const hasActivePremium = existingCustomerInfo?.entitlements?.active?.premium != null;
       if (hasActivePremium) {
         setPurchasing(false);
+        const onOk = async () => {
+          if (fromOnboarding && refreshOnboardingStatus) {
+            const { error } = await completeOnboarding();
+            if (!error) await refreshOnboardingStatus();
+            router.replace("/(tabs)");
+          } else {
+            router.back();
+          }
+        };
         Alert.alert(
           "You're currently subscribed",
           "Your subscription is active. To manage or cancel, go to Settings → Manage Subscription.",
-          [{ text: "OK", onPress: () => router.back() }]
+          [{ text: "OK", onPress: onOk }]
         );
         return;
       }
 
-      let offerIdToUse = pendingOfferId;
-
-      // If user entered a code, redeem it first (creator or discount)
-      const trimmedCode = code.trim();
-      if (trimmedCode) {
-        const { data: redeemData, error: redeemError } = await redeemPromoterCode(trimmedCode.toUpperCase());
-        if (redeemError) {
-          setCodeError(redeemError.message ?? "Invalid or expired code.");
-          setPurchasing(false);
-          return;
-        }
-        if (redeemData) {
-          if (redeemData.type === "creator") {
-            if (refreshProfile) setTimeout(() => refreshProfile(), 300);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setPurchasing(false);
-            Alert.alert("Success", redeemData.message, [{ text: "OK", onPress: () => router.back() }]);
-            return;
-          }
-          if (redeemData.type === "discount") {
-            const offerId = (redeemData as { offer_identifier?: string }).offer_identifier;
-            if (offerId) {
-              const { error: updateErr } = await setPendingDiscountOfferId(offerId);
-              if (updateErr) {
-                setPurchaseError(updateErr.message ?? "Code applied but could not save discount. Please try again.");
-                setPurchasing(false);
-                return;
-              }
-              offerIdToUse = offerId;
-            }
-          }
-        }
-      }
-
-      // Proceed to purchase (with optional discount from code or profile)
+      // Purchase selected plan (1-week free is configured as introductory offer in App Store Connect)
       let customerInfo: any;
-      const usedDiscountCodeThisSession = Boolean(trimmedCode && offerIdToUse);
       if (selectedPackage) {
-        const pkg = selectedPackage as any;
-        const storeProduct = pkg.storeProduct ?? pkg.product;
-        const discounts = storeProduct?.discounts ?? [];
-        const discount = offerIdToUse ? discounts.find((d: any) => (d.identifier ?? d.offerIdentifier) === offerIdToUse) : null;
-        if (offerIdToUse && discount) {
-          const paymentDiscount = await Purchases.getPromotionalOffer(storeProduct, discount);
-          if (paymentDiscount) {
-            const result = await Purchases.purchaseDiscountedPackage(selectedPackage, paymentDiscount);
-            customerInfo = result.customerInfo;
-          }
-        }
-        // If we had a discount but couldn't apply it: only block when they entered a code this session
-        if (offerIdToUse && !customerInfo) {
-          if (trimmedCode) {
-            setPurchaseError(
-              "This discount could not be applied to the selected plan. The offer may not be set up in the App Store for this product, or the plan may not support it. Try without the code or contact support."
-            );
-            setPurchasing(false);
-            return;
-          }
-          await setPendingDiscountOfferId(null);
-          offerIdToUse = null;
-        }
-        if (!customerInfo) {
-          const result = await Purchases.purchasePackage(selectedPackage);
-          customerInfo = result.customerInfo;
-        }
+        const result = await Purchases.purchasePackage(selectedPackage);
+        customerInfo = result.customerInfo;
       } else {
         const productId = selectedPlan === "monthly" ? "premium_monthly" : "premium_yearly";
         const result = await Purchases.purchaseProduct(productId);
         customerInfo = result.customerInfo;
       }
+
       if (customerInfo?.entitlements?.active?.premium != null) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        await setPendingDiscountOfferId(null);
-        if (usedDiscountCodeThisSession && trimmedCode) {
-          await recordPromoterCodeUseAfterPurchase(trimmedCode.toUpperCase());
-        }
         setCode("");
-        // Sync RevenueCat entitlement to Supabase profile so is_premium updates and premium features unlock
         try {
           await supabase.functions.invoke("sync-subscription");
         } catch (_) {}
         if (refreshProfile) {
           setTimeout(() => refreshProfile(), 400);
         }
-        Alert.alert("You're premium!", "Thanks for upgrading. Enjoy Potential Pro.", [
-          { text: "OK", onPress: () => router.back() },
+        const onSuccess = async () => {
+          if (fromOnboarding && refreshOnboardingStatus) {
+            const { error } = await completeOnboarding();
+            if (!error) await refreshOnboardingStatus();
+            router.replace("/(tabs)");
+          } else {
+            router.back();
+          }
+        };
+        Alert.alert("You're premium!", "Thanks for upgrading. Enjoy Potentijal Premium.", [
+          { text: "OK", onPress: onSuccess },
         ]);
       } else {
-        await setPendingDiscountOfferId(null);
-        if (usedDiscountCodeThisSession && trimmedCode) {
-          await recordPromoterCodeUseAfterPurchase(trimmedCode.toUpperCase());
-        }
         try {
           await supabase.functions.invoke("sync-subscription");
         } catch (_) {}
         if (refreshProfile) setTimeout(() => refreshProfile(), 400);
-        Alert.alert("Success", "Purchase completed.", [{ text: "OK", onPress: () => router.back() }]);
+        const onSuccess = async () => {
+          if (fromOnboarding && refreshOnboardingStatus) {
+            const { error } = await completeOnboarding();
+            if (!error) await refreshOnboardingStatus();
+            router.replace("/(tabs)");
+          } else {
+            router.back();
+          }
+        };
+        Alert.alert("Success", "Purchase completed.", [{ text: "OK", onPress: onSuccess }]);
       }
     } catch (e: any) {
       if (e?.userCancelled) {
@@ -326,7 +286,7 @@ export default function PurchasePremium() {
         </View>
 
         {/* Title */}
-        <Text style={styles.title}>Upgrade to Potential Pro</Text>
+        <Text style={styles.title}>Upgrade to Potentijal Premium</Text>
 
         {/* Features - Floating icons and descriptions */}
         <View style={styles.featuresContainer}>

@@ -5,6 +5,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../../constants/theme";
 
 /* ---- Fonts ---- */
@@ -39,9 +40,14 @@ export default function Help() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
+      <LinearGradient
+        colors={["#1A4A3A", "rgba(18, 48, 37, 0.5)", "transparent", theme.colors.bg0]}
+        locations={[0, 0.2, 0.4, 0.7]}
+        style={styles.gradientBackground}
+      />
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={10}>
+          <Ionicons name="chevron-back" size={20} color={theme.colors.textHi} />
         </Pressable>
         <Text style={styles.headerTitle}>Help</Text>
         <View style={{ width: 40 }} />
@@ -64,7 +70,7 @@ export default function Help() {
           Potentijal is a multi-sport athlete development app designed to help athletes see, measure, and trust their progress.
         </Text>
         <Text style={styles.contentText}>
-          Progress in sports often feels invisible. Potentijal turns your training, games, practices, and nutrition into structured data and visual trends so you can understand whether your work is paying off — and what to adjust next.
+          Progress in sports often feels invisible. Potentijal turns your training, games, and practices into structured data and visual trends so you can see whether your work is paying off and what to adjust next.
         </Text>
 
         <Text style={styles.subsectionTitle}>How sport modes work</Text>
@@ -84,50 +90,7 @@ export default function Help() {
           Data never mixes between sport modes.
         </Text>
 
-        <Text style={styles.sectionTitle}>Home Tab & Progress Graphs</Text>
-
-        <Text style={styles.subsectionTitle}>How progress graphs work</Text>
-        <Text style={styles.contentText}>
-          Progress graphs show average performance trends over time, not single workouts.
-        </Text>
-        <Text style={styles.contentText}>You:</Text>
-        <Text style={styles.bulletPoint}>• Search for an exercise or metric</Text>
-        <Text style={styles.bulletPoint}>• Choose what to measure (left dropdown)</Text>
-        <Text style={styles.bulletPoint}>• Choose a time range (right dropdown)</Text>
-        <Text style={styles.contentText}>The graph then:</Text>
-        <Text style={styles.bulletPoint}>• Looks at all logged data for that exercise</Text>
-        <Text style={styles.bulletPoint}>• Groups it into time intervals</Text>
-        <Text style={styles.bulletPoint}>• Averages the values in each interval</Text>
-        <Text style={styles.bulletPoint}>• Displays only intervals where data exists</Text>
-        <Text style={styles.contentText}>
-          This is intentional — it shows trends, not noise.
-        </Text>
-
-        <Text style={styles.subsectionTitle}>Why graphs sometimes look empty</Text>
-        <Text style={styles.contentText}>
-          This usually happens for one of these reasons:
-        </Text>
-        <Text style={styles.bulletPoint}>• You haven't logged that exercise in the selected time range</Text>
-        <Text style={styles.bulletPoint}>• You're viewing the graph in the wrong sport mode</Text>
-        <Text style={styles.bulletPoint}>• The exercise name hasn't been logged yet</Text>
-        <Text style={styles.contentText}>Try:</Text>
-        <Text style={styles.bulletPoint}>• Switching time ranges (e.g., 360 days)</Text>
-        <Text style={styles.bulletPoint}>• Checking you're in the correct sport mode</Text>
-        <Text style={styles.bulletPoint}>• Searching a different variation of the exercise name</Text>
-
-        <Text style={styles.subsectionTitle}>Fuzzy matching (important)</Text>
-        <Text style={styles.contentText}>
-          Potentijal uses fuzzy matching, meaning:
-        </Text>
-        <Text style={styles.bulletPoint}>• Uppercase vs lowercase doesn't matter</Text>
-        <Text style={styles.bulletPoint}>• Minor spelling differences are okay</Text>
-        <Text style={styles.bulletPoint}>• Similar phrasing still connects</Text>
-        <Text style={styles.contentText}>For example:</Text>
-        <Text style={styles.bulletPoint}>• "Bench Press", "bench press", and "bench" will connect</Text>
-        <Text style={styles.bulletPoint}>• "3 point shot" and "3 pointers" can still match</Text>
-        <Text style={styles.contentText}>
-          You don't need perfect naming — just be reasonably consistent.
-        </Text>
+        <Text style={styles.sectionTitle}>Home Tab</Text>
 
         <Text style={styles.subsectionTitle}>Weekly schedules & checkmarks</Text>
         <Text style={styles.contentText}>
@@ -166,79 +129,42 @@ export default function Help() {
           Graphs automatically adapt based on how an exercise is usually logged.
         </Text>
 
+        <Text style={styles.sectionTitle}>Progress Tab</Text>
+
+        <Text style={styles.subsectionTitle}>What the Progress tab includes</Text>
+        <Text style={styles.contentText}>
+          The Progress tab gives you four ways to view your training data:
+        </Text>
+        <Text style={styles.bulletPoint}>• Progress Graph — View performance trends over time. Select your sport mode, choose a view type, then search for an exercise. The graph shows averages over time so you can see trends. (Available to all users.)</Text>
+        <Text style={styles.bulletPoint}>• Skill Map — Visualize skills or metrics across your sport. (Premium.)</Text>
+        <Text style={styles.bulletPoint}>• Consistency Score — See how consistent your training has been. (Premium.)</Text>
+        <Text style={styles.bulletPoint}>• Training Stats — Dive into detailed training statistics and summaries. (Premium.)</Text>
+        <Text style={styles.contentText}>
+          All of these use the workout and performance data you log. Data is separated by sport mode, so each view only uses data from the mode you select.
+        </Text>
+
+        <Text style={styles.subsectionTitle}>Why a graph or view might look empty</Text>
+        <Text style={styles.contentText}>
+          Usually because you haven't logged that exercise or metric in the selected time range, or you're in the wrong sport mode. Try a longer time range, confirm you're in the correct sport mode, or search a different exercise name. Potentijal uses fuzzy matching (e.g., "Bench Press" and "bench press" connect), so small spelling differences are usually fine.
+        </Text>
+
         <Text style={styles.sectionTitle}>History Tab</Text>
 
         <Text style={styles.subsectionTitle}>What appears in History</Text>
         <Text style={styles.contentText}>
-          History stores:
-        </Text>
-        <Text style={styles.bulletPoint}>• Workouts</Text>
-        <Text style={styles.bulletPoint}>• Practices (Premium)</Text>
-        <Text style={styles.bulletPoint}>• Games (Premium)</Text>
-        <Text style={styles.contentText}>You can:</Text>
-        <Text style={styles.bulletPoint}>• Search by name</Text>
-        <Text style={styles.bulletPoint}>• Filter by category</Text>
-        <Text style={styles.bulletPoint}>• View full details of any entry</Text>
-        <Text style={styles.contentText}>
-          Nothing in History can be edited — it's a record of what happened.
+          History stores workouts, practices (Premium), and games (Premium). You can search, filter by category, and view full details. Nothing in History can be edited — it's a record of what happened.
         </Text>
 
         <Text style={styles.subsectionTitle}>Streaks & totals</Text>
         <Text style={styles.contentText}>
-          Streaks are calculated based on:
-        </Text>
-        <Text style={styles.bulletPoint}>• Consecutive days with logged activity</Text>
-        <Text style={styles.bulletPoint}>• Wins for game win streaks</Text>
-        <Text style={styles.contentText}>
-          Numbers are capped visually to keep the interface clean, but your data continues tracking beyond that.
-        </Text>
-
-        <Text style={styles.sectionTitle}>Profile, Social & Creators</Text>
-
-        <Text style={styles.subsectionTitle}>Profiles & followers</Text>
-        <Text style={styles.contentText}>
-          Your profile shows:
-        </Text>
-        <Text style={styles.bulletPoint}>• Display name & username</Text>
-        <Text style={styles.bulletPoint}>• Bio</Text>
-        <Text style={styles.bulletPoint}>• Followers & following</Text>
-        <Text style={styles.bulletPoint}>• Highlights (Premium)</Text>
-        <Text style={styles.contentText}>
-          You can follow other athletes and creators.
-        </Text>
-
-        <Text style={styles.subsectionTitle}>Highlights</Text>
-        <Text style={styles.contentText}>
-          Highlights are short videos uploaded from your device.
-        </Text>
-        <Text style={styles.contentText}>You can:</Text>
-        <Text style={styles.bulletPoint}>• View highlights on any profile</Text>
-        <Text style={styles.bulletPoint}>• Upload highlights to your own profile with Premium</Text>
-        <Text style={styles.bulletPoint}>• Delete your own highlights anytime</Text>
-
-        <Text style={styles.subsectionTitle}>Creator accounts</Text>
-        <Text style={styles.contentText}>
-          Creator accounts may have:
-        </Text>
-        <Text style={styles.bulletPoint}>• A gold glowing profile ring</Text>
-        <Text style={styles.bulletPoint}>• Public workouts</Text>
-        <Text style={styles.bulletPoint}>• Creator codes</Text>
-        <Text style={styles.bulletPoint}>• Premium access</Text>
-        <Text style={styles.contentText}>
-          You can copy creator workouts directly into your own workout tab if you have that sport mode unlocked.
+          Streaks are based on consecutive days with logged activity (and wins for game win streaks). Displayed numbers may be capped for clarity, but your data keeps tracking.
         </Text>
 
         <Text style={styles.sectionTitle}>AI Trainer (Premium)</Text>
 
         <Text style={styles.subsectionTitle}>What the AI Trainer does</Text>
         <Text style={styles.contentText}>
-          The AI Trainer is a personalized assistant that:
-        </Text>
-        <Text style={styles.bulletPoint}>• Understands your sports</Text>
-        <Text style={styles.bulletPoint}>• Uses your logged workouts, nutrition, games, and practices</Text>
-        <Text style={styles.bulletPoint}>• Adapts advice based on your history</Text>
-        <Text style={styles.contentText}>
-          It's designed to help you, not give generic advice.
+          The AI Trainer is a personalized assistant that uses your sport modes, logged workouts, games, and practices to give guidance tailored to your history. It is not a substitute for a coach or medical professional.
         </Text>
 
         <Text style={styles.subsectionTitle}>What the AI Trainer is not</Text>
@@ -258,38 +184,19 @@ export default function Help() {
         <Text style={styles.sectionTitle}>Premium Features</Text>
 
         <Text style={styles.contentText}>
-          Premium unlocks:
-        </Text>
-        <Text style={styles.bulletPoint}>• AI Trainer</Text>
-        <Text style={styles.bulletPoint}>• Game & practice logging</Text>
-        <Text style={styles.bulletPoint}>• Highlights uploading</Text>
-        <Text style={styles.bulletPoint}>• Creator workout viewing</Text>
-        <Text style={styles.bulletPoint}>• Expanded sport access</Text>
-        <Text style={styles.contentText}>
-          Locked features appear grayed out with a lock icon.
+          Premium (Potentijal Premium) unlocks: AI Trainer, game and practice logging, Skill Map, Consistency Score, Training Statistics, and expanded sport access. Locked features appear grayed out with a lock icon.
         </Text>
 
-        <Text style={styles.subsectionTitle}>Discounts & creator codes</Text>
+        <Text style={styles.subsectionTitle}>Subscriptions & billing</Text>
         <Text style={styles.contentText}>
-          Some users may receive:
-        </Text>
-        <Text style={styles.bulletPoint}>• Discounted Premium access</Text>
-        <Text style={styles.bulletPoint}>• Creator referral benefits</Text>
-        <Text style={styles.contentText}>
-          Eligibility depends on valid codes and active promotions.
+          Premium is purchased in the app via the App Store or Google Play. Subscriptions automatically renew at the end of each period (monthly or yearly) unless you cancel. You can manage or cancel in your device's App Store or Play Store subscription settings. To restore a purchase (e.g., after reinstall), use Settings → Restore Purchases.
         </Text>
 
-        <Text style={styles.sectionTitle}>Account, Data & Troubleshooting</Text>
+        <Text style={styles.sectionTitle}>Account & Troubleshooting</Text>
 
         <Text style={styles.subsectionTitle}>Why data doesn't cross sport modes</Text>
         <Text style={styles.contentText}>
-          Each sport mode tracks different metrics.
-        </Text>
-        <Text style={styles.contentText}>To keep data accurate:</Text>
-        <Text style={styles.bulletPoint}>• Basketball shooting doesn't affect strength graphs</Text>
-        <Text style={styles.bulletPoint}>• Running pace doesn't affect lifting progress</Text>
-        <Text style={styles.contentText}>
-          This separation is intentional.
+          Each sport mode tracks different metrics. Basketball data doesn't feed into strength or running views, and vice versa. This separation keeps your Progress tab and History accurate per sport.
         </Text>
 
         <Text style={styles.subsectionTitle}>If something looks wrong</Text>
@@ -300,6 +207,11 @@ export default function Help() {
         <Text style={styles.bulletPoint}>• Restarting the app</Text>
         <Text style={styles.contentText}>
           If it still doesn't look right, contact support.
+        </Text>
+
+        <Text style={styles.sectionTitle}>Contact us</Text>
+        <Text style={styles.contentText}>
+          For account issues, billing questions, or feedback, use the Contact option in Settings or email support@potentijal.com. We'll get back to you as soon as we can.
         </Text>
 
         <Text style={styles.sectionTitle}>Final note</Text>
@@ -325,18 +237,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg0,
   },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 360,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.strokeSoft,
+    paddingTop: 8,
+    paddingBottom: 12,
+    zIndex: 10,
   },
-  backButton: {
-    // No box styling - matches onboarding screens
-  },
+  backButton: {},
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",

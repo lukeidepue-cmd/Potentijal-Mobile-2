@@ -26,62 +26,12 @@ export default function PremiumOfferScreen() {
 
   const progressPercentage = (CURRENT_STEP / TOTAL_STEPS) * 100;
 
-  const handlePurchasePremium = async () => {
-    // TODO: Navigate to purchase process when implemented
-    console.log('Purchase Premium clicked - purchase flow not yet implemented');
-    
-    // For now, mark premium offer as shown and navigate to completion
-    // When purchase flow is implemented, this will be called after successful purchase
-    setLoading(true);
-    try {
-      const { error: progressError } = await updateOnboardingStep('premium_offer', {
-        premium_offer_shown: true,
-      });
-      
-      if (progressError) {
-        console.warn('⚠️ [PremiumOffer] Failed to save progress:', progressError);
-        const isNetworkError = progressError.message?.toLowerCase().includes('network') || 
-                              progressError.message?.toLowerCase().includes('fetch') ||
-                              progressError.message?.toLowerCase().includes('connection');
-        
-        if (isNetworkError) {
-          Alert.alert(
-            'Connection Error',
-            'Unable to save progress. Please check your internet connection and try again.',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-              { text: 'Retry', onPress: () => handlePurchasePremium() },
-            ]
-          );
-          return;
-        }
-        // Don't block navigation on progress save failure, but log it
-      } else {
-        console.log('✅ [PremiumOffer] Progress saved: premium_offer');
-      }
-      
-      // Navigate to completion screen
-      router.push('/onboarding/completion');
-    } catch (error: any) {
-      console.error('❌ [PremiumOffer] Exception:', error);
-      const isNetworkError = error.message?.toLowerCase().includes('network') || 
-                            error.message?.toLowerCase().includes('fetch') ||
-                            error.message?.toLowerCase().includes('connection');
-      
-      if (isNetworkError) {
-        Alert.alert(
-          'Connection Error',
-          'Unable to process your request. Please check your internet connection and try again.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Retry', onPress: () => handlePurchasePremium() },
-          ]
-        );
-      } else {
-        Alert.alert('Error', error.message || 'Something went wrong. Please try again.');
-      }
-      setLoading(false);
-    }
+  const handlePurchasePremium = () => {
+    // Navigate to paywall; after purchase they go to main app (paywall handles that via fromOnboarding param)
+    router.push({
+      pathname: '/(tabs)/purchase-premium',
+      params: { fromOnboarding: '1' },
+    });
   };
 
   const handleSkip = async () => {

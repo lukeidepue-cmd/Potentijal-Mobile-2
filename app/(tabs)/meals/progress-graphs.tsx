@@ -947,8 +947,8 @@ export default function ProgressGraphsScreen() {
           <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>X-Axis:</Text> Shows time progression. The left side is the oldest data, and the right side is your most recent data.</Text>
           <Text style={helpStyles.text}>
             An upward trend means you're improving, while a downward trend may indicate you need to adjust your training.
-          </Text>
-        </View>
+        </Text>
+      </View>
       </HelpOverlay>
     </View>
   );

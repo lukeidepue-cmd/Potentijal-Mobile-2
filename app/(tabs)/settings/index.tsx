@@ -222,7 +222,7 @@ export default function Settings() {
                     <Text style={styles.planCardSubtitle}>Creator Account</Text>
                   )}
                   {!isPremium && !isCreator && (
-                    <Text style={styles.planCardSubtitle}>Unlock advanced analytics + pro tools</Text>
+                    <Text style={styles.planCardSubtitle}>Unlock advanced analytics + premium tools</Text>
                   )}
                 </View>
               </View>

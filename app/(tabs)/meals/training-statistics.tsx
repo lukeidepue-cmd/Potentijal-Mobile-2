@@ -867,8 +867,8 @@ export default function TrainingStatisticsScreen() {
               <Ionicons name="fitness-outline" size={48} color="rgba(255, 255, 255, 0.5)" />
               <Text style={styles.emptyText}>
                 No exercises logged in the last {timeInterval} days
-              </Text>
-            </View>
+        </Text>
+      </View>
           )}
         </View>
       </ScrollView>
