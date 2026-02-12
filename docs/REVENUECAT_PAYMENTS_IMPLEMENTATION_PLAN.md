@@ -736,6 +736,48 @@ After redeem, refresh the user’s profile. Your feature gating (`useFeatures`) 
 51. [ ] For **RENEWAL**: in the webhook handler, call Loops with event `subscription_renewed` and include the interval (monthly/yearly) in properties. Create a Loops Journey (or transactional) for the “Renewal / billing” email.
 52. [ ] In the **Loops dashboard**, create or update **Journeys** (or transactionals) for: (1) Premium purchased / welcome, (2) Trial ending soon, (3) Monthly/yearly renewal. Use the same event names and properties your webhook sends.
 
+#### What you need to do for Loops (Steps 49–52)
+
+**Code is already in place.** The webhook sends Loops events; the `trial-ending-soon` Edge Function sends the trial email event. You only need to configure secrets, Loops, and the cron.
+
+1. **Supabase secrets**
+   - **RevenueCat webhook:** Set `LOOPS_API_KEY` for the `revenuecat-webhook` function (Dashboard → Edge Functions → revenuecat-webhook → Secrets). Use your Loops API key from [Loops → Settings → API](https://app.loops.so/settings/api).
+   - **Trial-ending-soon:** Set `LOOPS_API_KEY` and optionally `CRON_SECRET` for the `trial-ending-soon` function. If you set `CRON_SECRET`, call the function with header `x-cron-secret: <value>` or query `?secret=<value>` so only your cron can trigger it.
+
+2. **Loops dashboard — event names**
+   The backend sends these **exact** event names. Create Journeys (or transactionals) that trigger on them:
+   - **`premium_purchased`** — when the user first purchases premium (or starts a trial). Properties: `product_id`, `period_type`, `event_type`.
+   - **`subscription_renewed`** — when the subscription renews. Properties: `product_id`, `period_type`, `event_type`.
+   - **`trial_one_week_remaining`** — when the user’s **paid subscription** will renew in about one week (sent once per billing period). Properties: `premium_expires_at`.
+   - **`trial_ending_soon`** — when the user’s **free trial** is ending **within 1 day**. Properties: `premium_expires_at`.
+
+3. **Loops: Create the four emails**
+   - In Loops, create a Journey that triggers on **event** `premium_purchased` → send your “Welcome to Premium” email.
+   - Create one that triggers on **event** `subscription_renewed` → send your “Subscription renewed / receipt” email.
+   - Create one that triggers on **event** `trial_one_week_remaining` → send your “Subscription renews in one week” email (for paid subscribers).
+   - Create one that triggers on **event** `trial_ending_soon` → send your “Free trial ending tomorrow” email.
+   Use the event names above exactly; you can use the event properties in the email (e.g. product name, expiry date).
+   **Trigger frequency:** Set each of these journeys to **"Every time"** (not "One time"). That way users get the welcome email each time they purchase (e.g. after re-subscribing), the renewal email on every renewal, and the trial reminders once per period (the backend only fires those events once per trial).
+
+4. **Run “trial ending soon” daily**
+   The Edge Function `trial-ending-soon` must run at least once per day (e.g. every morning):
+   - **Option A — Supabase pg_cron + pg_net:** See **“Option A: Daily cron with pg_cron”** below for step-by-step (enable pg_net, store URL/key in Vault, run the scheduled job migration).
+   - **Option B — External cron (e.g. cron-job.org, GitHub Actions):** Schedule a daily POST to your function URL:  
+     `https://<project-ref>.supabase.co/functions/v1/trial-ending-soon`  
+     with header `x-cron-secret: <your CRON_SECRET>` if you set one.
+
+   **Option A: Daily cron with pg_cron**
+   - **Schema for pg_cron:** If the Dashboard asked for a schema and you picked `pg_catalog`, that’s fine. If you ever need to re-enable it, “extensions” is another common choice. As long as `cron.schedule()` runs in the SQL Editor, you’re good.
+   - **You need both extensions:** `pg_cron` only runs SQL on a schedule; **pg_net** is what actually calls your Edge Function over HTTP. Enable **pg_net** the same way (Dashboard → Database → Extensions → enable **pg_net**).
+   - **Store URL and anon key in Vault** (so the cron job can call your function securely). In **SQL Editor**, run once (replace with your project ref and anon key from Project Settings → API):
+     ```sql
+     select vault.create_secret('https://YOUR_PROJECT_REF.supabase.co', 'project_url');
+     select vault.create_secret('YOUR_ANON_KEY', 'anon_key');
+     ```
+   - **Create the daily cron job.** A migration is provided that schedules a POST to `trial-ending-soon` every day at 9:00 UTC. Run your migrations (e.g. `supabase db push`), or in SQL Editor run the contents of `supabase/migrations/032_cron_trial_ending_soon.sql`. The job reads `project_url` and `anon_key` from Vault. If you use `CRON_SECRET`, add a third secret and uncomment the header in that migration.
+
+After this: users get an email when they purchase premium, when their subscription will renew in one week (paid), when their free trial is ending in one day, and when their subscription renews.
+
 ---
 
 ### 14. Sandbox testing

@@ -21,6 +21,7 @@ import { theme } from "../../../constants/theme";
 import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
 import { useAuth } from "../../../providers/AuthProvider";
 import { getMyProfile } from "../../../lib/api/profile";
+import { recordPaywallCodeEntered } from "../../../lib/api/settings";
 import { completeOnboarding } from "../../../lib/api/onboarding";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
@@ -106,6 +107,10 @@ export default function PurchasePremium() {
     setPurchaseError(null);
     setCodeError(null);
     setPurchasing(true);
+    const trimmedCode = code.trim();
+    if (trimmedCode) {
+      recordPaywallCodeEntered(trimmedCode).catch(() => {});
+    }
     try {
       // If user already has an active subscription or is premium (e.g. creator), don't present purchase
       const { data: profile } = await getMyProfile();

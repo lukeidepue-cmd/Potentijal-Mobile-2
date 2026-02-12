@@ -1066,3 +1066,17 @@ export async function recordPromoterCodeUseAfterPurchase(code: string): Promise<
     return { error: error };
   }
 }
+
+/**
+ * Record that a user entered this code on the paywall (for curiosity/marketing).
+ * Does not validate or activate anything; just increments count in paywall_codes table.
+ */
+export async function recordPaywallCodeEntered(code: string): Promise<void> {
+  const trimmed = code?.trim();
+  if (!trimmed) return;
+  try {
+    await supabase.rpc('increment_paywall_code', { p_code: trimmed });
+  } catch (_) {
+    // Fire-and-forget; don't surface errors to the user
+  }
+}

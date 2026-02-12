@@ -42,8 +42,13 @@ type EventType =
 interface RevenueCatEvent {
   type: EventType;
   app_user_id?: string;
+  product_id?: string;
+  period_type?: string;
+  expiration_at_ms?: number;
   [key: string]: unknown;
 }
+
+const LOOPS_EVENTS_URL = "https://app.loops.so/api/v1/events/send";
 
 interface WebhookBody {
   event?: RevenueCatEvent;
@@ -182,9 +187,38 @@ Deno.serve(async (req) => {
   }
 
   if (PREMIUM_EVENT_TYPES.includes(eventType)) {
+    const productId = (event as RevenueCatEvent).product_id ?? undefined;
+    const periodType = (event as RevenueCatEvent).period_type ?? undefined;
+    const expirationAtMs = (event as RevenueCatEvent).expiration_at_ms;
+    const premiumExpiresAt = expirationAtMs
+      ? new Date(expirationAtMs).toISOString()
+      : null;
+
+    // When we set a new premium_expires_at (new period), clear trial-email flags so they get reminder emails again for this period.
+    const trialFlagsReset =
+      premiumExpiresAt
+        ? { trial_ending_email_sent_at: null, trial_one_week_email_sent_at: null }
+        : {};
+    // trial = free trial; normal = paid subscription (used for trial_ending_soon vs trial_one_week_remaining).
+    const premiumPeriodType =
+      periodType === "TRIAL" ? "trial" : periodType ? "normal" : undefined;
+
     const updatePayload = isCreator
-      ? { is_premium: true, plan: "creator" }
-      : { is_premium: true, plan: "premium" };
+      ? {
+          is_premium: true,
+          plan: "creator",
+          ...(premiumExpiresAt && { premium_expires_at: premiumExpiresAt }),
+          ...(premiumPeriodType && { premium_period_type: premiumPeriodType }),
+          ...trialFlagsReset,
+        }
+      : {
+          is_premium: true,
+          plan: "premium",
+          ...(premiumExpiresAt && { premium_expires_at: premiumExpiresAt }),
+          ...(premiumPeriodType && { premium_period_type: premiumPeriodType }),
+          ...trialFlagsReset,
+        };
+
     const { data: updated, error } = await supabaseAdmin
       .from("profiles")
       .update(updatePayload)
@@ -198,6 +232,48 @@ Deno.serve(async (req) => {
     } else {
       console.log("[revenuecat-webhook] Set premium for app_user_id:", appUserId, "type:", eventType, isCreator ? "(creator kept)" : "");
     }
+
+    // Steps 49 & 51: Send Loops events (premium_purchased on first purchase, subscription_renewed on renewal)
+    const loopsApiKey = Deno.env.get("LOOPS_API_KEY");
+    if (loopsApiKey) {
+      try {
+        const { data: authUser, error: authErr } = await supabaseAdmin.auth.admin.getUserById(appUserId);
+        const email = authUser?.user?.email;
+        if (!authErr && email) {
+          const eventName = eventType === "INITIAL_PURCHASE" ? "premium_purchased" : "subscription_renewed";
+          const eventProperties: Record<string, unknown> = {
+            product_id: productId ?? null,
+            period_type: periodType ?? null,
+            event_type: eventType,
+          };
+          const loopsRes = await fetch(LOOPS_EVENTS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${loopsApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email,
+              eventName,
+              eventProperties,
+            }),
+          });
+          if (!loopsRes.ok) {
+            const errText = await loopsRes.text();
+            console.error("[revenuecat-webhook] Loops event failed:", loopsRes.status, errText);
+          } else {
+            console.log("[revenuecat-webhook] Loops event sent:", eventName, "for", email);
+          }
+        } else {
+          console.warn("[revenuecat-webhook] Could not get user email for Loops (user may not exist):", appUserId);
+        }
+      } catch (loopsErr) {
+        console.error("[revenuecat-webhook] Loops error:", loopsErr);
+      }
+    } else {
+      console.warn("[revenuecat-webhook] LOOPS_API_KEY not set; skipping Loops event");
+    }
+
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
