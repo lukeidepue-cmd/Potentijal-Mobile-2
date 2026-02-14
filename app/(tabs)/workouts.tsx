@@ -501,18 +501,18 @@ export default function WorkoutsScreen() {
     }
   }, [params.workoutId, user, m]); // Only run on mount or when mode changes
 
-  // Check AsyncStorage when screen comes into focus - reset if workout was saved
+  // When tab gains focus: if no persisted draft exists (e.g. workout was just saved and
+  // cleared, or user never started one), clear all in-memory drafts so every mode shows
+  // a clean "Start Workout" state. This fixes cross-mode showing old exercises after save.
   useFocusEffect(
     useCallback(() => {
       if (!params.workoutId && user) {
         const checkAndReset = async () => {
           try {
             const savedState = await AsyncStorage.getItem(WORKOUT_STORAGE_KEY);
-            // If no saved state exists (workout was saved and cleared), reset local state
-            if (!savedState && isCreating) {
+            if (!savedState) {
               setIsCreating(false);
               setWorkoutName("");
-              // Clear all drafts
               setLiftDraft([]);
               setBbDraft([]);
               setFbDraft([]);
@@ -527,7 +527,7 @@ export default function WorkoutsScreen() {
         };
         checkAndReset();
       }
-    }, [params.workoutId, user, isCreating])
+    }, [params.workoutId, user])
   );
 
   // Load workout if workoutId is provided (e.g., from copying a creator workout)
