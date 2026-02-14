@@ -68,8 +68,7 @@ export default function CreatorWorkouts() {
         );
       }
 
-      const { data, error } = await listWorkoutsForProfile({ profileId });
-      (void) error;
+      const { data } = await listWorkoutsForProfile({ profileId });
       if (data) {
         setWorkouts(data);
       }

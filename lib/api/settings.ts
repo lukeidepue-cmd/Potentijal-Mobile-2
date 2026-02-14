@@ -660,10 +660,9 @@ export async function deleteAccount(): Promise<{ data: boolean | null; error: an
       deleteContact(userEmail).then(() => {});
     }
 
-    const { error: authDeleteError } = await supabase.functions.invoke('delete-auth-user', {
+    await supabase.functions.invoke('delete-auth-user', {
       body: { userId }
     });
-    (void) authDeleteError;
 
     await supabase.auth.signOut();
 

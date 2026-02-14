@@ -177,7 +177,6 @@ function RootLayoutNav() {
     } else if (needsOnboarding === true) {
       // Authenticated but needs onboarding - resume from last step
       if (!inOnboardingGroup) {
-        // Get onboarding state to determine which screen to show
         getOnboardingState().then(({ data, error }) => {
           if (error) {
             router.replace('/onboarding/account-basics');
@@ -186,13 +185,9 @@ function RootLayoutNav() {
 
           const currentStep = data?.current_step;
 
-          // Route to appropriate screen based on current_step
-          // If user is authenticated, skip email_entry and email_verification (they've already verified)
-          // If no current_step or it's 'welcome', start at account-basics
-          let targetRoute = '/onboarding/account-basics'; // Default starting point
+          let targetRoute = '/onboarding/account-basics';
 
           if (currentStep) {
-            // Map current_step to route
             const stepToRoute: Record<string, string> = {
               'email_entry': '/onboarding/email-entry',
               'email_verification': '/onboarding/email-verification',

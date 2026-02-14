@@ -26,15 +26,7 @@ export default function PremiumOfferScreen() {
 
   const progressPercentage = (CURRENT_STEP / TOTAL_STEPS) * 100;
 
-  const handlePurchasePremium = () => {
-    // Navigate to paywall; after purchase they go to main app (paywall handles that via fromOnboarding param)
-    router.push({
-      pathname: '/(tabs)/purchase-premium',
-      params: { fromOnboarding: '1' },
-    });
-  };
-
-  const handleSkip = async () => {
+  const handleContinue = async () => {
     setLoading(true);
     try {
       // Mark premium offer as shown (even if skipped)
@@ -53,7 +45,7 @@ export default function PremiumOfferScreen() {
             'Unable to save progress. Please check your internet connection and try again.',
             [
               { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-              { text: 'Retry', onPress: () => handleSkip() },
+              { text: 'Retry', onPress: () => handleContinue() },
             ]
           );
           return;
@@ -75,7 +67,7 @@ export default function PremiumOfferScreen() {
           'Unable to process your request. Please check your internet connection and try again.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Retry', onPress: () => handleSkip() },
+            { text: 'Retry', onPress: () => handleContinue() },
           ]
         );
       } else {
@@ -161,33 +153,18 @@ export default function PremiumOfferScreen() {
         </View>
       </ScrollView>
 
-      {/* Buttons */}
+      {/* Continue Button */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 20, zIndex: 10 }]}>
-        {/* Purchase Premium Button */}
         <TouchableOpacity
-          style={[styles.purchaseButton, loading && styles.buttonDisabled]}
-          onPress={handlePurchasePremium}
+          style={[styles.continueButton, loading && styles.buttonDisabled]}
+          onPress={handleContinue}
           disabled={loading}
           activeOpacity={0.8}
         >
           {loading ? (
-            <Text style={styles.purchaseButtonText}>Processing...</Text>
+            <Text style={styles.continueButtonText}>Saving...</Text>
           ) : (
-            <Text style={styles.purchaseButtonText}>Purchase Premium</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Skip Button */}
-        <TouchableOpacity
-          style={[styles.skipButton, loading && styles.buttonDisabled]}
-          onPress={handleSkip}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <Text style={styles.skipButtonText}>Saving...</Text>
-          ) : (
-            <Text style={styles.skipButtonText}>Skip for now</Text>
+            <Text style={styles.continueButtonText}>Continue</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -324,14 +301,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     gap: 12,
   },
-  purchaseButton: {
+  continueButton: {
     width: '100%',
-    backgroundColor: theme.colors.primary600, // Green
+    backgroundColor: theme.colors.primary600,
     paddingVertical: 18,
     borderRadius: theme.radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
     ...Platform.select({
       ios: {
         shadowColor: theme.colors.primary600,
@@ -344,27 +320,12 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  purchaseButtonText: {
+  continueButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
   },
   buttonDisabled: {
     opacity: 0.7,
-  },
-  skipButton: {
-    width: '100%',
-    backgroundColor: theme.colors.strokeSoft,
-    paddingVertical: 18,
-    borderRadius: theme.radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    opacity: 1,
-  },
-  skipButtonText: {
-    color: theme.colors.textHi,
-    fontSize: 18,
-    fontWeight: '700',
   },
 });

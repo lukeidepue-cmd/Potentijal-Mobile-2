@@ -206,7 +206,7 @@ export default function EmailEntryScreen() {
       <View style={[styles.content, { zIndex: 10 }]}>
         {/* Heading */}
         <Text style={styles.heading}>
-          Get started with <Text style={styles.headingAccent}>Potential</Text>
+          Get started with <Text style={styles.headingAccent}>Potentijal</Text>
         </Text>
         
         {/* Log in text */}
