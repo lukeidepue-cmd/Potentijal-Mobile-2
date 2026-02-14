@@ -69,7 +69,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await getUserPreferences();
       
       if (error) {
-        console.error('❌ [SettingsContext] Error loading preferences:', error);
         // Don't load from cache - always use fresh data from API
         // Clear any stale cache
         try {
@@ -83,8 +82,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         // Cache preferences (but they'll be fresh from API with correct defaults)
         await AsyncStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(data));
       }
-    } catch (error) {
-      console.error('❌ [SettingsContext] Error loading preferences:', error);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -103,7 +101,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       try {
         const { error } = await updateUserPreferences({ theme: newTheme });
         if (error) {
-          console.error('❌ [SettingsContext] Error updating theme:', error);
           // Revert on error
           setThemeState(theme);
         } else {
@@ -114,8 +111,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             await AsyncStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(updated));
           }
         }
-      } catch (error) {
-        console.error('❌ [SettingsContext] Error updating theme:', error);
+      } catch {
         setThemeState(theme);
       }
     }
@@ -126,18 +122,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (user) {
       try {
         const { error } = await updateUserPreferences({ units_weight: units });
-        if (error) {
-          console.error('❌ [SettingsContext] Error updating weight units:', error);
-        } else {
+        if (!error) {
           if (preferences) {
             const updated = { ...preferences, units_weight: units };
             setPreferences(updated);
             await AsyncStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(updated));
           }
         }
-      } catch (error) {
-        console.error('❌ [SettingsContext] Error updating weight units:', error);
-      }
+      } catch {}
     }
   }, [user, preferences]);
 
@@ -146,18 +138,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (user) {
       try {
         const { error } = await updateUserPreferences({ units_distance: units });
-        if (error) {
-          console.error('❌ [SettingsContext] Error updating distance units:', error);
-        } else {
+        if (!error) {
           if (preferences) {
             const updated = { ...preferences, units_distance: units };
             setPreferences(updated);
             await AsyncStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(updated));
           }
         }
-      } catch (error) {
-        console.error('❌ [SettingsContext] Error updating distance units:', error);
-      }
+      } catch {}
     }
   }, [user, preferences]);
 

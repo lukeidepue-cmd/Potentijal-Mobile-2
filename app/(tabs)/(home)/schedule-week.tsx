@@ -142,9 +142,7 @@ export default function ScheduleWeekScreen() {
 
     // Reschedule workout notifications after saving schedule
     const { scheduleWorkoutNotification } = await import('../../../lib/notifications/notifications');
-    scheduleWorkoutNotification(m).catch((error) => {
-      console.error('❌ [Schedule] Error rescheduling notifications:', error);
-    });
+    scheduleWorkoutNotification(m).catch(() => {});
 
     setShowSuccess(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -162,8 +160,8 @@ export default function ScheduleWeekScreen() {
       const timer = setTimeout(() => {
         try {
           router.back();
-        } catch (error) {
-          console.error('Navigation error:', error);
+        } catch {
+          // ignore
         }
       }, 100);
 

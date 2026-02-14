@@ -74,8 +74,8 @@ export default function MySportsSettings() {
       if (data) {
         setSports(data);
       }
-    } catch (error) {
-      console.error('Error loading sports:', error);
+    } catch {
+      // ignore
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,6 @@ export default function MySportsSettings() {
       const reorderedSports = [sport, ...sports.filter(s => s !== sport)];
       const { error } = await reorderSports(reorderedSports, sport);
       if (error) {
-        console.error('Error setting primary sport:', error);
         Alert.alert("Error", error.message || "Failed to set primary sport");
       } else {
         // Update mode context immediately
@@ -109,7 +108,6 @@ export default function MySportsSettings() {
         Alert.alert("Success", `${SPORT_NAMES[sport] || sport} is now your primary sport. Restart the app to see it on the home tab.`);
       }
     } catch (error: any) {
-      console.error('Exception setting primary sport:', error);
       Alert.alert("Error", error.message || "Failed to set primary sport");
     }
   };

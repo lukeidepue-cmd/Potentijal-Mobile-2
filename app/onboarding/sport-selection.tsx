@@ -154,7 +154,6 @@ export default function SportSelectionScreen() {
       });
 
       if (profileError) {
-        console.error('❌ [SportSelection] Failed to save sports:', profileError);
         const isNetworkError = profileError.message?.toLowerCase().includes('network') || 
                               profileError.message?.toLowerCase().includes('fetch') ||
                               profileError.message?.toLowerCase().includes('connection');
@@ -174,23 +173,17 @@ export default function SportSelectionScreen() {
           setLoading(false);
           return;
         }
-      } else {
-        console.log('✅ [SportSelection] Sports saved successfully:', selectedSports);
       }
 
       // Save progress: mark sport_selection step as completed
       const { error: progressError } = await updateOnboardingStep('sport_selection');
       if (progressError) {
-        console.warn('⚠️ [SportSelection] Failed to save progress:', progressError);
-        // Don't block navigation on progress save failure, but log it
-      } else {
-        console.log('✅ [SportSelection] Progress saved: sport_selection');
+        // Don't block navigation on progress save failure
       }
 
       // Navigate to next screen
       router.push('/onboarding/training-intent');
     } catch (error: any) {
-      console.error('❌ [SportSelection] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

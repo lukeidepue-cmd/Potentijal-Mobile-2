@@ -225,15 +225,11 @@ export async function updatePrivacySettings(
     const { data: existingSettings, error: getError } = await getPrivacySettings();
     if (getError && getError.code !== 'PGRST116') {
       // PGRST116 is "not found" - we'll create it
-      console.error('Error getting privacy settings:', getError);
     }
 
-    // Update or insert
     let error;
     let resultData;
     if (existingSettings) {
-      // Update existing
-      console.log(`📝 [Privacy] Updating existing privacy settings for user ${user.id}:`, JSON.stringify(updates, null, 2));
       const { data: updateData, error: updateError } = await supabase
         .from('user_privacy_settings')
         .update(updates)
@@ -242,14 +238,7 @@ export async function updatePrivacySettings(
         .single(); // Get updated data to verify
       error = updateError;
       resultData = updateData;
-      if (updateError) {
-        console.error('❌ [Privacy] Update error:', updateError);
-      } else {
-        console.log('✅ [Privacy] Settings updated successfully. New values:', JSON.stringify(updateData, null, 2));
-      }
     } else {
-      // Insert new with updates
-      console.log(`📝 [Privacy] Creating new privacy settings for user ${user.id}:`, JSON.stringify(updates, null, 2));
       const { data: insertData, error: insertError } = await supabase
         .from('user_privacy_settings')
         .insert({
@@ -260,35 +249,14 @@ export async function updatePrivacySettings(
         .single(); // Get inserted data to verify
       error = insertError;
       resultData = insertData;
-      if (insertError) {
-        console.error('❌ [Privacy] Insert error:', insertError);
-      } else {
-        console.log('✅ [Privacy] Settings created successfully. New values:', JSON.stringify(insertData, null, 2));
-      }
     }
 
     if (error) {
-      console.error('❌ [Privacy] Error updating privacy settings:', error);
       return { data: null, error };
     }
 
-    // Verify the settings were saved correctly
-    if (resultData) {
-      console.log('✅ [Privacy] Verification - Settings in DB:', JSON.stringify(resultData, null, 2));
-      // Check each updated field
-      Object.keys(updates).forEach(key => {
-        if (resultData[key] !== updates[key]) {
-          console.error(`❌ [Privacy] WARNING: Field ${key} mismatch! Expected: ${updates[key]}, Got: ${resultData[key]}`);
-        } else {
-          console.log(`✅ [Privacy] Field ${key} verified: ${resultData[key]}`);
-        }
-      });
-    }
-
-    console.log('✅ [Privacy] Privacy settings saved successfully:', updates);
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('Exception updating privacy settings:', error);
     return { data: null, error };
   }
 }
@@ -549,7 +517,6 @@ export async function updateEmail(newEmail: string): Promise<{ data: boolean | n
     // More comprehensive email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      console.error('Email regex validation failed for:', trimmedEmail);
       return { data: null, error: { message: 'Please enter a valid email address format (e.g., user@example.com)' } };
     }
     
@@ -557,14 +524,12 @@ export async function updateEmail(newEmail: string): Promise<{ data: boolean | n
     const atIndex = trimmedEmail.indexOf('@');
     const lastDotIndex = trimmedEmail.lastIndexOf('.');
     if (atIndex < 1 || lastDotIndex < atIndex + 2 || lastDotIndex === trimmedEmail.length - 1) {
-      console.error('Email structure validation failed for:', trimmedEmail);
       return { data: null, error: { message: 'Please enter a valid email address format' } };
     }
 
     // Get current user to check current email
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      console.error('User authentication error:', userError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
@@ -573,8 +538,6 @@ export async function updateEmail(newEmail: string): Promise<{ data: boolean | n
       return { data: null, error: { message: 'This is already your current email address' } };
     }
 
-    console.log(`📧 [Email Update] Attempting to update email from ${user.email} to ${trimmedEmail}`);
-    
     // Call Supabase to update email
     // Note: If "Secure email change" is disabled in Supabase, the email will update immediately
     // If it's enabled, the email will be pending until confirmation
@@ -582,21 +545,7 @@ export async function updateEmail(newEmail: string): Promise<{ data: boolean | n
       email: trimmedEmail,
     });
 
-    // Log the response to see what Supabase returned
-    console.log('📧 [Email Update] Supabase updateUser response:', {
-      hasData: !!updateData,
-      hasError: !!error,
-      userEmail: updateData?.user?.email,
-      errorMessage: error?.message,
-    });
-
     if (error) {
-      // Log the full error for debugging
-      console.error('❌ [Email Update] Supabase error:', error);
-      console.error('Error status:', error.status);
-      console.error('Error message:', error.message);
-      console.error('Full error object:', JSON.stringify(error, null, 2));
-      
       // Better error message handling - don't assume "invalid" means format
       let errorMessage = error.message || 'Failed to update email';
       
@@ -607,11 +556,6 @@ export async function updateEmail(newEmail: string): Promise<{ data: boolean | n
         // 2. The new email format is invalid according to Supabase's stricter rules
         // 3. Supabase has domain restrictions configured
         // 4. Supabase requires email confirmation and the current email isn't confirmed
-        
-        console.error('❌ [Email Update] email_address_invalid error details:');
-        console.error('  - Current email:', user.email);
-        console.error('  - New email:', trimmedEmail);
-        console.error('  - Email confirmed:', user.email_confirmed_at ? 'yes' : 'no');
         
         // Check if current email might be the problem (unconfirmed or invalid domain)
         if (user.email && !user.email_confirmed_at) {
@@ -656,44 +600,19 @@ export async function updateEmail(newEmail: string): Promise<{ data: boolean | n
       const updatedEmail = updateData.user.email;
       const newEmail = updateData.user.new_email; // Supabase might store new email here if confirmation is required
       
-      console.log(`📧 [Email Update] Supabase response details:`, {
-        currentEmail: updatedEmail,
-        newEmail: newEmail,
-        emailChangeSent: updateData.user.email_change_sent_at ? 'yes' : 'no',
-        emailChangeToken: updateData.user.email_change_token ? 'exists' : 'none',
-      });
-      
-      // Check if email actually changed or if it's pending confirmation
       if (updatedEmail && updatedEmail.toLowerCase() === trimmedEmail.toLowerCase()) {
-        // Email updated immediately (confirmation is disabled in Supabase)
-        console.log(`✅ [Email Update] Email confirmed changed in Supabase immediately: ${updatedEmail}`);
-        console.log(`✅ [Email Update] No confirmation required - email is active now`);
+        return { data: true, error: null };
       } else if (newEmail && newEmail.toLowerCase() === trimmedEmail.toLowerCase()) {
-        // Email is pending confirmation (confirmation is enabled in Supabase)
-        console.log(`⚠️ [Email Update] Email change is PENDING CONFIRMATION. New email: ${newEmail}, Current email: ${updatedEmail}`);
-        console.log(`⚠️ [Email Update] The email will update in Supabase after the user confirms via email link`);
-        console.log(`⚠️ [Email Update] To enable immediate updates, disable "Secure email change" in Supabase Dashboard > Authentication > Providers > Email`);
-        // Return success but note that confirmation is required
         return { data: true, error: null, requiresConfirmation: true };
       } else {
-        console.warn(`⚠️ [Email Update] Email in response doesn't match requested email`);
-        console.warn(`⚠️ [Email Update] Current: ${updatedEmail}, New: ${newEmail}, Requested: ${trimmedEmail}`);
-        console.warn(`⚠️ [Email Update] This might mean email confirmation is required before the change takes effect`);
-        console.warn(`⚠️ [Email Update] To enable immediate updates, disable "Secure email change" in Supabase Dashboard > Authentication > Providers > Email`);
-        // Even if email doesn't match, Supabase accepted the request
-        // The email will update after confirmation
         return { data: true, error: null, requiresConfirmation: true };
       }
     } else {
-      console.warn(`⚠️ [Email Update] No user data in response, but no error either`);
-      console.warn(`⚠️ [Email Update] This might mean the update is pending email confirmation`);
-      // Even without user data, if there's no error, Supabase accepted the request
       return { data: true, error: null, requiresConfirmation: true };
     }
 
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('Exception in updateEmail:', error);
     return { data: null, error: { message: error.message || 'Failed to update email' } };
   }
 }
@@ -730,70 +649,31 @@ export async function deleteAccount(): Promise<{ data: boolean | null; error: an
     }
 
     const userId = user.id;
-    console.log(`🗑️ [Delete Account] Starting deletion for user: ${userId}`);
 
-    // Step 1: Call the database function to delete the profile and all related data
-    console.log(`🗑️ [Delete Account] Deleting profile and related data...`);
     const { error: deleteError } = await supabase.rpc('delete_user_account');
-
     if (deleteError) {
-      console.error('❌ [Delete Account] Error deleting profile:', deleteError);
       return { data: null, error: { message: deleteError.message || 'Failed to delete account' } };
     }
 
-    console.log(`✅ [Delete Account] Profile deleted successfully`);
-
-    // Step 2: Delete user from Loops (non-blocking)
     const userEmail = user.email;
     if (userEmail) {
-      console.log(`🗑️ [Delete Account] Removing user from Loops...`);
-      deleteContact(userEmail).then(({ error: loopsError }) => {
-        if (loopsError) {
-          console.warn('⚠️ [Delete Account] Failed to remove user from Loops:', loopsError);
-        } else {
-          console.log(`✅ [Delete Account] User removed from Loops successfully`);
-        }
-      });
+      deleteContact(userEmail).then(() => {});
     }
 
-    // Step 3: Call Edge Function to delete auth user (this frees up the email)
-    console.log(`🗑️ [Delete Account] Calling Edge Function to delete auth user...`);
-    const { data: edgeFunctionData, error: authDeleteError } = await supabase.functions.invoke('delete-auth-user', {
+    const { error: authDeleteError } = await supabase.functions.invoke('delete-auth-user', {
       body: { userId }
     });
+    (void) authDeleteError;
 
-    if (authDeleteError) {
-      console.error('❌ [Delete Account] Error calling Edge Function to delete auth user:', authDeleteError);
-      console.error('⚠️ [Delete Account] Profile is deleted, but auth user may still exist. Email may not be freed up.');
-      // Don't fail - profile is already deleted, which is the main goal
-      // But log the error so we know the auth user wasn't deleted
-    } else {
-      console.log(`✅ [Delete Account] Auth user deleted successfully. Email is now available for reuse.`);
-      if (edgeFunctionData) {
-        console.log(`✅ [Delete Account] Edge Function response:`, edgeFunctionData);
-      }
-    }
+    await supabase.auth.signOut();
 
-    // Step 3: Sign out the user and clear all session data
-    console.log(`🗑️ [Delete Account] Signing out user...`);
-    const { error: signOutError } = await supabase.auth.signOut();
-    if (signOutError) {
-      console.error('⚠️ [Delete Account] Error signing out after account deletion:', signOutError);
-    }
-
-    // Step 4: Clear any cached data
     try {
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       await AsyncStorage.clear();
-      console.log(`✅ [Delete Account] Local storage cleared`);
-    } catch (storageError) {
-      console.error('⚠️ [Delete Account] Error clearing storage:', storageError);
-    }
+    } catch (_storageError) {}
 
-    console.log(`✅ [Delete Account] Account deletion process completed`);
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('❌ [Delete Account] Exception deleting account:', error);
     return { data: null, error: { message: error.message || 'Failed to delete account' } };
   }
 }
@@ -913,13 +793,11 @@ export async function reorderSports(sports: string[], primarySport?: string): Pr
       .eq('id', user.id);
 
     if (error) {
-      console.error('Error updating sports:', error);
       return { data: null, error };
     }
 
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('Exception in reorderSports:', error);
     return { data: null, error };
   }
 }
@@ -1078,5 +956,19 @@ export async function recordPaywallCodeEntered(code: string): Promise<void> {
     await supabase.rpc('increment_paywall_code', { p_code: trimmed });
   } catch (_) {
     // Fire-and-forget; don't surface errors to the user
+  }
+}
+
+/**
+ * Store the paywall code on the current user's profile so the RevenueCat webhook can
+ * attribute the purchase (monthly vs yearly) to this code for paywall_codes analytics.
+ * Call when the user enters a code and continues; webhook clears it after recording.
+ */
+export async function setPendingPaywallCode(code: string): Promise<void> {
+  const trimmed = code?.trim();
+  try {
+    await supabase.rpc('set_pending_paywall_code', { p_code: trimmed ?? '' });
+  } catch (_) {
+    // Fire-and-forget
   }
 }

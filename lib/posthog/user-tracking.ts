@@ -26,12 +26,9 @@ export function usePostHogUserTracking() {
           plan: profile?.plan,
           primary_sport: profile?.primary_sport,
         });
-        console.log('✅ [PostHog] User identified:', user.id);
       });
     } else if (!user && posthog) {
-      // Reset user when they log out
       posthog.reset();
-      console.log('✅ [PostHog] User reset');
     }
   }, [user?.id, posthog]);
 }

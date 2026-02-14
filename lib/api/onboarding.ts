@@ -103,8 +103,6 @@ export async function updateOnboardingStep(
 
     // If record doesn't exist, create it first
     if (fetchError && fetchError.code === 'PGRST116') {
-      console.log('🔵 [updateOnboardingStep] Creating new onboarding_data record for user:', user.id);
-      
       // Build initial data
       const initialData: any = {
         user_id: user.id,
@@ -134,11 +132,9 @@ export async function updateOnboardingStep(
         .insert(initialData);
 
       if (insertError) {
-        console.error('❌ [updateOnboardingStep] Error creating onboarding_data:', insertError);
         return { data: false, error: insertError };
       }
 
-      console.log('✅ [updateOnboardingStep] Created onboarding_data record with step:', step);
       return { data: true, error: null };
     }
 
@@ -180,14 +176,11 @@ export async function updateOnboardingStep(
       .eq('user_id', user.id);
 
     if (error) {
-      console.error('❌ [updateOnboardingStep] Error updating onboarding_data:', error);
       return { data: false, error };
     }
 
-    console.log('✅ [updateOnboardingStep] Updated onboarding_data with step:', step);
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('❌ [updateOnboardingStep] Exception:', error);
     return { data: false, error };
   }
 }
@@ -205,8 +198,6 @@ export async function completeOnboarding(): Promise<{
       return { data: false, error: { message: 'User not authenticated' } };
     }
 
-    console.log('🔵 [completeOnboarding] Marking onboarding complete for user:', user.id);
-    
     // Use upsert to create record if it doesn't exist, or update if it does
     const { data: updatedData, error } = await supabase
       .from('onboarding_data')
@@ -223,14 +214,11 @@ export async function completeOnboarding(): Promise<{
       .single();
 
     if (error) {
-      console.error('❌ [completeOnboarding] Database upsert error:', error);
       return { data: false, error };
     }
 
-    console.log('✅ [completeOnboarding] Database updated successfully:', updatedData);
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('❌ [completeOnboarding] Exception:', error);
     return { data: false, error };
   }
 }
@@ -257,26 +245,15 @@ export async function needsOnboarding(): Promise<{
 
     // If no record exists, user needs onboarding
     if (error && error.code === 'PGRST116') {
-      console.log('🔵 [needsOnboarding] No record found - needs onboarding');
       return { data: true, error: null };
     }
 
     if (error) {
-      console.error('❌ [needsOnboarding] Database error:', error);
       return { data: false, error };
     }
 
-    // Log what we found
-    console.log('🔵 [needsOnboarding] Database check:', { 
-      completed: data?.completed, 
-      completed_at: data?.completed_at,
-      needsOnboarding: !data?.completed 
-    });
-
-    // If completed is false or null, user needs onboarding
     return { data: !data?.completed, error: null };
   } catch (error: any) {
-    console.error('❌ [needsOnboarding] Exception:', error);
     return { data: false, error };
   }
 }
@@ -321,14 +298,11 @@ export async function updateProfileFromOnboarding(updates: {
       .eq('id', user.id);
 
     if (error) {
-      console.error('❌ [updateProfileFromOnboarding] Error updating profile:', error);
       return { data: null, error };
     }
 
-    console.log('✅ [updateProfileFromOnboarding] Profile updated successfully');
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('❌ [updateProfileFromOnboarding] Exception:', error);
     return { data: null, error };
   }
 }
@@ -365,15 +339,12 @@ export async function updatePreferencesFromOnboarding(updates: {
         .eq('user_id', user.id);
 
       if (error) {
-        console.error('❌ [updatePreferencesFromOnboarding] Error updating preferences:', error);
         return { data: null, error };
       }
     }
 
-    console.log('✅ [updatePreferencesFromOnboarding] Preferences updated successfully');
     return { data: true, error: null };
   } catch (error: any) {
-    console.error('❌ [updatePreferencesFromOnboarding] Exception:', error);
     return { data: null, error };
   }
 }

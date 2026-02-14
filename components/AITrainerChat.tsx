@@ -102,17 +102,13 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
         }));
         setMessages(messagesWithDates);
       }
-    } catch (error) {
-      console.error('❌ [AI Trainer] Error loading messages:', error);
-    }
+    } catch {}
   };
 
   const saveMessages = async (msgs: Message[]) => {
     try {
       await AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(msgs));
-    } catch (error) {
-      console.error('❌ [AI Trainer] Error saving messages:', error);
-    }
+    } catch {}
   };
 
   const clearMessages = async () => {
@@ -130,9 +126,7 @@ export default function AITrainerChat({ onClose }: AITrainerChatProps) {
               await AsyncStorage.removeItem(MESSAGES_STORAGE_KEY);
               setMessages([]);
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            } catch (error) {
-              console.error('❌ [AI Trainer] Error clearing messages:', error);
-            }
+            } catch {}
           },
         },
       ]

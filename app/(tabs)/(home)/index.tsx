@@ -97,7 +97,7 @@ const ALL_MODES: { key: ModeKey; label: string; icon: React.ReactNode }[] = [
 export default function HomeIndex() {
   const { mode, setMode, modeLoading } = useMode();
   const { canUseAITrainer } = useFeatures();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [showChooser, setShowChooser] = useState(false);
   const [showAITrainer, setShowAITrainer] = useState(false);
   const { availableModes, refresh: refreshAvailableModes } = useAvailableModes();
@@ -278,7 +278,13 @@ export default function HomeIndex() {
         >
           {/* Login/Logout Button */}
           <Pressable
-            onPress={() => router.push("/(tabs)/test-auth")}
+            onPress={() => {
+              if (user) {
+                signOut();
+              } else {
+                router.replace("/onboarding/welcome");
+              }
+            }}
             style={({ pressed }) => ({
               width: 48,
               height: 48,

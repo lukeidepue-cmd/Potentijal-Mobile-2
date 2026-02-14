@@ -158,7 +158,6 @@ export default function TrainingIntentScreen() {
       });
 
       if (progressError) {
-        console.warn('⚠️ [TrainingIntent] Failed to save progress:', progressError);
         const isNetworkError = progressError.message?.toLowerCase().includes('network') || 
                               progressError.message?.toLowerCase().includes('fetch') ||
                               progressError.message?.toLowerCase().includes('connection');
@@ -174,15 +173,11 @@ export default function TrainingIntentScreen() {
           );
           return;
         }
-        // Don't block navigation on progress save failure, but log it
-      } else {
-        console.log('✅ [TrainingIntent] Progress saved: training_intent =', dbIntentValue);
       }
 
       // Navigate to next screen
       router.push('/onboarding/app-intro');
     } catch (error: any) {
-      console.error('❌ [TrainingIntent] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

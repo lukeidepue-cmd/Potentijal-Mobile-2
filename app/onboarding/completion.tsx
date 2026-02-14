@@ -199,19 +199,13 @@ export default function CompletionScreen() {
   }, []);
 
   const handleFinish = async () => {
-    console.log('🔵 [Completion] ===== FINISH BUTTON PRESSED =====');
     setLoading(true);
     
     try {
-      console.log('🔵 [Completion] Step 1: Marking onboarding as complete...');
-      
       // Mark onboarding as complete
       const { data: completed, error } = await completeOnboarding();
       
       if (error || !completed) {
-        console.error('❌ [Completion] Failed to complete onboarding:', error);
-        console.error('❌ [Completion] Error details:', JSON.stringify(error, null, 2));
-        
         const isNetworkError = error?.message?.toLowerCase().includes('network') || 
                               error?.message?.toLowerCase().includes('fetch') ||
                               error?.message?.toLowerCase().includes('connection');
@@ -237,29 +231,15 @@ export default function CompletionScreen() {
           );
           return;
         }
-      } else {
-        console.log('✅ [Completion] Step 1 complete: Onboarding marked complete in database');
       }
 
-      // Wait for database to update
-      console.log('🔵 [Completion] Step 2: Waiting for database to update...');
       await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Refresh onboarding status once to ensure it updates
-      console.log('🔵 [Completion] Step 3: Refreshing onboarding status...');
       await refreshOnboardingStatus();
       await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Wait longer to ensure app is fully ready and loaded (18 seconds total)
-      console.log('🔵 [Completion] Step 4: Waiting for app to fully load and be ready...');
       await new Promise(resolve => setTimeout(resolve, 15000));
-
-      // Navigate to main app only after all processing is complete
-      console.log('🔵 [Completion] Step 7: Navigating to main app...');
       router.replace('/(tabs)');
       
-    } catch (error) {
-      console.error('❌ [Completion] Exception:', error);
+    } catch {
       // Still navigate to main app even on error, but wait longer
       await new Promise(resolve => setTimeout(resolve, 5000));
       router.replace('/(tabs)');

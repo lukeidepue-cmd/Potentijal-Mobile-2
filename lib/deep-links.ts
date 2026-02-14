@@ -14,8 +14,6 @@ export function parseDeepLink(url: string): {
   path: string;
   params: Record<string, string>;
 } {
-  console.log('🔍 [parseDeepLink] Parsing URL:', url);
-  
   const parsed = Linking.parse(url);
   const path = parsed.path || '';
   
@@ -39,9 +37,7 @@ export function parseDeepLink(url: string): {
   
   // Combine query params and hash params (hash takes precedence)
   const params = { ...queryParams, ...hashParams };
-  
-  console.log('🔍 [parseDeepLink] Parsed:', { path, params });
-  
+
   return { path, params };
 }
 
@@ -70,8 +66,6 @@ export async function handleEmailVerificationLink(url: string): Promise<{
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
-      console.log('✅ [Deep Link] Session active (handled by Supabase onAuthStateChange)');
-      // Don't navigate - let the verification screen detect user state and enable button
       return { success: true };
     }
 
@@ -83,39 +77,20 @@ export async function handleEmailVerificationLink(url: string): Promise<{
       });
 
       if (error) {
-        // Check again if session was created via onAuthStateChange
         const { data: { session: retrySession } } = await supabase.auth.getSession();
-        if (retrySession) {
-          console.log('✅ [Deep Link] Session created via onAuthStateChange after retry');
-          return { success: true };
-        }
-        
-        console.error('❌ [Deep Link] Email verification failed:', error);
+        if (retrySession) return { success: true };
         return { success: false, error: error.message };
       }
 
-      if (data?.session) {
-        console.log('✅ [Deep Link] Email verified successfully via verifyOtp');
-        // Don't navigate - let the verification screen detect user state and enable button
-        return { success: true };
-      }
+      if (data?.session) return { success: true };
     }
 
-    // If no token, Supabase might handle it via onAuthStateChange
-    // Wait a moment and check for session
-    console.log('⏳ [Deep Link] No token found, waiting for onAuthStateChange...');
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-    
+    await new Promise(resolve => setTimeout(resolve, 1000));
     const { data: { session: finalSession } } = await supabase.auth.getSession();
-    if (finalSession) {
-      console.log('✅ [Deep Link] Session created via onAuthStateChange');
-      return { success: true };
-    }
+    if (finalSession) return { success: true };
 
-    console.log('⚠️ [Deep Link] No session found after waiting');
     return { success: false, error: 'No verification token found and no session created' };
   } catch (error: any) {
-    console.error('❌ [Deep Link] Error handling email verification:', error);
     return { success: false, error: error.message || 'Unknown error' };
   }
 }
@@ -132,14 +107,11 @@ export async function handleOAuthCallback(url: string): Promise<{
     // Supabase handles OAuth callbacks automatically via onAuthStateChange
     // This function is here for future use if needed
     const { path, params } = parseDeepLink(url);
-    
-    console.log('🔵 [Deep Link] OAuth callback received:', { path, params });
-    
+
     // The AuthProvider's onAuthStateChange will handle the session
     // We just need to ensure we're on the right screen
     return { success: true };
   } catch (error: any) {
-    console.error('❌ [Deep Link] Error handling OAuth callback:', error);
     return { success: false, error: error.message || 'Unknown error' };
   }
 }
@@ -149,23 +121,11 @@ export async function handleOAuthCallback(url: string): Promise<{
  * Should be called in root layout or AuthProvider
  */
 export function setupDeepLinkListener() {
-  console.log('🔵 [setupDeepLinkListener] Setting up deep link listener');
-  
-  // Handle initial URL (if app was opened via deep link)
   Linking.getInitialURL().then((url) => {
-    if (url) {
-      console.log('🔵 [setupDeepLinkListener] Initial URL:', url);
-      handleDeepLink(url);
-    } else {
-      console.log('🔵 [setupDeepLinkListener] No initial URL');
-    }
-  }).catch((error) => {
-    console.error('❌ [setupDeepLinkListener] Error getting initial URL:', error);
-  });
+    if (url) handleDeepLink(url);
+  }).catch(() => {});
 
-  // Listen for deep links while app is running
   const subscription = Linking.addEventListener('url', (event) => {
-    console.log('🔵 [setupDeepLinkListener] Deep link received:', event.url);
     handleDeepLink(event.url);
   });
 
@@ -176,38 +136,20 @@ export function setupDeepLinkListener() {
  * Main deep link handler - routes to appropriate handler
  */
 async function handleDeepLink(url: string) {
-  console.log('🔗 [Deep Link] Received:', url);
-
-  // Check if this is a Supabase callback URL (contains supabase.co/auth/v1/callback)
   if (url.includes('supabase.co/auth/v1/callback') || url.includes('supabase.co/auth/v1/verify')) {
-    console.log('🔵 [Deep Link] Detected Supabase callback URL');
-    // Extract tokens from Supabase callback URL
-    const result = await handleEmailVerificationLink(url);
-    if (!result.success) {
-      console.error('❌ [Deep Link] Supabase callback verification failed:', result.error);
-    }
+    await handleEmailVerificationLink(url);
     return;
   }
 
   const { path, params } = parseDeepLink(url);
 
-  // Handle email verification (check for token in params or path)
-  // Also check for Expo Router path format: /--/verify
   if (path.includes('verify') || path.includes('--/verify') || params.token || params.access_token || params.token_hash || params.type === 'email') {
-    console.log('🔵 [Deep Link] Detected email verification link');
-    const result = await handleEmailVerificationLink(url);
-    if (!result.success) {
-      console.error('❌ [Deep Link] Verification failed:', result.error);
-    }
+    await handleEmailVerificationLink(url);
     return;
   }
 
-  // Handle OAuth callback (default case for empty path)
   if (path === '/' || path === '' || !path || path === '--') {
-    console.log('🔵 [Deep Link] OAuth callback (empty path)');
     await handleOAuthCallback(url);
     return;
   }
-
-  console.log('⚠️ [Deep Link] Unhandled deep link:', url);
 }

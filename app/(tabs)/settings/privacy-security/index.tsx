@@ -75,8 +75,8 @@ export default function PrivacySecuritySettings() {
           email_visibility: data.email_visibility,
         });
       }
-    } catch (error) {
-      console.error('Error loading privacy settings:', error);
+    } catch {
+      // ignore
     } finally {
       setLoading(false);
     }

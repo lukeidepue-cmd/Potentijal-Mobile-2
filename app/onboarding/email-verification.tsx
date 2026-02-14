@@ -51,7 +51,6 @@ export default function EmailVerificationScreen() {
   // Monitor auth state - when user becomes authenticated, navigate to next screen
   useEffect(() => {
     if (user) {
-      console.log('✅ [EmailVerification] User authenticated');
       // User is authenticated - navigate to account basics screen
       // Use push instead of replace to ensure proper navigation
       router.push('/onboarding/account-basics');
@@ -131,8 +130,6 @@ export default function EmailVerificationScreen() {
       const { data, error } = await verifyOtp(email, codeToVerify);
       
       if (error) {
-        console.error('❌ [EmailVerification] Verification failed:', error);
-        
         // Check for network errors
         const isNetworkError = error.message?.toLowerCase().includes('network') || 
                               error.message?.toLowerCase().includes('fetch') ||
@@ -173,27 +170,19 @@ export default function EmailVerificationScreen() {
         setLoading(false);
         return;
       } else if (data?.session) {
-        // Success - user is now authenticated
-        console.log('✅ [EmailVerification] Code verified successfully');
-        
         // Save progress: mark email_entry and email_verification steps as completed
         // User is now authenticated, so we can save progress
         try {
           const { error: progressError } = await updateOnboardingStep('email_verification');
           if (progressError) {
-            console.warn('⚠️ [EmailVerification] Failed to save progress:', progressError);
-            // Don't block navigation on progress save failure, but log it
-          } else {
-            console.log('✅ [EmailVerification] Progress saved: email_entry and email_verification');
+            // Don't block navigation on progress save failure
           }
-        } catch (progressErr: any) {
-          console.error('❌ [EmailVerification] Exception saving progress:', progressErr);
+        } catch {
           // Don't block navigation on progress save failure
         }
         // Navigation is handled by useEffect when `user` state updates
       }
     } catch (error: any) {
-      console.error('❌ [EmailVerification] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

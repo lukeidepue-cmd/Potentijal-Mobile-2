@@ -143,8 +143,7 @@ export default function WorkoutSummaryScreen() {
         
         setWorkout(workoutDetails);
         setLoading(false);
-      } catch (error) {
-        console.error('Failed to parse workout data:', error);
+      } catch {
         Alert.alert('Error', 'Failed to load workout data.');
         router.back();
       }
@@ -190,27 +189,21 @@ export default function WorkoutSummaryScreen() {
         
         // Clear persisted workout state from AsyncStorage (workout is now saved)
         const AsyncStorage = await import('@react-native-async-storage/async-storage');
-        AsyncStorage.default.removeItem('@workout_draft').catch((error) => {
-          console.error('❌ [Workout Summary] Error clearing workout state:', error);
-        });
+        AsyncStorage.default.removeItem('@workout_draft').catch(() => {});
         
         // Cancel today's workout notification if workout was logged before 12PM
         const { cancelTodaysWorkoutNotification, trackWorkoutAndScheduleAITrainerReminder } = await import('../../lib/notifications/notifications');
-        cancelTodaysWorkoutNotification(workoutData.mode).catch((error) => {
-          console.error('❌ [Workout Summary] Error canceling notification:', error);
-        });
+        cancelTodaysWorkoutNotification(workoutData.mode).catch(() => {});
         
         // Track workout count and schedule AI Trainer reminder if needed (every 7 workouts)
-        trackWorkoutAndScheduleAITrainerReminder().catch((error) => {
-          console.error('❌ [Workout Summary] Error tracking workout for AI Trainer reminder:', error);
-        });
+        trackWorkoutAndScheduleAITrainerReminder().catch(() => {});
         
         // Navigate to home tab immediately after save
         setTimeout(() => {
           try {
             router.replace('/(tabs)/(home)');
-          } catch (error) {
-            console.error('Navigation error:', error);
+          } catch {
+            // ignore
           }
         }, 100);
       }
@@ -219,7 +212,6 @@ export default function WorkoutSummaryScreen() {
       setErrorMessage('An unexpected error occurred.');
       setShowError(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      console.error('Save workout error:', error);
     }
   };
 

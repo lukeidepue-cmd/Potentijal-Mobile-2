@@ -74,7 +74,6 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
           const validModes: Mode[] = ["lifting", "basketball", "football", "baseball", "soccer", "hockey", "tennis"];
           if (validModes.includes(cachedMode as Mode)) {
             setMode(cachedMode as Mode);
-            console.log('✅ [ModeContext] Loaded mode from cache:', cachedMode);
             // Don't set modeLoading to false yet - we still need to verify with profile
           }
         }
@@ -85,21 +84,14 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
         if (!isMounted) return;
         
         if (error) {
-          console.error('❌ [ModeContext] Error loading profile:', error);
           setModeLoading(false);
           return;
         }
         
         if (!profile) {
-          console.warn('⚠️ [ModeContext] No profile found');
           setModeLoading(false);
           return;
         }
-        
-        console.log('🔵 [ModeContext] Profile loaded:', { 
-          primary_sport: profile.primary_sport, 
-          sports: profile.sports 
-        });
         
         let targetMode: Mode;
         
@@ -107,15 +99,10 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
           // Use primary sport, with first selected sport as fallback
           const firstSport = profile.sports && profile.sports.length > 0 ? profile.sports[0] : undefined;
           targetMode = mapPrimarySportToMode(profile.primary_sport, firstSport);
-          console.log('✅ [ModeContext] Using primary_sport:', profile.primary_sport, '-> mode:', targetMode);
         } else if (profile.sports && profile.sports.length > 0) {
-          // If no primary sport but has sports, use first sport
           targetMode = mapPrimarySportToMode(null, profile.sports[0]);
-          console.log('✅ [ModeContext] Using first sport from sports array:', profile.sports[0], '-> mode:', targetMode);
         } else {
-          // No sports at all - shouldn't happen after onboarding, but keep lifting as fallback
           targetMode = "lifting";
-          console.warn('⚠️ [ModeContext] No primary_sport or sports found, keeping default lifting');
         }
         
         // Always set the mode from profile (this is the source of truth)
@@ -123,11 +110,9 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
           setMode(targetMode);
           // Cache the mode for next app start
           await AsyncStorage.setItem(MODE_STORAGE_KEY, targetMode);
-          console.log('✅ [ModeContext] Mode set to:', targetMode);
           setModeLoading(false);
         }
-      } catch (error) {
-        console.error('❌ [ModeContext] Exception loading primary sport:', error);
+      } catch {
         if (isMounted) {
           setModeLoading(false);
         }
@@ -145,9 +130,7 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
   // Save mode to cache whenever it changes (for manual switches)
   useEffect(() => {
     if (user && mode) {
-      AsyncStorage.setItem(MODE_STORAGE_KEY, mode).catch(err => {
-        console.error('❌ [ModeContext] Error saving mode to cache:', err);
-      });
+      AsyncStorage.setItem(MODE_STORAGE_KEY, mode).catch(() => {});
     }
   }, [mode, user]);
   

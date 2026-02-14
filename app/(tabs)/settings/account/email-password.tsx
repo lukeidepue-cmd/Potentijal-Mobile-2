@@ -299,8 +299,6 @@ export default function EmailPasswordSettings() {
       const { data, error } = result;
       
       if (error) {
-        // Show the actual error message from our API (which handles Supabase errors)
-        console.error('❌ [Email] Email update error:', error);
         Alert.alert("Error", error.message || "Failed to update email");
         setSavingEmail(false);
         return;
@@ -388,7 +386,7 @@ export default function EmailPasswordSettings() {
             }
             
             if (refreshError) {
-              console.error('⚠️ [Email] Error checking updated user:', refreshError);
+              // ignore
             }
             
             // Stop checking after max attempts
@@ -439,7 +437,7 @@ export default function EmailPasswordSettings() {
             }
             
             if (refreshError) {
-              console.error('⚠️ [Email] Error checking updated user:', refreshError);
+              // ignore
             }
             
             // Stop checking after max attempts
@@ -451,7 +449,6 @@ export default function EmailPasswordSettings() {
         }
       }
     } catch (error: any) {
-      console.error('Email update exception:', error);
       Alert.alert("Error", error.message || "Failed to update email");
     } finally {
       setSavingEmail(false);

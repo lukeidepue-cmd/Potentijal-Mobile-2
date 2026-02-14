@@ -40,7 +40,6 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     }
 
     if (finalStatus !== 'granted') {
-      console.warn('⚠️ [Notifications] Permission not granted');
       return false;
     }
 
@@ -55,8 +54,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     }
 
     return true;
-  } catch (error) {
-    console.error('❌ [Notifications] Error requesting permissions:', error);
+  } catch {
     return false;
   }
 }
@@ -67,8 +65,8 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 export async function cancelNotification(identifier: string): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(identifier);
-  } catch (error) {
-    console.error(`❌ [Notifications] Error canceling notification ${identifier}:`, error);
+  } catch {
+    // ignore
   }
 }
 
@@ -78,8 +76,8 @@ export async function cancelNotification(identifier: string): Promise<void> {
 export async function cancelAllNotifications(): Promise<void> {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch (error) {
-    console.error('❌ [Notifications] Error canceling all notifications:', error);
+  } catch {
+    // ignore
   }
 }
 
@@ -91,7 +89,6 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     // Check if workout reminders are enabled in user preferences
     const { data: preferences } = await getUserPreferences();
     if (!preferences?.notification_preferences?.workout_reminders) {
-      console.log('🔵 [Notifications] Workout reminders disabled, skipping workout notification scheduling');
       // Cancel any existing workout notifications for this mode
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
       const modeIdentifier = `${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${mode}`;
@@ -106,7 +103,6 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     // Request permissions first
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
-      console.warn('⚠️ [Notifications] Cannot schedule workout notification - no permission');
       return;
     }
 
@@ -130,7 +126,6 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     });
 
     if (error) {
-      console.error('❌ [Notifications] Error fetching schedule:', error);
       return;
     }
 
@@ -152,25 +147,19 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     const todayScheduleItem = schedule.find(item => item.dayIndex === todayDayIndex);
     
     if (!todayScheduleItem) {
-      console.log(`🔵 [Notifications] No schedule item found for today (dayIndex: ${todayDayIndex})`);
       return;
     }
-
-    console.log(`🔵 [Notifications] Today's schedule item: dayIndex=${todayScheduleItem.dayIndex}, label="${todayScheduleItem.label}", status=${todayScheduleItem.status}`);
 
     // Check if today has a scheduled workout (has label, not rest)
     const hasLabel = todayScheduleItem.label && todayScheduleItem.label.trim() !== '';
     const isRest = todayScheduleItem.status === 'rest';
     const isCompleted = todayScheduleItem.status === 'completed';
 
-    console.log(`🔵 [Notifications] Today check: hasLabel=${hasLabel}, isRest=${isRest}, isCompleted=${isCompleted}, status=${todayScheduleItem.status}`);
-
     // Only schedule if:
     // 1. Today has a scheduled workout (has label, not rest)
     // 2. Today does NOT have a workout logged (status is not 'completed')
     // Note: status='empty' with a label means they have a planned workout but haven't logged it yet - this is when we want to send the notification!
     if (!hasLabel || isRest || isCompleted) {
-      console.log(`⏭️ [Notifications] Skipping notification: hasLabel=${hasLabel}, isRest=${isRest}, isCompleted=${isCompleted}`);
       return;
     }
 
@@ -185,8 +174,6 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     const existingNotification = allScheduledCheck.find(n => n.identifier === identifier);
     
     if (existingNotification) {
-      console.log(`🔵 [Notifications] Notification already scheduled for today: ${identifier}, trigger=${JSON.stringify(existingNotification.trigger)}`);
-      // Don't reschedule if it already exists
       return;
     }
 
@@ -201,18 +188,11 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     const timeUntilNotification = dayDate.getTime() - now.getTime();
     const minutesUntilNotification = Math.floor(timeUntilNotification / (1000 * 60));
     
-    console.log(`🔵 [Notifications] Time check: now=${now.toLocaleString()}, scheduled=${dayDate.toLocaleString()}, minutesUntil=${minutesUntilNotification}`);
-    
     if (dayDate < now) {
-      console.log(`⏭️ [Notifications] Too late to schedule for today (it's already past 11:21 PM, now=${now.toLocaleString()}, scheduled=${dayDate.toLocaleString()})`);
       return;
     }
 
-    // Identifier already created above
-
-    console.log(`🔵 [Notifications] Scheduling notification: identifier=${identifier}, triggerDate=${dayDate.toLocaleString()} (${dayDate.toISOString()} UTC), minutesUntil=${minutesUntilNotification}`);
-
-    const notificationId = await Notifications.scheduleNotificationAsync({
+    await Notifications.scheduleNotificationAsync({
       identifier,
       content: {
         title: 'Your Workout Awaits!',
@@ -225,18 +205,8 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
         date: dayDate,
       },
     });
-
-    console.log(`✅ [Notifications] Scheduled workout notification for ${mode} on ${dateStr} at 11:21 PM (TESTING) - ID: ${notificationId}`);
-
-    // Verify scheduled notifications
-    const allScheduledAfter = await Notifications.getAllScheduledNotificationsAsync();
-    const modeNotifications = allScheduledAfter.filter(n => n.identifier.startsWith(`${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${mode}`));
-    console.log(`🔵 [Notifications] Total scheduled notifications for ${mode}: ${modeNotifications.length}`);
-    modeNotifications.forEach(n => {
-      console.log(`  - ${n.identifier}: trigger=${JSON.stringify(n.trigger)}`);
-    });
-  } catch (error) {
-    console.error('❌ [Notifications] Error scheduling workout notification:', error);
+  } catch {
+    // ignore
   }
 }
 
@@ -260,7 +230,6 @@ export async function scheduleConsistencyScoreNotification(): Promise<void> {
     // Check if workout reminders are enabled in user preferences
     const { data: preferences } = await getUserPreferences();
     if (!preferences?.notification_preferences?.workout_reminders) {
-      console.log('🔵 [Notifications] Workout reminders disabled, skipping consistency score notification');
       // Cancel any existing consistency score notification
       await cancelNotification(NOTIFICATION_IDS.CONSISTENCY_SCORE);
       return;
@@ -269,14 +238,12 @@ export async function scheduleConsistencyScoreNotification(): Promise<void> {
     // Request permissions first
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
-      console.warn('⚠️ [Notifications] Cannot schedule consistency score notification - no permission');
       return;
     }
 
     // Check if user is premium or pro
     const { data: profile, error: profileError } = await getMyProfile();
     if (profileError || !profile) {
-      console.error('❌ [Notifications] Error fetching profile:', profileError);
       return;
     }
 
@@ -285,7 +252,6 @@ export async function scheduleConsistencyScoreNotification(): Promise<void> {
     const isCreator = profile.plan === 'creator' || profile.is_creator === true;
     
     if (!isPremium && !isCreator) {
-      console.log('🔵 [Notifications] User is not premium/pro, skipping consistency score notification');
       // Cancel any existing consistency score notification if they're no longer premium
       await cancelNotification(NOTIFICATION_IDS.CONSISTENCY_SCORE);
       return;
@@ -313,13 +279,9 @@ export async function scheduleConsistencyScoreNotification(): Promise<void> {
           minute: 0,
         },
       });
-
-      console.log(`✅ [Notifications] Scheduled consistency score notification (weekly on Sunday at 8AM)`);
-    } else {
-      console.log('🔵 [Notifications] Consistency score notification already scheduled, skipping');
     }
-  } catch (error) {
-    console.error('❌ [Notifications] Error scheduling consistency score notification:', error);
+  } catch {
+    // ignore
   }
 }
 
@@ -333,7 +295,6 @@ export async function trackWorkoutAndScheduleAITrainerReminder(): Promise<void> 
     // Check if AI Trainer insights are enabled in user preferences
     const { data: preferences } = await getUserPreferences();
     if (!preferences?.notification_preferences?.ai_trainer_insights) {
-      console.log('🔵 [Notifications] AI Trainer insights disabled, skipping AI Trainer reminder');
       // Cancel any existing AI Trainer reminder notification
       await cancelNotification(NOTIFICATION_IDS.AI_TRAINER_REMINDER);
       return;
@@ -342,7 +303,6 @@ export async function trackWorkoutAndScheduleAITrainerReminder(): Promise<void> 
     // Request permissions first
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
-      console.warn('⚠️ [Notifications] Cannot schedule AI Trainer reminder - no permission');
       return;
     }
 
@@ -354,8 +314,6 @@ export async function trackWorkoutAndScheduleAITrainerReminder(): Promise<void> 
     // Increment count
     const newCount = currentCount + 1;
     await AsyncStorage.setItem(WORKOUT_COUNT_KEY, newCount.toString());
-    
-    console.log(`🔵 [Notifications] Workout count: ${newCount}`);
 
     // Check if this is a multiple of 7 (7th, 14th, 21st, etc.)
     if (newCount % 7 === 0) {
@@ -379,13 +337,9 @@ export async function trackWorkoutAndScheduleAITrainerReminder(): Promise<void> 
           date: oneHourFromNow,
         },
       });
-
-      console.log(`✅ [Notifications] Scheduled AI Trainer reminder for ${oneHourFromNow.toLocaleString()} (after ${newCount} workouts)`);
-    } else {
-      console.log(`🔵 [Notifications] Not a multiple of 7 (${newCount}), skipping AI Trainer reminder`);
     }
-  } catch (error) {
-    console.error('❌ [Notifications] Error tracking workout and scheduling AI Trainer reminder:', error);
+  } catch {
+    // ignore
   }
 }
 
@@ -413,8 +367,7 @@ export async function cancelTodaysWorkoutNotification(mode: SportMode | string):
     const identifier = `${modeIdentifier}-${dateStr}`;
 
     await cancelNotification(identifier);
-    console.log(`✅ [Notifications] Canceled today's workout notification for ${mode}`);
-  } catch (error) {
-    console.error('❌ [Notifications] Error canceling today\'s workout notification:', error);
+  } catch {
+    // ignore
   }
 }

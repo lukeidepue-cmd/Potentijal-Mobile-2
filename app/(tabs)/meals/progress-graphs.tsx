@@ -333,15 +333,13 @@ export default function ProgressGraphsScreen() {
     getAvailableExercisesForView(sportMode, selectedView)
       .then(({ data, error }) => {
         if (error) {
-          console.error('❌ [ProgressGraphs] Error loading exercises:', error);
           setAvailableExercises([]);
         } else {
           setAvailableExercises(data || []);
         }
         setLoadingExercises(false);
       })
-      .catch((err) => {
-        console.error('❌ [ProgressGraphs] Exception loading exercises:', err);
+      .catch(() => {
         setAvailableExercises([]);
         setLoadingExercises(false);
       });

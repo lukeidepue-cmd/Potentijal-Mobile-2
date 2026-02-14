@@ -35,7 +35,6 @@ export default function AppIntroScreen() {
       });
 
       if (progressError) {
-        console.warn('⚠️ [AppIntro] Failed to save progress:', progressError);
         const isNetworkError = progressError.message?.toLowerCase().includes('network') || 
                               progressError.message?.toLowerCase().includes('fetch') ||
                               progressError.message?.toLowerCase().includes('connection');
@@ -51,15 +50,11 @@ export default function AppIntroScreen() {
           );
           return;
         }
-        // Don't block navigation on progress save failure, but log it
-      } else {
-        console.log('✅ [AppIntro] Progress saved: app_intro, intro_completed = true');
       }
 
       // Navigate to next screen
       router.push('/onboarding/notifications');
     } catch (error: any) {
-      console.error('❌ [AppIntro] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

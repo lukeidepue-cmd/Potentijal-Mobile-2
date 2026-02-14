@@ -40,28 +40,26 @@ function RootLayoutNav() {
   const router = useRouter();
   const [resumeStep, setResumeStep] = React.useState<string | null>(null);
 
-  // Steps 18–19: RevenueCat — configure at launch (use iOS Public API key from app.json, not Test Store).
+  // Steps 18–19: RevenueCat — configure at launch (extra or .env so dev builds work).
   useEffect(() => {
-    const apiKey = (Constants.expoConfig?.extra as Record<string, unknown>)?.revenueCatPublicApiKey as string | undefined;
+    const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+    const apiKey = (extra?.revenueCatPublicApiKey ?? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) as string | undefined;
     if (!apiKey?.trim()) return;
     try {
       const Purchases = require('react-native-purchases').default;
       Purchases.configure({ apiKey, appUserID: user?.id ?? 'anonymous' });
-    } catch (e) {
-      if (__DEV__) console.warn('[RevenueCat] Configure skipped:', e);
-    }
+    } catch (_e) {}
   }, []);
 
   useEffect(() => {
-    const apiKey = (Constants.expoConfig?.extra as Record<string, unknown>)?.revenueCatPublicApiKey as string | undefined;
+    const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+    const apiKey = (extra?.revenueCatPublicApiKey ?? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) as string | undefined;
     if (!apiKey?.trim()) return;
     try {
       const Purchases = require('react-native-purchases').default;
       if (user?.id) Purchases.logIn(user.id);
       else Purchases.logOut();
-    } catch (e) {
-      if (__DEV__) console.warn('[RevenueCat] logIn/logOut skipped:', e);
-    }
+    } catch (_e) {}
   }, [user?.id]);
 
   // Refetch profile when app comes to foreground so we pick up webhook updates
@@ -91,21 +89,16 @@ function RootLayoutNav() {
     if (posthog && segments.length > 0) {
       const screenName = segments.join('/') || 'root';
       posthog.screen(screenName);
-      console.log('📊 [PostHog] Screen viewed:', screenName);
     }
   }, [segments, posthog]);
 
-  // Send a test event when app loads (to verify PostHog is working)
   useEffect(() => {
     if (posthog && user) {
-      // Small delay to ensure PostHog is fully initialized
       const timer = setTimeout(() => {
         posthog.capture('app_opened', {
           timestamp: new Date().toISOString(),
         });
-        console.log('📊 [PostHog] Test event sent: app_opened');
       }, 2000);
-
       return () => clearTimeout(timer);
     }
   }, [posthog, user?.id]);
@@ -156,27 +149,8 @@ function RootLayoutNav() {
     const inOnboardingGroup = segments[0] === 'onboarding';
     const inTabsGroup = segments[0] === '(tabs)';
 
-    // Debug logging (only log when routing actually happens)
-    const shouldRoute = 
-      (!user && !inOnboardingGroup) ||
-      (user && needsOnboarding === true && !inOnboardingGroup) ||
-      (user && needsOnboarding === false && !inTabsGroup) ||
-      (user && needsOnboarding === null && !inTabsGroup && !inOnboardingGroup);
-
-    if (shouldRoute) {
-      console.log('🔵 [RootLayout] Routing check:', {
-        user: user?.id,
-        needsOnboarding,
-        segments: segments[0],
-        inOnboardingGroup,
-        inTabsGroup,
-      });
-    }
-
     if (!user) {
-      // Not authenticated - show onboarding welcome screen
       if (!inOnboardingGroup) {
-        console.log('🔵 [RootLayout] No user - routing to welcome');
         router.replace('/onboarding/welcome');
       }
     } else if (needsOnboarding === true) {
@@ -185,13 +159,11 @@ function RootLayoutNav() {
         // Get onboarding state to determine which screen to show
         getOnboardingState().then(({ data, error }) => {
           if (error) {
-            console.warn('⚠️ [RootLayout] Failed to get onboarding state, defaulting to account-basics:', error);
             router.replace('/onboarding/account-basics');
             return;
           }
 
           const currentStep = data?.current_step;
-          console.log('🔵 [RootLayout] User needs onboarding, current_step:', currentStep);
 
           // Route to appropriate screen based on current_step
           // If user is authenticated, skip email_entry and email_verification (they've already verified)
@@ -212,40 +184,24 @@ function RootLayoutNav() {
               'completion': '/onboarding/completion',
             };
 
-            // If user is authenticated, skip email screens (they've already verified)
             if (user && (currentStep === 'email_entry' || currentStep === 'email_verification')) {
-              console.log('🔵 [RootLayout] User is authenticated, skipping email screens');
               targetRoute = '/onboarding/account-basics';
             } else {
               targetRoute = stepToRoute[currentStep] || '/onboarding/account-basics';
             }
           }
 
-          console.log('🔵 [RootLayout] Resuming onboarding at:', targetRoute);
           router.replace(targetRoute as any);
         });
       }
     } else if (needsOnboarding === false) {
-      // Authenticated and onboarding complete - show main app
       if (!inTabsGroup) {
-        console.log('🔵 [RootLayout] Onboarding complete - routing to tabs');
         router.replace('/(tabs)');
       }
-      
-      // Schedule notifications when user is authenticated and onboarding is complete
-      scheduleAllWorkoutNotifications().catch((error) => {
-        console.error('❌ [RootLayout] Error scheduling workout notifications:', error);
-      });
-      
-      // Schedule consistency score notification (only for premium/pro users)
-      scheduleConsistencyScoreNotification().catch((error) => {
-        console.error('❌ [RootLayout] Error scheduling consistency score notification:', error);
-      });
+      scheduleAllWorkoutNotifications().catch(() => {});
+      scheduleConsistencyScoreNotification().catch(() => {});
     } else {
-      // needsOnboarding is null - still loading or error
-      // Default to main app if user exists (safer default)
       if (user && !inTabsGroup && !inOnboardingGroup) {
-        console.log('🔵 [RootLayout] Onboarding status unknown, defaulting to tabs');
         router.replace('/(tabs)');
       }
     }
@@ -318,7 +274,6 @@ export default function RootLayout() {
   );
 
   if (!posthogApiKey) {
-    console.warn('⚠️ [PostHog] API key not found. PostHog analytics will not be initialized.');
     return appContent;
   }
 

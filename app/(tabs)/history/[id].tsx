@@ -562,7 +562,6 @@ export default function HistoryDetail() {
     });
 
     if (copyError || !newWorkoutId) {
-      console.error(`❌ [Copy Workout] Copy failed:`, copyError);
       Alert.alert("Error", "Failed to copy workout");
       return;
     }
@@ -596,7 +595,6 @@ export default function HistoryDetail() {
       if (type === "workout" || (!type && params.fromCreator === "true")) {
         const { data, error: err } = await getWorkoutDetail(params.id);
         if (err || !data) {
-          console.error('❌ [History Detail] Workout error:', err);
           setError("Failed to load workout");
         } else {
           setWorkout(data);
@@ -616,11 +614,9 @@ export default function HistoryDetail() {
           setGame(data);
         }
       } else {
-        console.error('❌ [History Detail] Unknown type:', type);
         setError("Unknown item type");
       }
     } catch (err: any) {
-      console.error('❌ [History Detail] Exception:', err);
       setError(err?.message || "Failed to load details");
     } finally {
       setLoading(false);

@@ -192,15 +192,6 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
     const startDateStr = oldestBucket.startDateStr;
     const endDateStr = newestBucket.endDateStr;
 
-    console.log('🔍 [ProgressGraphView] Fetching data:', {
-      mode: sportMode,
-      view: params.view,
-      exercise: params.exercise,
-      timeInterval: params.timeInterval,
-      dateRange: `${startDateStr} to ${endDateStr}`,
-      exerciseTypeRestriction,
-    });
-
     // Step 1: Fetch workouts
     supabase
       .from('workouts')
@@ -212,14 +203,12 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
       .order('performed_at', { ascending: false })
       .then(async ({ data: workouts, error: workoutError }) => {
         if (workoutError) {
-          console.error('❌ [ProgressGraphView] Workout query error:', workoutError);
           setError(workoutError);
           setLoading(false);
           return;
         }
 
         if (!workouts || workouts.length === 0) {
-          console.log('✅ [ProgressGraphView] No workouts found');
           setData([]);
           setMinValue(null);
           setMaxValue(null);
@@ -238,14 +227,12 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
           .eq('exercise_type', exerciseTypeRestriction);
 
         if (exercisesError) {
-          console.error('❌ [ProgressGraphView] Exercises query error:', exercisesError);
           setError(exercisesError);
           setLoading(false);
           return;
         }
 
         if (!exercises || exercises.length === 0) {
-          console.log('✅ [ProgressGraphView] No exercises found for exercise type:', exerciseTypeRestriction);
           setData([]);
           setMinValue(null);
           setMaxValue(null);
@@ -262,7 +249,6 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
         }
 
         if (matchingExercises.length === 0) {
-          console.log('✅ [ProgressGraphView] No matching exercises found');
           setData([]);
           setMinValue(null);
           setMaxValue(null);
@@ -288,7 +274,6 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
           .order('set_index');
 
         if (setsError) {
-          console.error('❌ [ProgressGraphView] Sets query error:', setsError);
           setError(setsError);
           setLoading(false);
           return;
@@ -330,7 +315,6 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
             // This avoids timezone issues where "2024-01-21" might be interpreted as UTC
             const performedAtParts = ex.performed_at.split('-');
             if (performedAtParts.length !== 3) {
-              console.warn(`⚠️ [ProgressGraphView] Invalid date format: ${ex.performed_at}`);
               return false;
             }
             
@@ -392,13 +376,6 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
         // Edge case: All values are null - min and max remain null
         // This is handled in the graph component by showing "No data available"
 
-        console.log('✅ [ProgressGraphView] Data calculated:', {
-          dataPoints: dataPoints.length,
-          values: values.length,
-          min,
-          max,
-        });
-
         setData(dataPoints);
         setMinValue(min);
         setMaxValue(max);
@@ -406,7 +383,6 @@ export function useProgressGraphView(params: UseProgressGraphViewParams): UsePro
         setError(null);
       })
       .catch((err) => {
-        console.error('❌ [ProgressGraphView] Unexpected error:', err);
         setError(err);
         setLoading(false);
       });

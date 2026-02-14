@@ -43,7 +43,6 @@ export default function PremiumOfferScreen() {
       });
       
       if (progressError) {
-        console.warn('⚠️ [PremiumOffer] Failed to save progress:', progressError);
         const isNetworkError = progressError.message?.toLowerCase().includes('network') || 
                               progressError.message?.toLowerCase().includes('fetch') ||
                               progressError.message?.toLowerCase().includes('connection');
@@ -59,15 +58,13 @@ export default function PremiumOfferScreen() {
           );
           return;
         }
-        // Don't block navigation on progress save failure, but log it
       } else {
-        console.log('✅ [PremiumOffer] Progress saved: premium_offer (skipped)');
+        // Progress saved
       }
 
       // Navigate to completion screen
       router.push('/onboarding/completion');
     } catch (error: any) {
-      console.error('❌ [PremiumOffer] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

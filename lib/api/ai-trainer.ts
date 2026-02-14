@@ -7,7 +7,13 @@
  * supabase/functions/ai-trainer/index.ts
  */
 
+import Constants from 'expo-constants';
 import { supabase } from '../supabase';
+
+// Use same config source as lib/supabase.ts so AI Trainer works when URL/key come from .env OR app.json extra (e.g. EAS builds)
+const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
+const getSupabaseUrl = () => process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra.supabaseUrl ?? '';
+const getSupabaseAnonKey = () => process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? extra.supabaseAnonKey ?? '';
 
 export interface UserContextData {
   profile: {
@@ -141,14 +147,12 @@ export async function sendMessageToAI(
     // Get the current user's session token
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !session) {
-      console.error('❌ [AI Trainer] Failed to get session:', sessionError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    // Get the Supabase URL from the client
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error('❌ [AI Trainer] Supabase URL not configured');
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseAnonKey = getSupabaseAnonKey();
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { data: null, error: { message: 'Service not configured' } };
     }
 
@@ -158,7 +162,7 @@ export async function sendMessageToAI(
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
-        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        'apikey': supabaseAnonKey,
       },
       body: JSON.stringify({
         message,
@@ -168,7 +172,6 @@ export async function sendMessageToAI(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [AI Trainer] Edge Function error:', errorData);
       return { data: null, error: { message: errorData.error || 'Failed to get AI response' } };
     }
 
@@ -181,7 +184,6 @@ export async function sendMessageToAI(
 
     return { data: aiResponse, error: null };
   } catch (error: any) {
-    console.error('❌ [AI Trainer] Error sending message:', error);
     return { data: null, error };
   }
 }

@@ -233,6 +233,29 @@ Deno.serve(async (req) => {
       console.log("[revenuecat-webhook] Set premium for app_user_id:", appUserId, "type:", eventType, isCreator ? "(creator kept)" : "");
     }
 
+    // Paywall codes analytics: on first purchase, record which code was used with monthly vs yearly
+    if (eventType === "INITIAL_PURCHASE") {
+      const { data: profileRow } = await supabaseAdmin
+        .from("profiles")
+        .select("pending_paywall_code")
+        .eq("id", appUserId)
+        .single();
+      const pendingCode = profileRow?.pending_paywall_code?.trim();
+      if (pendingCode && productId) {
+        const productIdLower = String(productId).toLowerCase();
+        const isYearly = productIdLower.includes("annual") || productIdLower.includes("yearly") || productIdLower.includes("year");
+        const purchaseType = isYearly ? "yearly" : "monthly";
+        await supabaseAdmin.rpc("increment_paywall_code_purchase", {
+          p_code: pendingCode,
+          p_type: purchaseType,
+        });
+        await supabaseAdmin
+          .from("profiles")
+          .update({ pending_paywall_code: null })
+          .eq("id", appUserId);
+      }
+    }
+
     // Steps 49 & 51: Send Loops events (premium_purchased on first purchase, subscription_renewed on renewal)
     const loopsApiKey = Deno.env.get("LOOPS_API_KEY");
     if (loopsApiKey) {

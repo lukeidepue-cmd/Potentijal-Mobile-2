@@ -9,7 +9,7 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra.supabaseUrl ??
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? extra.supabaseAnonKey ?? '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('[Supabase] Missing URL or anon key. Set in .env or app.json extra.');
+  // Missing URL or anon key - set in .env or app.json extra
 }
 
 const safeUrl = supabaseUrl || 'https://placeholder.supabase.co';

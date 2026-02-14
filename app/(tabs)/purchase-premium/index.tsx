@@ -21,7 +21,7 @@ import { theme } from "../../../constants/theme";
 import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
 import { useAuth } from "../../../providers/AuthProvider";
 import { getMyProfile } from "../../../lib/api/profile";
-import { recordPaywallCodeEntered } from "../../../lib/api/settings";
+import { recordPaywallCodeEntered, setPendingPaywallCode } from "../../../lib/api/settings";
 import { completeOnboarding } from "../../../lib/api/onboarding";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
@@ -110,6 +110,9 @@ export default function PurchasePremium() {
     const trimmedCode = code.trim();
     if (trimmedCode) {
       recordPaywallCodeEntered(trimmedCode).catch(() => {});
+      setPendingPaywallCode(trimmedCode).catch(() => {});
+    } else {
+      setPendingPaywallCode("").catch(() => {});
     }
     try {
       // If user already has an active subscription or is premium (e.g. creator), don't present purchase

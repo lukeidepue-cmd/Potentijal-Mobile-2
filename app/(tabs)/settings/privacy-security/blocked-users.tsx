@@ -57,8 +57,8 @@ export default function BlockedUsersScreen() {
       if (data) {
         setBlockedUsers(data);
       }
-    } catch (error) {
-      console.error('Error loading blocked users:', error);
+    } catch {
+      // ignore
     } finally {
       setLoading(false);
     }

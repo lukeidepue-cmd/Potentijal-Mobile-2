@@ -57,7 +57,6 @@ export default function AccountBasicsScreen() {
       });
 
       if (profileError) {
-        console.error('❌ [AccountBasics] Failed to save profile:', profileError);
         const isNetworkError = profileError.message?.toLowerCase().includes('network') || 
                               profileError.message?.toLowerCase().includes('fetch') ||
                               profileError.message?.toLowerCase().includes('connection');
@@ -77,23 +76,17 @@ export default function AccountBasicsScreen() {
           setLoading(false);
           return;
         }
-      } else {
-        console.log('✅ [AccountBasics] Profile saved successfully');
       }
 
       // Save progress: mark account_basics step as completed
       const { error: progressError } = await updateOnboardingStep('account_basics');
       if (progressError) {
-        console.warn('⚠️ [AccountBasics] Failed to save progress:', progressError);
-        // Don't block navigation on progress save failure, but log it
-      } else {
-        console.log('✅ [AccountBasics] Progress saved: account_basics');
+        // Don't block navigation on progress save failure
       }
 
       // Navigate to next screen
       router.push('/onboarding/sport-selection');
     } catch (error: any) {
-      console.error('❌ [AccountBasics] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

@@ -193,7 +193,6 @@ export default function HistoryIndex() {
       if (historyType === "workouts") {
         const { data, error } = await listWorkouts({ search: query || undefined });
         if (error) {
-          console.error("Error loading workouts:", error);
           setWorkouts([]);
         } else {
           setWorkouts(data || []);
@@ -205,7 +204,6 @@ export default function HistoryIndex() {
       } else if (historyType === "practices") {
         const { data, error } = await listPractices({});
         if (error) {
-          console.error("Error loading practices:", error);
           setPractices([]);
         } else {
           // Filter by search query if provided
@@ -240,7 +238,6 @@ export default function HistoryIndex() {
       } else if (historyType === "games") {
         const { data, error } = await listGames({});
         if (error) {
-          console.error("Error loading games:", error);
           setGames([]);
         } else {
           // Filter by search query if provided
@@ -275,8 +272,8 @@ export default function HistoryIndex() {
           setStats(statsResult.data || { total: 0, streak: 0 });
         }
       }
-    } catch (error) {
-      console.error("Error loading history:", error);
+    } catch {
+      // load failed
     } finally {
       setLoading(false);
       setRefreshing(false);

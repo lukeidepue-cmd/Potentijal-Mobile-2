@@ -201,15 +201,6 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
     const startDateStr = formatDateForDB(startDate);
     const endDateStr = formatDateForDB(today);
 
-    console.log('🔍 [SkillMap] Fetching data:', {
-      mode: sportMode,
-      view: params.view,
-      exercises: params.exercises,
-      timeInterval: params.timeInterval,
-      dateRange: `${startDateStr} to ${endDateStr}`,
-      exerciseTypeRestriction,
-    });
-
     // Step 1: Fetch workouts
     supabase
       .from('workouts')
@@ -221,14 +212,12 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
       .order('performed_at', { ascending: false })
       .then(async ({ data: workouts, error: workoutError }) => {
         if (workoutError) {
-          console.error('❌ [SkillMap] Workout query error:', workoutError);
           setError(workoutError);
           setLoading(false);
           return;
         }
 
         if (!workouts || workouts.length === 0) {
-          console.log('✅ [SkillMap] No workouts found');
           setData([]);
           setHighestValue(null);
           setLoading(false);
@@ -246,14 +235,12 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
           .eq('exercise_type', exerciseTypeRestriction);
 
         if (exercisesError) {
-          console.error('❌ [SkillMap] Exercises query error:', exercisesError);
           setError(exercisesError);
           setLoading(false);
           return;
         }
 
         if (!exercises || exercises.length === 0) {
-          console.log('✅ [SkillMap] No exercises found for exercise type:', exerciseTypeRestriction);
           setData([]);
           setHighestValue(null);
           setLoading(false);
@@ -265,21 +252,11 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
         const exerciseNameMap = new Map<string, string>(); // Map exercise name to canonical name
         const selectedToCanonicalMap = new Map<string, string>(); // Map selected exercise to canonical name
 
-        console.log('🔍 [SkillMap] Matching exercises:', {
-          selectedExercises: params.exercises,
-          totalExercisesInDB: exercises.length,
-        });
-
         for (const selectedExercise of params.exercises) {
           // Find all exercises that match this selected exercise name
           const matching = exercises.filter(ex => 
             fuzzyMatchExerciseName(ex.name, selectedExercise)
           );
-
-          console.log(`🔍 [SkillMap] Matching "${selectedExercise}":`, {
-            matches: matching.length,
-            matchedNames: matching.map(m => m.name),
-          });
 
           if (matching.length > 0) {
             // Use the most common name (or first match) as canonical name
@@ -298,13 +275,10 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
               // Map all variations to canonical name
               exerciseNameMap.set(ex.name, canonicalName);
             }
-          } else {
-            console.warn(`⚠️ [SkillMap] No matches found for selected exercise: "${selectedExercise}"`);
           }
         }
 
         if (matchedExercises.length === 0) {
-          console.log('✅ [SkillMap] No exercises matched selected exercise names');
           setData([]);
           setHighestValue(null);
           setLoading(false);
@@ -321,14 +295,12 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
           .order('set_index', { ascending: true });
 
         if (setsError) {
-          console.error('❌ [SkillMap] Sets query error:', setsError);
           setError(setsError);
           setLoading(false);
           return;
         }
 
         if (!sets || sets.length === 0) {
-          console.log('✅ [SkillMap] No sets found for matched exercises');
           setData([]);
           setHighestValue(null);
           setLoading(false);
@@ -370,13 +342,6 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
           exerciseGroups.get(canonicalName)!.push(exercise);
         }
 
-        console.log('🔍 [SkillMap] Exercise groups:', {
-          groupCount: exerciseGroups.size,
-          groups: Array.from(exerciseGroups.keys()),
-          selectedExercises: params.exercises,
-          selectedToCanonical: Array.from(selectedToCanonicalMap.entries()),
-        });
-
         // Step 6: Calculate view value for each exercise group
         // Process in the order of selected exercises to maintain order
         const exerciseResults: Array<{ name: string; value: number; originalSelected: string }> = [];
@@ -388,26 +353,21 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
           
           // Handle case where selected exercise didn't match anything in database
           if (!canonicalName) {
-            console.warn(`⚠️ [SkillMap] Selected exercise "${selectedExercise}" had no matches in database`);
-            // Still add it with value 0 so user can see it was selected but has no data
             exerciseResults.push({
-              name: selectedExercise, // Use the selected name directly
+              name: selectedExercise,
               value: 0,
               originalSelected: selectedExercise,
             });
-            console.log(`✅ [SkillMap] Added unmatched exercise "${selectedExercise}" with value 0`);
             continue;
           }
 
           // Skip if we've already processed this canonical name
           if (processedCanonicalNames.has(canonicalName)) {
-            console.log(`🔵 [SkillMap] Canonical name "${canonicalName}" already processed, skipping duplicate`);
             continue;
           }
 
           const exerciseGroup = exerciseGroups.get(canonicalName);
           if (!exerciseGroup || exerciseGroup.length === 0) {
-            console.warn(`⚠️ [SkillMap] No exercise group found for canonical name: "${canonicalName}"`);
             continue;
           }
 
@@ -430,10 +390,7 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
               originalSelected: selectedExercise,
             });
             processedCanonicalNames.add(canonicalName);
-            console.log(`✅ [SkillMap] Added exercise "${canonicalName}" (selected as "${selectedExercise}") with value: ${value}`);
           } else {
-            console.warn(`⚠️ [SkillMap] No value calculated for "${canonicalName}" (selected as "${selectedExercise}") - value is null/undefined`);
-            // Still add it with value 0 so it appears in the chart (user can see it has no data)
             exerciseResults.push({
               name: canonicalName,
               value: 0,
@@ -443,13 +400,7 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
           }
         }
 
-        console.log('🔍 [SkillMap] Exercise results before sorting:', {
-          count: exerciseResults.length,
-          results: exerciseResults.map(r => ({ name: r.name, value: r.value, selected: r.originalSelected })),
-        });
-
         if (exerciseResults.length === 0) {
-          console.log('✅ [SkillMap] No valid values calculated for exercises');
           setData([]);
           setHighestValue(null);
           setLoading(false);
@@ -478,36 +429,11 @@ export function useSkillMapData(params: UseSkillMapDataParams): UseSkillMapDataR
           };
         });
 
-        // Don't sort - maintain the order of selected exercises
-        // This ensures all exercises appear in the radar chart in the order they were selected
-
-        console.log('✅ [SkillMap] Calculated skill map data:', {
-          selectedExercisesCount: params.exercises.length,
-          resultCount: skillMapData.length,
-          highestValue: maxValue,
-          selectedExercises: params.exercises,
-          resultExercises: skillMapData.map(d => d.exerciseName),
-          data: skillMapData.map(d => ({
-            name: d.exerciseName,
-            rawValue: d.rawValue,
-            percentage: d.percentage,
-            isHighest: d.isHighest,
-          })),
-        });
-
-        // Warn if we're missing exercises
-        if (skillMapData.length < params.exercises.length) {
-          console.warn(`⚠️ [SkillMap] Missing exercises! Selected ${params.exercises.length}, but only ${skillMapData.length} in results.`);
-          console.warn(`   Selected: ${params.exercises.join(', ')}`);
-          console.warn(`   Results: ${skillMapData.map(d => d.exerciseName).join(', ')}`);
-        }
-
         setData(skillMapData);
         setHighestValue(maxValue);
         setLoading(false);
       })
       .catch((err) => {
-        console.error('❌ [SkillMap] Exception:', err);
         setError(err);
         setLoading(false);
       });

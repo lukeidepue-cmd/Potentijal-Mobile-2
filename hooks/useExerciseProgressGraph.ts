@@ -71,7 +71,6 @@ export function useExerciseProgressGraph(params: {
       .then(({ data: result, error: rpcError }) => {
         setLoading(false);
         if (rpcError) {
-          console.error('Progress graph RPC error:', rpcError);
           setError(rpcError);
           setData(null);
         } else {

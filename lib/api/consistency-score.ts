@@ -215,7 +215,6 @@ export async function getConsistencyScore(
       .eq('week_start_date', weekStartDate);
 
     if (scheduledError) {
-      console.error('❌ [ConsistencyScore] Error fetching scheduled workouts:', scheduledError);
       return { data: null, error: scheduledError };
     }
 
@@ -247,7 +246,6 @@ export async function getConsistencyScore(
       .lte('performed_at', end);
 
     if (loggedError) {
-      console.error('❌ [ConsistencyScore] Error fetching logged workouts:', loggedError);
       return { data: null, error: loggedError };
     }
 
@@ -336,7 +334,6 @@ export async function getConsistencyScore(
 
     return { data: result, error: null };
   } catch (error: any) {
-    console.error('❌ [ConsistencyScore] Exception:', error);
     return { data: null, error };
   }
 }
@@ -377,8 +374,7 @@ export async function getHistoricalConsistencyScores(
       const { data: scoreData, error } = await getConsistencyScore(weekStart);
       
       if (error) {
-        console.error(`❌ [ConsistencyScore] Error fetching score for week ${weekStart}:`, error);
-        continue; // Skip this week but continue with others
+        continue;
       }
       
       if (!scoreData) {
@@ -410,7 +406,6 @@ export async function getHistoricalConsistencyScores(
     
     return { data: scores, error: null };
   } catch (error: any) {
-    console.error('❌ [ConsistencyScore] Exception in getHistoricalConsistencyScores:', error);
     return { data: null, error };
   }
 }
@@ -458,7 +453,6 @@ export async function getAverageConsistencyScore(
     
     return { data: Math.round(average * 100) / 100, error: null }; // Round to 2 decimal places
   } catch (error: any) {
-    console.error('❌ [ConsistencyScore] Exception in getAverageConsistencyScore:', error);
     return { data: null, error };
   }
 }

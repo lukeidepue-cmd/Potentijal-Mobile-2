@@ -57,10 +57,6 @@ export function usePersonalRecords(): UsePersonalRecordsResult {
       );
 
       if (recordError) {
-        console.error(
-          '❌ [usePersonalRecords] Error fetching personal records:',
-          recordError
-        );
         setError(recordError);
         setRecord(null);
       } else {
@@ -68,7 +64,6 @@ export function usePersonalRecords(): UsePersonalRecordsResult {
         setError(null);
       }
     } catch (err: any) {
-      console.error('❌ [usePersonalRecords] Exception:', err);
       setError(err);
       setRecord(null);
     } finally {

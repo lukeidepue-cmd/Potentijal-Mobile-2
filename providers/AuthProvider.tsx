@@ -40,10 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setOnboardingLoading(true);
     const { data, error } = await needsOnboarding();
     if (error) {
-      console.warn('⚠️ [Onboarding] Failed to check onboarding status:', error);
       setNeedsOnboardingStatus(null);
     } else {
-      console.log('🔵 [AuthProvider] Onboarding status check:', { needsOnboarding: data, userId: user.id });
       setNeedsOnboardingStatus(data);
     }
     setOnboardingLoading(false);
@@ -52,11 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('Supabase auth error:', error);
-      } else {
-        console.log('✅ Supabase connected successfully. Session:', session ? 'Active' : 'No session');
-      }
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -71,12 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🔵 [AuthProvider] onAuthStateChange:', { 
-        event, 
-        hasSession: !!session, 
-        userId: session?.user?.id 
-      });
-      
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -136,15 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         firstName: metadata?.display_name?.split(' ')[0] || metadata?.username,
         lastName: metadata?.display_name?.split(' ').slice(1).join(' '),
         userId: data.user.id,
-      }).then(({ error: loopsError }) => {
-        if (loopsError) {
-          console.warn('⚠️ [Loops] Failed to sync user:', loopsError);
-        } else {
-          console.log('✅ [Loops] User synced successfully - Welcome email will be sent via Journey if configured');
-          // Welcome email is sent automatically via Loops Journey when contact is added
-          // No need to call sendWelcomeEmail() - it's handled by the Journey
-        }
-      });
+      }).then(() => {});
 
       // Check onboarding status for new user (will be true for new sign-ups)
       setTimeout(() => {
@@ -173,8 +152,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sign in with OTP (works for both sign-up and sign-in automatically)
   // Sends a 6-digit code to the user's email
   const signInWithOtp = async (email: string) => {
-    console.log('🔵 [signInWithOtp] Sending OTP code to:', email);
-    
     // IMPORTANT: Do NOT include emailRedirectTo - that triggers magic links
     // Without emailRedirectTo, Supabase sends an OTP code
     const { error } = await supabase.auth.signInWithOtp({
@@ -186,71 +163,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     
-    if (error) {
-      console.error('❌ [signInWithOtp] Error sending OTP:', error);
-    } else {
-      console.log('✅ [signInWithOtp] OTP code sent successfully (6-digit code, not magic link)');
-    }
-    
     return { error };
   };
 
   // Verify OTP code
   const verifyOtp = async (email: string, token: string) => {
-    console.log('🔵 [verifyOtp] Verifying code for:', email);
-    
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
       type: 'email',
     });
     
-    if (error) {
-      console.error('❌ [verifyOtp] Verification failed:', error);
-    } else if (data?.session) {
-      console.log('✅ [verifyOtp] Code verified, session created');
-      
-      // If this is a new user (user was just created), sync to Loops
-      // Check if user was just created by checking if this is their first session
-      if (data.user) {
-        // Check if this is a new user by looking at created_at timestamp
-        // If user was created within the last few seconds, it's likely a new signup
-        const userCreatedAt = new Date(data.user.created_at);
-        const now = new Date();
-        const secondsSinceCreation = (now.getTime() - userCreatedAt.getTime()) / 1000;
-        
-        // If user was created within the last 30 seconds, treat as new signup
-        if (secondsSinceCreation < 30) {
-          console.log('🔵 [verifyOtp] New user detected, syncing to Loops');
-          
-          // Get user metadata for name if available
-          const metadata = data.user.user_metadata || {};
-          const displayName = metadata.display_name || metadata.full_name || '';
-          
-          // Sync user to Loops in the background (don't wait for it)
-          syncUserToLoops({
-            email: data.user.email || email,
-            firstName: displayName.split(' ')[0] || metadata.username || undefined,
-            lastName: displayName.split(' ').slice(1).join(' ') || undefined,
-            userId: data.user.id,
-          }).then(({ error: loopsError }) => {
-            if (loopsError) {
-              console.warn('⚠️ [Loops] Failed to sync user:', loopsError);
-            } else {
-              console.log('✅ [Loops] User synced successfully - Welcome email will be sent via Journey if configured');
-            }
-          });
-        } else {
-          console.log('🔵 [verifyOtp] Existing user, skipping Loops sync');
-        }
+    if (!error && data?.session && data.user) {
+      const userCreatedAt = new Date(data.user.created_at);
+      const secondsSinceCreation = (Date.now() - userCreatedAt.getTime()) / 1000;
+      if (secondsSinceCreation < 30) {
+        const metadata = data.user.user_metadata || {};
+        const displayName = metadata.display_name || metadata.full_name || '';
+        syncUserToLoops({
+          email: data.user.email || email,
+          firstName: displayName.split(' ')[0] || metadata.username || undefined,
+          lastName: displayName.split(' ').slice(1).join(' ') || undefined,
+          userId: data.user.id,
+        }).then(() => {});
       }
-      
-      // Check onboarding status after successful verification
-      setTimeout(() => {
-        checkOnboardingStatus();
-      }, 100);
+      setTimeout(() => checkOnboardingStatus(), 100);
     }
-    
     return { data, error };
   };
 

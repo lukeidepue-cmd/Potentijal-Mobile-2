@@ -68,17 +68,10 @@ export default function CreatorWorkouts() {
         );
       }
 
-      // Load workouts
-      console.log(`📋 [Creator Workouts] Loading workouts for profile: ${profileId}`);
       const { data, error } = await listWorkoutsForProfile({ profileId });
-      if (error) {
-        console.error('❌ [Creator Workouts] Error loading workouts:', error);
-      }
+      (void) error;
       if (data) {
-        console.log(`✅ [Creator Workouts] Loaded ${data.length} workouts:`, data.map(w => ({ id: w.id, name: w.name, mode: w.mode })));
         setWorkouts(data);
-      } else {
-        console.log(`⚠️ [Creator Workouts] No workouts found for profile: ${profileId}`);
       }
       setLoading(false);
     };

@@ -34,20 +34,14 @@ export async function uploadHighlights(files: Array<{ uri: string }>): Promise<{
         // Store directly in bucket root with user ID prefix
         const filePath = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-        console.log('📤 [Highlights] Starting upload:', { filePath, uri: file.uri });
-
         // Read file as base64 using expo-file-system legacy API
         const base64 = await FileSystem.readAsStringAsync(file.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        console.log('📤 [Highlights] File size (base64 length):', base64.length);
-
         // Convert base64 to ArrayBuffer using base64-arraybuffer
         const arrayBuffer = decode(base64);
         
-        console.log('📤 [Highlights] ArrayBuffer size:', arrayBuffer.byteLength);
-
         // Upload to Supabase storage
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('highlights')
@@ -56,13 +50,7 @@ export async function uploadHighlights(files: Array<{ uri: string }>): Promise<{
             upsert: false,
           });
 
-        if (uploadError) {
-          console.error('❌ [Highlights] Upload error:', uploadError);
-          console.error('❌ [Highlights] File path:', filePath);
-          continue;
-        }
-
-        console.log('✅ [Highlights] Upload successful:', filePath);
+        if (uploadError) continue;
 
         // Get public URL
         const { data: urlData } = supabase.storage
@@ -80,20 +68,15 @@ export async function uploadHighlights(files: Array<{ uri: string }>): Promise<{
           .single();
 
         if (insertError) {
-          console.error('❌ [Highlights] Insert error:', insertError);
-          // Try to delete the uploaded file
           await supabase.storage.from('highlights').remove([filePath]);
           continue;
         }
-
-        console.log('✅ [Highlights] Insert successful:', highlightData.id);
 
         uploadedHighlights.push({
           ...highlightData,
           video_url: urlData.publicUrl,
         } as Highlight);
-      } catch (fileError) {
-        console.error('Error processing file:', fileError);
+      } catch {
         continue;
       }
     }
@@ -128,8 +111,6 @@ export async function listHighlights(profileId: string): Promise<{ data: Highlig
           .createSignedUrl(highlight.video_path, 3600); // 1 hour expiry
 
         if (signedUrlError || !signedUrlData) {
-          // Fallback to public URL if signed URL fails
-          console.warn('⚠️ [Highlights] Signed URL failed, using public URL:', signedUrlError);
           const { data: urlData } = supabase.storage
             .from('highlights')
             .getPublicUrl(highlight.video_path);
@@ -185,7 +166,6 @@ export async function deleteHighlight(highlightId: string): Promise<{ data: bool
       .remove([highlight.video_path]);
 
     if (storageError) {
-      console.error('Error deleting from storage:', storageError);
       // Continue to delete the database record anyway
     }
 

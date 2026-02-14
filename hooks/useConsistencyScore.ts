@@ -65,10 +65,6 @@ export function useConsistencyScore(
         await getConsistencyScore(weekStartDate);
 
       if (currentWeekError) {
-        console.error(
-          '❌ [useConsistencyScore] Error fetching current week:',
-          currentWeekError
-        );
         setError(currentWeekError);
         setCurrentWeek(null);
       } else {
@@ -80,10 +76,6 @@ export function useConsistencyScore(
         await getHistoricalConsistencyScores(historicalLimit);
 
       if (historicalError) {
-        console.error(
-          '❌ [useConsistencyScore] Error fetching historical weeks:',
-          historicalError
-        );
         // Don't set error here - we might still have current week data
         setHistoricalWeeks([]);
       } else {
@@ -95,17 +87,12 @@ export function useConsistencyScore(
         await getAverageConsistencyScore(weeksLimitForAverage);
 
       if (averageError) {
-        console.error(
-          '❌ [useConsistencyScore] Error fetching average score:',
-          averageError
-        );
         // Don't set error here - we might still have other data
         setAverageScore(null);
       } else {
         setAverageScore(averageData);
       }
     } catch (err: any) {
-      console.error('❌ [useConsistencyScore] Exception:', err);
       setError(err);
     } finally {
       setIsLoading(false);

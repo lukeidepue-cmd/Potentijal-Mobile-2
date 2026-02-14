@@ -165,8 +165,7 @@ export default function Terms() {
         <Text style={styles.sectionTitle}>18. Contact</Text>
         <Text style={styles.contentText}>
           For questions about these Terms or the Service:{"\n\n"}
-          Email: support@potentijal.com{"\n\n"}
-          Mailing address: Replace with your business or support address before publishing the app.
+          Email: lukeidepue@gmail.com
         </Text>
       </ScrollView>
     </View>

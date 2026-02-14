@@ -78,14 +78,6 @@ export function useExerciseProgressGraphDirect(params: {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
 
-    console.log('🔍 Querying workouts:', {
-      mode: sportMode,
-      query: params.query,
-      metric: params.metric,
-      days: params.days,
-      dateRange: `${startDateStr} to ${endDateStr}`,
-    });
-
     // Query workouts directly - use separate queries to avoid nested query issues
     supabase
       .from('workouts')
@@ -98,13 +90,10 @@ export function useExerciseProgressGraphDirect(params: {
       .limit(1000) // Reasonable limit to ensure we get all recent workouts
       .then(async ({ data: workouts, error: workoutError }) => {
         if (workoutError) {
-          console.error('❌ Workout query error:', workoutError);
           setError(workoutError);
           setLoading(false);
           return;
         }
-
-        console.log('✅ Found workouts:', workouts?.length || 0);
 
         if (!workouts || workouts.length === 0) {
           setData([]);
@@ -120,13 +109,10 @@ export function useExerciseProgressGraphDirect(params: {
           .in('workout_id', workoutIds);
 
         if (exercisesError) {
-          console.error('❌ Exercises query error:', exercisesError);
           setError(exercisesError);
           setLoading(false);
           return;
         }
-
-        console.log('✅ Found exercises:', exercises?.length || 0);
 
         // Filter exercises by fuzzy name match - EXTREMELY lenient
         const queryLower = params.query.toLowerCase().trim();
@@ -178,8 +164,6 @@ export function useExerciseProgressGraphDirect(params: {
           }
         });
 
-        console.log('✅ Matching exercises:', matchingExercises.length);
-
         if (matchingExercises.length === 0) {
           setData([]);
           setLoading(false);
@@ -195,13 +179,10 @@ export function useExerciseProgressGraphDirect(params: {
           .order('set_index');
 
         if (setsError) {
-          console.error('❌ Sets query error:', setsError);
           setError(setsError);
           setLoading(false);
           return;
         }
-
-        console.log('✅ Found sets:', sets?.length || 0);
 
         // Create a map of exercise_id -> sets
         const setsByExercise = new Map<string, any[]>();
@@ -272,8 +253,6 @@ export function useExerciseProgressGraphDirect(params: {
           });
         });
 
-        console.log('✅ Metric values calculated:', metricValues.length);
-
         // Bucket the data
         const buckets: Map<number, number[]> = new Map();
         const bucketStartDates: Map<number, string> = new Map();
@@ -321,15 +300,11 @@ export function useExerciseProgressGraphDirect(params: {
           }
         }
 
-        console.log('✅ Final result:', result.length, 'buckets with data');
-        console.log('📊 Result data:', result);
-
         setData(result.sort((a, b) => a.bucketIndex - b.bucketIndex));
         setLoading(false);
         setError(null);
       })
       .catch((err) => {
-        console.error('Unexpected error in progress graph:', err);
         setError(err);
         setLoading(false);
       });

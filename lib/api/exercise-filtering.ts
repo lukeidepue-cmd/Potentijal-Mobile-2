@@ -50,13 +50,6 @@ export async function getAvailableExercisesForView(
       return { data: [], error: { message: `View "${viewName}" not found for mode ${sportMode}` } };
     }
 
-    console.log('🔍 [ExerciseFiltering] Getting exercises for view:', {
-      mode: sportMode,
-      view: viewName,
-      exerciseTypeRestriction,
-      timeInterval,
-    });
-
     // Build workout query with time interval filter
     let workoutQuery = supabase
       .from('workouts')
@@ -128,16 +121,10 @@ export async function getAvailableExercisesForView(
       for (const [norm, original] of normalizedNames.entries()) {
         // If names are very similar (fuzzy match), use the existing one
         if (areNamesSimilar(normalized, norm)) {
-          console.log(`🔍 [ExerciseFiltering] Grouping similar names: "${name}" with "${original}"`);
-          // Use the longer/more complete version
           if (name.length > original.length) {
             exerciseNames.delete(original);
             exerciseNames.add(name);
             normalizedNames.set(normalized, name);
-            console.log(`   → Kept longer name: "${name}"`);
-          } else {
-            // Keep existing
-            console.log(`   → Kept existing name: "${original}"`);
           }
           found = true;
           break;
@@ -150,15 +137,9 @@ export async function getAvailableExercisesForView(
       }
     });
 
-    console.log('🔍 [ExerciseFiltering] Final exercise names:', Array.from(exerciseNames).sort());
-
     const uniqueNames = Array.from(exerciseNames).sort();
-
-    console.log('✅ [ExerciseFiltering] Found exercises:', uniqueNames.length);
-
     return { data: uniqueNames, error: null };
   } catch (error: any) {
-    console.error('❌ [ExerciseFiltering] Error:', error);
     return { data: [], error };
   }
 }

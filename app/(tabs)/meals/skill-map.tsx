@@ -249,13 +249,6 @@ function SkillMapVisualization({
     return null;
   }
 
-  // Debug: Log data received
-  console.log('🔍 [SkillMapVisualization] Rendering chart:', {
-    dataLength: data.length,
-    exerciseCount,
-    exerciseNames: data.map(d => d.exerciseName),
-  });
-
   const { label: metricLabel, unit } = getMetricLabelAndUnit(mode, viewName);
 
   // Edge case: Single exercise selected
@@ -718,7 +711,6 @@ export default function SkillMapScreen() {
   // Wait for modeLoading to complete to ensure we get the correct primary sport
   useEffect(() => {
     if (!modeLoading && currentMode) {
-      console.log('✅ [SkillMap] Setting mode from currentMode:', currentMode);
       setSelectedMode(currentMode);
     }
   }, [currentMode, modeLoading]);
@@ -798,15 +790,13 @@ export default function SkillMapScreen() {
     getAvailableExercisesForView(sportMode, selectedView, timeInterval)
       .then(({ data, error }) => {
         if (error) {
-          console.error('❌ [SkillMap] Error loading exercises:', error);
           setAvailableExercises([]);
         } else {
           setAvailableExercises(data || []);
         }
         setLoadingExercises(false);
       })
-      .catch((err) => {
-        console.error('❌ [SkillMap] Exception loading exercises:', err);
+      .catch(() => {
         setAvailableExercises([]);
         setLoadingExercises(false);
       });

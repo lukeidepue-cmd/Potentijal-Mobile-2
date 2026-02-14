@@ -134,7 +134,6 @@ export default function Profile() {
         setProfile(profileResult.data);
         // Only set pfpUri if we have a valid URL, and don't clear if we already have one
         if (profileResult.data.profile_image_url) {
-          console.log('📸 [Profile] Setting profile image URL:', profileResult.data.profile_image_url);
           setPfpUri(profileResult.data.profile_image_url);
         } else if (!pfpUri) {
           // Only clear if we don't already have a URI set
@@ -142,7 +141,6 @@ export default function Profile() {
         }
       }
       if (statsResult.data) {
-        console.log(`📊 [Profile] Stats for own profile:`, statsResult.data);
         setStats(statsResult.data);
       }
     } else {
@@ -166,10 +164,6 @@ export default function Profile() {
       }
 
       // Check privacy settings - MUST check before loading profile
-      console.log(`🔒 [Profile] ===== START Privacy Check for profile: ${viewingProfileId} =====`);
-      console.log(`🔒 [Profile] Current user ID: ${currentUser?.id || 'none'}`);
-      console.log(`🔒 [Profile] Viewing profile ID: ${viewingProfileId}`);
-      
       const { data: privacySettings, error: privacyError } = await supabase
         .from('user_privacy_settings')
         .select('*')
@@ -177,27 +171,10 @@ export default function Profile() {
         .maybeSingle(); // Use maybeSingle to handle case where no settings exist
 
       if (privacyError) {
-        if (privacyError.code === 'PGRST116') {
-          console.log(`🔒 [Profile] No privacy settings found (PGRST116) - defaulting to public`);
-        } else {
-          console.error('❌ [Profile] Error fetching privacy settings:', privacyError);
-          console.error('❌ [Profile] Error code:', privacyError.code);
-          console.error('❌ [Profile] Error message:', privacyError.message);
-          // If RLS is blocking, we might get an error or empty result
-          // Check if it's an RLS issue
-          if (privacyError.code === '42501' || privacyError.message?.includes('permission') || privacyError.message?.includes('policy')) {
-            console.warn('⚠️ [Profile] WARNING: This might be an RLS policy issue preventing access to privacy settings');
-          }
-        }
+        // PGRST116 = no rows; other errors may indicate RLS or missing settings
       }
 
-      console.log(`🔒 [Profile] Privacy settings data:`, privacySettings ? JSON.stringify(privacySettings, null, 2) : 'null');
-      
       // If privacySettings is null and no error, it means no settings exist (default to public)
-      // But log it for debugging
-      if (!privacySettings && !privacyError) {
-        console.log(`🔒 [Profile] No privacy settings row exists for user ${viewingProfileId} - defaulting to public`);
-      }
 
       // Check if current user is following the profile
       let isFollowing = false;
@@ -210,21 +187,15 @@ export default function Profile() {
           .eq('following_id', viewingProfileId)
           .maybeSingle(); // Use maybeSingle
         isFollowing = !!followData;
-        console.log(`🔒 [Profile] Current user ${currentUser.id} is following ${viewingProfileId}: ${isFollowing}`);
-        if (followError && followError.code !== 'PGRST116') {
-          console.error('❌ [Profile] Error checking follow status:', followError);
-        }
       }
 
       // Apply privacy checks - if settings exist, enforce them strictly
       if (privacySettings) {
         // Get visibility setting - handle both string and potential null/undefined
         const profileVisibility = privacySettings.who_can_see_profile?.toLowerCase() || 'everyone';
-        console.log(`🔒 [Profile] Privacy settings found: who_can_see_profile="${profileVisibility}" (type: ${typeof profileVisibility}), isFollowing=${isFollowing}`);
-        
+
         // If set to 'none', no one can view (except self, but we're already checking that)
         if (profileVisibility === 'none') {
-          console.log(`🚫 [Profile] BLOCKING ACCESS - profile visibility is 'none'`);
           Alert.alert("Private Profile", "This profile is private.");
           router.back();
           setLoading(false);
@@ -234,24 +205,13 @@ export default function Profile() {
         // If set to 'followers', only followers can view
         if (profileVisibility === 'followers') {
           if (!isFollowing) {
-            console.log(`🚫 [Profile] BLOCKING ACCESS - profile visibility is 'followers' and user is NOT following`);
             Alert.alert("Private Profile", "This profile is private. Follow to view.");
             router.back();
             setLoading(false);
             return;
-          } else {
-            console.log(`✅ [Profile] ALLOWING ACCESS - profile visibility is 'followers' and user IS following`);
           }
         }
-        
-        // If set to 'everyone', allow viewing (continue below)
-        if (profileVisibility === 'everyone') {
-          console.log(`✅ [Profile] ALLOWING ACCESS - profile visibility is 'everyone'`);
-        }
-      } else {
-        console.log(`✅ [Profile] No privacy settings found - defaulting to public (allowing access)`);
       }
-      console.log(`🔒 [Profile] ===== END Privacy Check - PROCEEDING TO LOAD PROFILE =====`);
       // If no privacy settings exist, default to public (allow viewing)
 
       const { data: profileData, error: profileError } = await supabase
@@ -264,7 +224,6 @@ export default function Profile() {
         setProfile(profileData as Profile);
         // Only set pfpUri if we have a valid URL
         if (profileData.profile_image_url) {
-          console.log('📸 [Profile] Setting profile image URL:', profileData.profile_image_url);
           setPfpUri(profileData.profile_image_url);
         } else {
           setPfpUri(null);
@@ -273,10 +232,7 @@ export default function Profile() {
 
       const statsResult = await getProfileStats(viewingProfileId);
       if (statsResult.data) {
-        console.log(`📊 [Profile] Stats for ${viewingProfileId}:`, statsResult.data);
         setStats(statsResult.data);
-      } else if (statsResult.error) {
-        console.error(`❌ [Profile] Stats error for ${viewingProfileId}:`, statsResult.error);
       }
     }
     
@@ -306,6 +262,9 @@ export default function Profile() {
   /* -------- Load highlights -------- */
   const [clips, setClips] = useState<Highlight[]>([]);
   const [videoAspectRatios, setVideoAspectRatios] = useState<Map<string, number>>(new Map());
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadLabel, setUploadLabel] = useState('');
   
   useEffect(() => {
     if (!viewingProfileId) return;
@@ -315,82 +274,46 @@ export default function Profile() {
       if (!isViewingOwnProfile) {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (currentUser) {
-          console.log(`🔒 [Highlights] Checking privacy for profile: ${viewingProfileId}`);
           const { data: privacySettings, error: privacyError } = await supabase
             .from('user_privacy_settings')
             .select('who_can_see_highlights')
             .eq('user_id', viewingProfileId)
             .maybeSingle(); // Use maybeSingle
 
-          if (privacyError && privacyError.code !== 'PGRST116') {
-            console.error('❌ [Highlights] Error fetching privacy settings:', privacyError);
-          }
-
           if (privacySettings) {
             const highlightsVisibility = privacySettings.who_can_see_highlights;
-            console.log(`🔒 [Highlights] Privacy settings found: who_can_see_highlights=${highlightsVisibility}`);
-            
-            // If set to 'none', no one can view highlights
+
             if (highlightsVisibility === 'none') {
-              console.log(`🚫 [Highlights] Blocking access - highlights visibility is 'none'`);
               setClips([]);
               return;
             }
-            
-            // If set to 'followers', only followers can view
+
             if (highlightsVisibility === 'followers') {
-              const { data: followData, error: followError } = await supabase
+              const { data: followData } = await supabase
                 .from('follows')
-                .select('follower_id') // follows table has composite primary key, no 'id' column
+                .select('follower_id')
                 .eq('follower_id', currentUser.id)
                 .eq('following_id', viewingProfileId)
-                .maybeSingle(); // Use maybeSingle
-              
+                .maybeSingle();
+
               if (!followData) {
-                // Not following, can't view highlights
-                console.log(`🚫 [Highlights] Blocking access - highlights visibility is 'followers' and user is not following`);
                 setClips([]);
                 return;
               }
-              console.log(`✅ [Highlights] User is following - allowing highlights`);
             }
-            // If 'everyone' or user is following, continue to load highlights below
-            console.log(`✅ [Highlights] Privacy check passed - loading highlights`);
-          } else {
-            console.log(`✅ [Highlights] No privacy settings found - defaulting to public`);
           }
           // If no privacy settings exist, default to public (load highlights)
         }
       }
 
-      console.log(`📹 [Highlights] ===== START Loading highlights for profile: ${viewingProfileId} =====`);
       const { data, error } = await listHighlights(viewingProfileId);
       if (data) {
-        console.log(`📹 [Highlights] Raw data from API: ${data.length} highlights`);
         const validClips = data
-          .filter((h) => {
-            const isValid = h.video_url && h.video_url.trim() !== '';
-            if (!isValid) {
-              console.log(`📹 [Highlights] Filtering out highlight ${h.id} - no valid video_url`);
-            }
-            return isValid;
-          })
+          .filter((h) => h.video_url && h.video_url.trim() !== '')
           .map((h) => ({ id: h.id, uri: h.video_url || '', video_url: h.video_url }));
         setClips(validClips);
-        console.log(`📹 [Highlights] Valid clips: ${validClips.length} out of ${data.length} total`);
-        console.log(`📹 [Highlights] Current stats.highlights before update: ${stats.highlights}`);
-        
-        // Update stats to reflect actual visible highlights count
-        // This will override the count from getProfileStats with the actual valid count
-        setStats(prev => {
-          const newStats = { ...prev, highlights: validClips.length };
-          console.log(`📹 [Highlights] Updated stats.highlights from ${prev.highlights} to ${newStats.highlights}`);
-          return newStats;
-        });
-      } else if (error) {
-        console.error('❌ [Highlights] Load error:', error);
+        setStats(prev => ({ ...prev, highlights: validClips.length }));
       }
-      console.log(`📹 [Highlights] ===== END =====`);
     };
 
     loadHighlights();
@@ -431,7 +354,6 @@ export default function Profile() {
       clearInterval(progressInterval);
       setUploadProgress(1);
       if (error) {
-        console.error('❌ [Profile] Upload error details:', error);
         setIsUploading(false);
         setUploadProgress(0);
         Alert.alert("Error", `Failed to upload profile picture: ${error.message || 'Unknown error'}`);
@@ -463,13 +385,10 @@ export default function Profile() {
 
   /* -------- Highlights -------- */
   const addHighlight = async () => {
-    // Double-check premium status (defensive)
     if (!canAddHighlights) {
-      console.log('🔒 [Profile] Add Highlights blocked - not premium');
       setShowUpgradeModal(true);
       return;
     }
-    console.log('✅ [Profile] Add Highlights allowed - user is premium');
     const res = await ImagePicker.launchImageLibraryAsync({
       ...(mediaTypesVideo as any),
       quality: 1,
@@ -499,7 +418,6 @@ export default function Profile() {
       clearInterval(progressInterval);
       setUploadProgress(1);
       if (error) {
-        console.error('❌ [Highlights] Upload error details:', error);
         setIsUploading(false);
         setUploadProgress(0);
         Alert.alert("Error", `Failed to upload highlights: ${error.message || 'Unknown error'}`);
@@ -749,18 +667,10 @@ export default function Profile() {
                   cache: 'reload' // Force reload to avoid stale cache
                 }} 
                 style={styles.pfpImg}
-                onError={(error) => {
-                  // Silently handle image load errors (old corrupted files may still be in DB)
-                  // Only log in development
-                  if (__DEV__) {
-                    console.warn('⚠️ [Profile Image] Failed to load (may be corrupted or missing):', pfpUri);
-                  }
-                  // Clear the broken image URL so placeholder shows
+                onError={() => {
                   setPfpUri(null);
                 }}
-                onLoad={() => {
-                  console.log('✅ [Profile Image] Loaded successfully:', pfpUri);
-                }}
+                onLoad={() => {}}
               />
             ) : (
               <View style={styles.pfpPlaceholder}>
@@ -842,13 +752,10 @@ export default function Profile() {
                   !canAddHighlights && { opacity: 0.5 }
                 ]} 
                 onPress={() => {
-                  console.log('🔍 [Profile] Add Highlights button pressed, canAddHighlights:', canAddHighlights);
                   if (!canAddHighlights) {
-                    console.log('🔒 [Profile] Showing upgrade modal for Add Highlights');
                     setShowUpgradeModal(true);
                     return;
                   }
-                  console.log('✅ [Profile] Calling addHighlight function');
                   addHighlight();
                 }}
               >
@@ -969,22 +876,13 @@ export default function Profile() {
               isMuted={false}
               volume={1.0}
               useNativeControls={false}
-              onError={(error: any) => {
-                // Silently handle video load errors (old corrupted files may still be in DB)
-                // Only log in development
-                if (__DEV__) {
-                  console.warn('⚠️ [Video] Preview failed to load (may be corrupted or missing)');
-                }
-                // Remove the broken video from clips
+              onError={() => {
                 setClips(prev => prev.filter(c => c.id !== clips[0].id));
               }}
               onLoad={(status: any) => {
-                console.log('✅ [Video] Preview loaded:', clips[0].video_url || clips[0].uri);
-                // Get video dimensions to determine aspect ratio (for fullscreen)
                 if (status.naturalSize) {
                   const { width, height } = status.naturalSize;
                   const aspectRatio = width / height;
-                  console.log(`📐 [Video] Aspect ratio: ${aspectRatio} (${width}x${height})`);
                   setVideoAspectRatios(prev => {
                     const newMap = new Map(prev);
                     newMap.set(clips[0].id, aspectRatio);
@@ -992,9 +890,7 @@ export default function Profile() {
                   });
                 }
               }}
-              onLoadStart={() => {
-                console.log('🔄 [Video] Preview loading started:', clips[0].video_url || clips[0].uri);
-              }}
+              onLoadStart={() => {}}
             />
           </Pressable>
         )}
@@ -1004,10 +900,7 @@ export default function Profile() {
       {showUpgradeModal && (
         <UpgradeModal
           visible={showUpgradeModal}
-          onClose={() => {
-            console.log('🔍 [Profile] Closing upgrade modal');
-            setShowUpgradeModal(false);
-          }}
+          onClose={() => setShowUpgradeModal(false)}
           featureName="Add Highlights"
         />
       )}
@@ -1036,18 +929,10 @@ export default function Profile() {
                   isMuted={false}
                   volume={1.0}
                   useNativeControls={false}
-                  onError={(error: any) => {
-                    // Silently handle video load errors (old corrupted files may still be in DB)
-                    // Only log in development
-                    if (__DEV__) {
-                      console.warn('⚠️ [Video] Fullscreen failed to load (may be corrupted or missing)');
-                    }
-                    // Remove the broken video from clips
+                  onError={() => {
                     setClips(prev => prev.filter(c => c.id !== item.id));
                   }}
                   onLoad={(status: any) => {
-                    console.log('✅ [Video] Fullscreen loaded:', item.video_url || item.uri);
-                    // Get video dimensions to determine aspect ratio
                     if (status.naturalSize) {
                       const { width, height } = status.naturalSize;
                       const aspectRatio = width / height;
@@ -1058,9 +943,7 @@ export default function Profile() {
                       });
                     }
                   }}
-                  onLoadStart={() => {
-                    console.log('🔄 [Video] Fullscreen loading started:', item.video_url || item.uri);
-                  }}
+                  onLoadStart={() => {}}
                 />
               </View>
             )}

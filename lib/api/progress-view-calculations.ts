@@ -258,22 +258,6 @@ function calculateDrillView(
     }
   }
 
-  // Debug logging for troubleshooting
-  if (exercises.length > 0 && bucketSets.length > 0) {
-    const exerciseNames = exercises.map(e => e.name).join(', ');
-    console.log(`🔍 [DrillView] Bucket ${bucket.bucketIndex} (${bucket.startDateStr} to ${bucket.endDateStr}):`, {
-      exerciseNames,
-      exerciseCount: exercises.length,
-      exerciseIds: exerciseIds.length,
-      totalSets: bucketSets.length,
-      setsWithReps: bucketSets.filter(s => s.reps != null).length,
-      setsWithNullReps,
-      setsWithZeroReps,
-      totalReps,
-      hasValidData,
-    });
-  }
-
   return hasValidData ? totalReps : null;
 }
 
@@ -298,17 +282,6 @@ function calculateCompletionView(
 
   const exerciseIds = exercises.map(e => e.id);
   const bucketSets = sets.filter(s => exerciseIds.includes(s.workout_exercise_id));
-
-  console.log('🔍 [CompletionView] Processing sets:', {
-    totalSets: bucketSets.length,
-    setsWithCompleted: bucketSets.filter(s => s.completed != null && s.completed !== undefined).length,
-    sampleSet: bucketSets[0] ? {
-      id: bucketSets[0].id,
-      reps: bucketSets[0].reps,
-      completed: bucketSets[0].completed,
-      completed_type: typeof bucketSets[0].completed,
-    } : null,
-  });
 
   for (const set of bucketSets) {
     // Include sets where completed is 0 (valid value meaning 0 reps completed)
@@ -338,16 +311,6 @@ function calculateCompletionView(
         const parsed = Number(set.completed);
         completedReps = isNaN(parsed) ? 0 : parsed;
       }
-      
-      // Debug logging
-      console.log('🔍 [CompletionView] Set calculation:', {
-        set_id: set.id,
-        reps: totalReps,
-        completed_raw: set.completed,
-        completed_type: typeof set.completed,
-        completedReps,
-        percentage: completedReps > totalReps ? 100 : (completedReps / totalReps) * 100,
-      });
       
       // If completed > reps, treat as 100%
       const percentage = completedReps > totalReps ? 100 : (completedReps / totalReps) * 100;
@@ -606,7 +569,6 @@ export function calculateViewValue(
       return calculateRallyView(exercises, sets, bucket);
     
     default:
-      console.warn(`Unknown calculation type: ${calculationType}`);
       return null;
   }
 }
@@ -831,22 +793,6 @@ function calculateDrillViewForInterval(
     } else {
       setsWithNullReps++;
     }
-  }
-
-  // Debug logging for troubleshooting
-  if (exercises.length > 0 && intervalSets.length > 0) {
-    const exerciseNames = exercises.map(e => e.name).join(', ');
-    console.log(`🔍 [DrillViewForInterval]:`, {
-      exerciseNames,
-      exerciseCount: exercises.length,
-      exerciseIds: exerciseIds.length,
-      totalSets: intervalSets.length,
-      setsWithReps: intervalSets.filter(s => s.reps != null).length,
-      setsWithNullReps,
-      setsWithZeroReps,
-      totalReps,
-      hasValidData,
-    });
   }
 
   return hasValidData ? totalReps : null;
@@ -1115,7 +1061,6 @@ export function calculateViewValueForInterval(
       return calculateRallyViewForInterval(exercises, sets);
     
     default:
-      console.warn(`Unknown calculation type: ${calculationType}`);
       return null;
   }
 }

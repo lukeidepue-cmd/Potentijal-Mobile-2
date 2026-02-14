@@ -1,7 +1,21 @@
 # App State Guide - Complete Context Documentation
 
-**Last Updated:** Current Session  
+**Last Updated:** End of session (console log cleanup, payments & progress doc update)  
 **Purpose:** This document provides complete context about the current state of the app for new chat sessions. Use this as the source of truth for understanding the app architecture, patterns, and implementation details.
+
+---
+
+## Where We Left Off (Session Summary)
+
+This section gives the next chat a precise snapshot so you can pick up seamlessly.
+
+- **Payments & Subscriptions:** RevenueCat is fully integrated: in-app purchase screen (`purchase-premium`), Restore Purchases and Manage Subscription in settings, webhook (`revenuecat-webhook`) and `sync-subscription` Edge Functions, `Purchases.configure` / `Purchases.logIn` in root layout, profile refresh on app foreground. Premium/creator status is in `profiles` (`is_premium`, `plan`). `useFeatures()` gates: games, practices, AI Trainer, highlights, creator workouts, more sports. Trial-ending-soon Edge Function exists for Loops reminders.
+- **Progress Tab:** Fully implemented. Tab is under `(tabs)/meals/`: main carousel (`index.tsx`), Progress Graphs, Skill Map, Consistency Score, Training Statistics, plus purchase-premium entry. Hooks: `useProgressGraphView`, `useSkillMapData`, `useConsistencyScore`, `usePersonalRecords`, `useMostLoggedExercises`, `useExerciseProgressGraphDirect`. APIs: `exercise-filtering`, `progress-view-calculations`, `consistency-score`, `personal-records`, `most-logged-exercises`. Victory Native used for charts.
+- **Notifications:** Implemented (not “ready for implementation”). `lib/notifications/notifications.ts`: workout reminders (per-mode, 11:21 PM), consistency score (weekly Sunday 8 AM, premium only), AI Trainer reminder (every 7 workouts), cancel-today’s-workout on save. Preferences in settings; root layout calls `scheduleAllWorkoutNotifications` and `scheduleConsistencyScoreNotification` when user enters main app. All console logs removed from this file.
+- **Console log cleanup:** Large cleanup done to reduce logs and improve load. Removed from: `_layout.tsx`, `lib/api/` (loops, ai-trainer, settings, profile, workouts, exercise-filtering, consistency-score, personal-records, most-logged-exercises, progress-view-calculations), `hooks/` (useFeatures, useProgressGraphView, useMostLoggedExercises, useAvailableModes, useExerciseProgressGraphDirect, useConsistencyScore, usePersonalRecords), `lib/notifications/notifications.ts`, `app/(tabs)/` (workouts, workout-summary, creator-workouts), `app/onboarding/` (premium-offer, email-entry, account-basics, app-intro, sport-selection, training-intent, notifications, completion, email-verification), `app/(tabs)/settings/` (notifications, account/email-password, privacy-security, my-sports, blocked-users), `app/(tabs)/(home)/schedule-week.tsx`. **Still have console logs:** `app/(tabs)/profile/index.tsx` (many), `app/(tabs)/test-onboarding.tsx`, `lib/deep-links.ts`, `providers/AuthProvider.tsx`, `providers/SettingsContext.tsx`, `lib/api/` (schedule, social, highlights), `components/AITrainerChat.tsx`, `hooks/useExerciseProgressGraph.ts`, and **Supabase Edge Functions** (revenuecat-webhook, sync-subscription, trial-ending-soon, ai-trainer, loops, delete-auth-user) — server-side, optional to trim.
+- **Profile tab:** Still controlled by `PROFILE_FEATURES_ENABLED` (default `false`). When enabled: profile, highlights, creator workouts, privacy, blocked users, etc.
+
+**Quick reference for next session:** To continue seamlessly, read [Payments & Subscriptions (RevenueCat)](#payments--subscriptions-revenuecat), [Progress Tab (Meals)](#progress-tab-meals), [Notifications (Implemented)](#notifications-implemented), and [Console Log Cleanup](#console-log-cleanup). Client-side console logs have been removed; only Edge Functions keep server-side logs.
 
 ---
 
@@ -16,10 +30,14 @@
 7. [UI/UX System](#uiux-system)
 8. [API Structure](#api-structure)
 9. [Feature Flags](#feature-flags)
-10. [Recent UI/UX Improvements](#recent-uiux-improvements)
-11. [Build & Distribution: Development Build (EAS)](#build--distribution-development-build-eas)
-12. [Important Patterns & Conventions](#important-patterns--conventions)
-13. [Next Steps: Loops & Notifications](#next-steps-loops--notifications)
+10. [Payments & Subscriptions (RevenueCat)](#payments--subscriptions-revenuecat)
+11. [Progress Tab (Meals)](#progress-tab-meals)
+12. [Notifications (Implemented)](#notifications-implemented)
+13. [Console Log Cleanup](#console-log-cleanup)
+14. [Recent UI/UX Improvements](#recent-uiux-improvements)
+15. [Build & Distribution: Development Build (EAS)](#build--distribution-development-build-eas)
+16. [Important Patterns & Conventions](#important-patterns--conventions)
+17. [Next Steps: Loops & Notifications](#next-steps-loops--notifications)
 
 ---
 
@@ -57,7 +75,7 @@ This is a React Native fitness/sports tracking app built with Expo. The app allo
 - **Expo Blur:** ~15.0.8 (Glassmorphism effects)
 - **Expo Linear Gradient:** ~15.0.8 (Gradients)
 - **React Navigation:** Bottom tabs, Stack navigation
-- **Expo Notifications:** ~0.32.16 (Push notifications - ready for implementation)
+- **Expo Notifications:** ~0.32.16 (Local scheduled notifications — implemented; see Notifications section)
 - **Victory Native:** ^41.20.1 (Charts/graphs)
 
 ### Fonts
@@ -83,10 +101,11 @@ my-first-app/
 │   │   │   │   └── add-practice.tsx
 │   │   │   └── [other sports]/  # Similar structure for other sports
 │   │   ├── workouts.tsx         # Workouts tab (lifting workouts)
-│   │   ├── meals/               # Progress tab (stats, graphs)
+│   │   ├── meals/               # Progress tab: index (carousel), progress-graphs, skill-map, consistency-score, training-statistics, purchase-premium
 │   │   ├── history/             # History tab (past workouts/games/practices)
 │   │   ├── profile/             # Profile tab (hidden if PROFILE_FEATURES_ENABLED = false)
-│   │   └── settings/            # Settings screens
+│   │   ├── purchase-premium/    # RevenueCat purchase screen (also linked from meals stack)
+│   │   └── settings/            # Settings (notifications, account, privacy-security, sports-training, premium, etc.)
 │   └── onboarding/              # Onboarding flow
 │       ├── _layout.tsx
 │       ├── welcome.tsx
@@ -114,12 +133,27 @@ my-first-app/
 │       ├── AnimatedTabBarIcon.tsx
 │       ├── TabBarBackground.tsx
 │       └── CustomRefreshControl.tsx
+├── supabase/
+│   └── functions/               # Edge Functions
+│       ├── revenuecat-webhook/  # RevenueCat → profiles (is_premium, plan)
+│       ├── sync-subscription/   # Restore purchases: RevenueCat → profiles
+│       ├── trial-ending-soon/    # Loops trial reminder emails (cron)
+│       ├── ai-trainer/          # AI Trainer chat backend
+│       ├── loops/               # Loops (if used)
+│       └── delete-auth-user/    # Account deletion
 ├── constants/
 │   ├── theme.ts                 # Design system (colors, typography, spacing)
 │   └── features.ts              # Feature flags
 ├── hooks/
-│   ├── useFeatures.ts           # Feature flag hook
+│   ├── useFeatures.ts           # Premium/creator feature access (getMyProfile, isPremium, canLogGames, etc.)
 │   ├── useColorScheme.ts        # Theme hook
+│   ├── useProgressGraphView.ts  # Progress tab: bucket data for progress-graphs
+│   ├── useSkillMapData.ts       # Progress tab: skill map data
+│   ├── useConsistencyScore.ts   # Progress tab: consistency score
+│   ├── usePersonalRecords.ts    # Progress tab: PRs
+│   ├── useMostLoggedExercises.ts # Progress tab: most logged exercises
+│   ├── useExerciseProgressGraphDirect.ts # Progress: direct metric over time
+│   ├── useAvailableModes.ts     # Available sport modes from profile
 │   └── useExerciseProgressGraph.ts
 ├── lib/
 │   ├── api/                     # API functions
@@ -129,10 +163,21 @@ my-first-app/
 │   │   ├── history.ts
 │   │   ├── profile.ts
 │   │   ├── onboarding.ts
+│   │   ├── settings.ts          # updateEmail, deleteAccount, reorderSports, getUserPreferences, etc.
 │   │   ├── loops.ts             # Loops email integration
+│   │   ├── exercise-filtering.ts # getAvailableExercisesForView (Progress tab)
+│   │   ├── progress-view-calculations.ts # Drill/completion/etc. bucket value calcs
+│   │   ├── consistency-score.ts
+│   │   ├── personal-records.ts
+│   │   ├── most-logged-exercises.ts
+│   │   ├── schedule.ts
+│   │   ├── ai-trainer.ts
 │   │   └── [other APIs]
-│   ├── supabase.ts              # Supabase client
-│   └── types.ts                 # TypeScript types
+│   ├── notifications/           # Local scheduled notifications (workout, consistency, AI reminder)
+│   │   └── notifications.ts
+│   ├── supabase.ts
+│   ├── deep-links.ts            # Email verification / OAuth callback handling
+│   └── types.ts
 ├── providers/
 │   ├── AuthProvider.tsx         # Authentication context
 │   ├── ModeContext.tsx          # Sport mode context
@@ -428,6 +473,136 @@ href: PROFILE_FEATURES_ENABLED ? undefined : null
 
 ---
 
+## Payments & Subscriptions (RevenueCat)
+
+**Status:** Fully integrated. Purchases unlock premium in the app via Supabase `profiles` and the RevenueCat webhook.
+
+### Client (App)
+
+- **Root layout (`app/_layout.tsx`):**
+  - RevenueCat configured at launch: `Purchases.configure({ apiKey, appUserID: user?.id ?? 'anonymous' })` (API key from `Constants.expoConfig?.extra?.revenueCatPublicApiKey` or `process.env.EXPO_PUBLIC_REVENUECAT_API_KEY`).
+  - On user change: `Purchases.logIn(user.id)` when signed in, `Purchases.logOut()` when not (so webhook receives Supabase user UUID).
+  - On app foreground: `ProfileRefreshContext.refreshProfile()` throttled (max once per 15s) so webhook-updated premium status is reflected without reopening app.
+- **Purchase screen:** `app/(tabs)/purchase-premium/index.tsx` — loads RevenueCat offerings (monthly/yearly), purchase flow, promo code entry, `recordPaywallCodeEntered`, `completeOnboarding` when from onboarding. Uses `react-native-purchases` (Purchases).
+- **Settings:** `app/(tabs)/settings/premium/restore-purchases.tsx` (calls `Purchases.restorePurchases()` then `supabase.functions.invoke('sync-subscription')`, then `refreshProfile()`); `app/(tabs)/settings/premium/manage-subscription.tsx` for subscription management.
+- **Premium gating:** `hooks/useFeatures.ts` — reads `getMyProfile()`, derives `isPremium` from `profile.plan === 'premium' || profile.is_premium === true || profile.plan === 'creator' || profile.is_creator === true`. Creators get all premium features without subscribing. Exposes: `canLogGames`, `canLogPractices`, `canUseAITrainer`, `canAddHighlights`, `canViewCreatorWorkouts`, `canAddMoreSports`. Components: `UpgradeModal`, `PremiumGatedCard`.
+
+### Backend (Supabase)
+
+- **Edge Function: `revenuecat-webhook`**
+  - Receives RevenueCat webhooks (POST). Auth: `Authorization` header must match `REVENUECAT_WEBHOOK_SECRET` (or `Bearer <secret>`).
+  - Events that set premium: `INITIAL_PURCHASE`, `RENEWAL`, `UNCANCELLATION`, `NON_RENEWING_PURCHASE`, `SUBSCRIPTION_EXTENDED`, `PRODUCT_CHANGE`, `REFUND_REVERSED`, `SUBSCRIPTION_PAUSED` → set `profiles.is_premium = true`, `profiles.plan = 'premium'` for `id = app_user_id`.
+  - Events that set free: `CANCELLATION`, `EXPIRATION` → `is_premium = false`, `plan = 'free'`.
+  - `BILLING_ISSUE`: no profile change. Optional: Loops events (e.g. purchase) if configured.
+  - Always returns 200 for valid POSTs. Configure webhook URL in RevenueCat (Sandbox + Production if you want TestFlight/sandbox to update profiles). **Critical:** App must call `Purchases.logIn(user.id)` so `app_user_id` is the Supabase user UUID.
+- **Edge Function: `sync-subscription`**
+  - POST, requires Supabase JWT. Reads user from JWT, calls RevenueCat `GET /v1/subscribers/{app_user_id}` with **secret** API key, then updates `profiles.is_premium` and `profiles.plan` from entitlement. Used by Restore Purchases.
+- **Secrets:** `REVENUECAT_WEBHOOK_SECRET` (webhook auth), `REVENUECAT_SECRET_API_KEY` (sk_..., for sync-subscription). Public API key is in app config / env only.
+
+### Trial / Loops
+
+- **Edge Function: `trial-ending-soon`** — Intended for daily cron. Sends Loops events: `trial_one_week_remaining` (paid renews in ~1 week), `trial_ending_soon` (free trial ends in 1 day). Uses `LOOPS_API_KEY`; optional `CRON_SECRET` for auth.
+
+### Docs
+
+- `supabase/functions/revenuecat-webhook/README.md`, `supabase/functions/sync-subscription/README.md`, `supabase/functions/trial-ending-soon/README.md`.
+
+---
+
+## Progress Tab (Meals)
+
+**Status:** Fully implemented. The “Progress” tab in the tab bar is the `meals` group (path `(tabs)/meals/`).
+
+### Screens (`app/(tabs)/meals/`)
+
+- **index.tsx** — Main Progress screen: horizontal carousel of cards (Training Statistics, Progress Graphs, Skill Map, Consistency Score, etc.). Uses `useFeatures()` for premium; some cards link to `purchase-premium` or show upgrade modal. AI Trainer chat can be opened from here.
+- **training-statistics.tsx** — Training statistics view (sport/mode, time range, metrics).
+- **progress-graphs.tsx** — Progress over time: view type (e.g. drill/completion), exercise picker, time interval, chart (Victory Native). Data from `getAvailableExercisesForView` and progress view calculations.
+- **skill-map.tsx** — Skill map visualization: select exercises, time range, sport; chart shows relative strength/performance per exercise.
+- **consistency-score.tsx** — Weekly consistency score (scheduled vs logged workouts).
+- **purchase-premium** — Stack screen in same stack; links to premium purchase (RevenueCat).
+
+### Layout
+
+- **meals/_layout.tsx** — Stack with `index`, `progress-graphs`, `skill-map`, `consistency-score`, `training-statistics`, `purchase-premium`; all with `headerShown: false`, fade animation.
+
+### Hooks (data for Progress)
+
+- **useProgressGraphView** — Fetches workouts/exercises/sets for a mode/view/interval, buckets by time, computes view-specific value (e.g. drill = total reps, completion = avg completion %). Used by progress-graphs.
+- **useSkillMapData** — Fetches exercises/sets for selected exercises and time range; computes skill map values per exercise. Used by skill-map.
+- **useConsistencyScore** — Current week, historical weeks, average consistency. Used by consistency-score.
+- **usePersonalRecords** — Personal records for an exercise type. Used by training statistics / PRs.
+- **useMostLoggedExercises** — Most logged exercises for a mode/interval. Used for exercise pickers.
+- **useExerciseProgressGraphDirect** — Direct workout/exercise/set query for a metric and query string; buckets into time buckets for line chart.
+
+### API / Lib
+
+- **lib/api/exercise-filtering.ts** — `getAvailableExercisesForView(mode, viewName, timeInterval)` — unique exercise names for a sport mode and view type (e.g. drill, completion), with optional time window.
+- **lib/api/progress-view-calculations.ts** — Pure functions: `calculateDrillView`, `calculateCompletionView`, etc., and interval variants (e.g. `calculateDrillViewForInterval`). Used by hooks to compute one value per bucket.
+- **lib/api/consistency-score.ts** — Fetch scheduled vs logged workouts, compute consistency; historical and average scores.
+- **lib/api/personal-records.ts** — Detect exercise type, fetch workouts/exercises/sets, compute PRs.
+- **lib/api/most-logged-exercises.ts** — Most logged exercises for mode/interval.
+
+### Docs
+
+- `docs/PROGRESS_TAB_IMPLEMENTATION_PLAN.md`, `docs/TRAINING_STATISTICS_IMPLEMENTATION_PLAN.md`, `docs/CONSISTENCY_SCORE_IMPLEMENTATION_PLAN.md`, `docs/SKILL_MAP_IMPLEMENTATION_PLAN.md`.
+
+---
+
+## Notifications (Implemented)
+
+**Status:** Implemented in app code. Local scheduled notifications; preferences stored and respected.
+
+### Behavior
+
+- **Workout reminders (per sport mode):** If user has a scheduled workout for today (from schedule) and workout_reminders preference is on, app schedules one notification per mode for “today” at 11:21 PM (configurable in code). When user saves a workout, “today’s” notification for that mode is canceled (`cancelTodaysWorkoutNotification(mode)`). Rescheduled when user saves schedule week (`schedule-week.tsx` calls `scheduleWorkoutNotification(m)`).
+- **Consistency score (weekly):** For premium/creator users with workout_reminders on, a weekly notification is scheduled (Sunday 8 AM). `scheduleConsistencyScoreNotification()` in root layout when user enters main app.
+- **AI Trainer reminder:** After every 7th logged workout (tracked in AsyncStorage), if ai_trainer_insights preference is on, a notification is scheduled for 1 hour from now. `trackWorkoutAndScheduleAITrainerReminder()` is called from `workout-summary.tsx` after save.
+
+### Entry points
+
+- **Root layout:** When `needsOnboarding === false` and user is routed to `/(tabs)`, calls `scheduleAllWorkoutNotifications().catch(() => {})` and `scheduleConsistencyScoreNotification().catch(() => {})`.
+- **Schedule week save:** `app/(tabs)/(home)/schedule-week.tsx` — after saving schedule, calls `scheduleWorkoutNotification(m)` for the relevant mode.
+- **Workout summary:** After successful save, calls `cancelTodaysWorkoutNotification(workoutData.mode)` and `trackWorkoutAndScheduleAITrainerReminder()`.
+
+### API (`lib/notifications/notifications.ts`)
+
+- `requestNotificationPermissions()`, `cancelNotification(identifier)`, `cancelAllNotifications()`.
+- `scheduleWorkoutNotification(mode)`, `scheduleAllWorkoutNotifications()`, `scheduleConsistencyScoreNotification()`, `trackWorkoutAndScheduleAITrainerReminder()`, `cancelTodaysWorkoutNotification(mode)`.
+- Uses: `getUserPreferences()`, `getScheduleWithStatus()`, `getMyProfile()`, `getCurrentWeekStart()`. Notification IDs: `SCHEDULED_WORKOUT`, `CONSISTENCY_SCORE`, `AI_TRAINER_REMINDER`.
+
+### Settings
+
+- **app/(tabs)/settings/notifications/index.tsx** — Toggles for workout_reminders, email_notifications, ai_trainer_insights. When workout_reminders is turned off, cancels all scheduled workout and consistency score notifications; when turned on, calls `scheduleAllWorkoutNotifications()` and `scheduleConsistencyScoreNotification()`. When ai_trainer_insights is turned off, cancels AI Trainer reminder. All console logs removed from this screen.
+
+### Package
+
+- **expo-notifications** — Used for permissions, scheduling, and cancellation. No push token sending to backend documented here (local-only scheduling).
+
+---
+
+## Console Log Cleanup
+
+A large console log cleanup was done to reduce noise and improve perceived load. Only essential or intentional logs remain in a few places.
+
+### Files where console.* was removed (no or minimal logs left)
+
+- **Root / layout:** `app/_layout.tsx`
+- **API:** `lib/api/loops.ts`, `lib/api/ai-trainer.ts`, `lib/api/settings.ts` (updateEmail, deleteAccount, reorderSports), `lib/api/profile.ts` (getProfileStats, uploadProfileImage), `lib/api/workouts.ts`, `lib/api/exercise-filtering.ts`, `lib/api/consistency-score.ts`, `lib/api/personal-records.ts`, `lib/api/most-logged-exercises.ts`, `lib/api/progress-view-calculations.ts`
+- **Hooks:** `hooks/useFeatures.ts`, `hooks/useProgressGraphView.ts`, `hooks/useMostLoggedExercises.ts`, `hooks/useAvailableModes.ts`, `hooks/useExerciseProgressGraphDirect.ts`, `hooks/useConsistencyScore.ts`, `hooks/usePersonalRecords.ts`
+- **Notifications:** `lib/notifications/notifications.ts`
+- **Screens:** `app/(tabs)/workouts.tsx`, `app/(tabs)/workout-summary.tsx`, `app/(tabs)/profile/creator-workouts.tsx`, `app/onboarding/` (premium-offer, email-entry, account-basics, app-intro, sport-selection, training-intent, notifications, completion, email-verification), `app/(tabs)/(home)/schedule-week.tsx`, `app/(tabs)/settings/notifications/index.tsx`, `app/(tabs)/settings/account/email-password.tsx`, `app/(tabs)/settings/privacy-security/index.tsx`, `app/(tabs)/settings/privacy-security/blocked-users.tsx`, `app/(tabs)/settings/sports-training/my-sports.tsx`
+
+### Client-side console logs (cleaned)
+
+All unnecessary client-side console logs have been removed from: `app/(tabs)/profile/index.tsx`, `app/(tabs)/test-onboarding.tsx`, `lib/deep-links.ts`, `providers/AuthProvider.tsx`, `providers/SettingsContext.tsx`, `lib/api/schedule.ts`, `lib/api/social.ts`, `lib/api/highlights.ts`, `components/AITrainerChat.tsx`, `hooks/useAvailableModes.ts`, `hooks/useExerciseProgressGraph.ts`. Only essential behavior remains; no debug/info logging in the app.
+
+### Edge Functions (server-side)
+
+**Edge Functions (server-side)** still contain console.* for server debugging: `revenuecat-webhook`, `sync-subscription`, `trial-ending-soon`, `ai-trainer`, `loops`, `delete-auth-user`. These do not run in the app and do not affect client performance.
+
+---
+
 ## Recent UI/UX Improvements
 
 The following improvements have been implemented (as of this session):
@@ -580,7 +755,7 @@ Move the app from Expo Go to a real iOS Development Build so native SDKs (Revenu
 1. **TypeScript:** Strict typing throughout
 2. **Error Handling:** All API functions return `{ data, error }` pattern
 3. **Async/Await:** Used consistently for async operations
-4. **Console Logging:** Uses emoji prefixes (🔵 info, ✅ success, ❌ error, ⚠️ warning)
+4. **Console Logging:** A major cleanup removed most client-side logs for performance. In cleaned files, avoid re-adding non-essential console.*. Remaining logs (e.g. profile, onboarding, Edge Functions) may still use emoji prefixes (🔵 ✅ ❌ ⚠️). Prefer minimal logging in new code.
 
 ### Animation Patterns
 
@@ -626,11 +801,13 @@ Move the app from Expo Go to a real iOS Development Build so native SDKs (Revenu
 **Status:** Partially implemented
 
 **What's Working:**
-- `lib/api/loops.ts` - Complete API functions
+- `lib/api/loops.ts` - Complete API functions (all console logs removed in cleanup)
 - User sync on signup (`syncUserToLoops()` called in `AuthProvider`)
 - Contact creation/update
 - Event tracking functions
 - Transactional email functions
+- RevenueCat webhook can send Loops events on purchase (if configured)
+- `trial-ending-soon` Edge Function for trial reminder emails (Loops)
 
 **What Needs Work:**
 - Welcome email Journey setup in Loops dashboard
@@ -642,34 +819,20 @@ Move the app from Expo Go to a real iOS Development Build so native SDKs (Revenu
 **Key Files:**
 - `lib/api/loops.ts` - All Loops API functions
 - `providers/AuthProvider.tsx` - Calls `syncUserToLoops()` on signup
+- `supabase/functions/loops/` - Edge Function if used
 - `docs/LOOPS_*.md` - Existing Loops documentation
 
 ### Current Notifications Integration
 
-**Status:** Ready for implementation
+**Status:** Implemented (local scheduled notifications). See [Notifications (Implemented)](#notifications-implemented) for full detail.
 
-**What's Set Up:**
-- `expo-notifications` package installed
-- Notification settings screen exists (`app/(tabs)/settings/notifications/index.tsx`)
-- Onboarding notifications screen exists (`app/onboarding/notifications.tsx`)
-
-**What Needs Work:**
-- Notification permissions request
-- Push notification token registration
-- Notification scheduling
-- Notification handling (foreground/background)
-- Notification preferences sync with backend
-- Local notification scheduling
-- Push notification receiving
-
-**Key Files:**
-- `app/(tabs)/settings/notifications/index.tsx` - Settings screen
-- `app/onboarding/notifications.tsx` - Onboarding screen
-
-**Environment:**
-- Expo Notifications package ready
-- Supabase backend ready (likely has notifications table)
-- Need to implement notification service
+**What's Done:**
+- `expo-notifications` package in use
+- Permissions, scheduling, cancellation in `lib/notifications/notifications.ts` (all console logs removed)
+- Workout reminders (per mode, 11:21 PM), consistency score (weekly, premium), AI Trainer reminder (every 7 workouts)
+- Settings screen toggles and reschedule/cancel on preference change
+- Root layout schedules workout + consistency notifications when user enters main app
+- Workout summary cancels today’s reminder and triggers AI Trainer reminder after save
 
 ---
 
@@ -677,28 +840,21 @@ Move the app from Expo Go to a real iOS Development Build so native SDKs (Revenu
 
 1. **Build & Distribution:** The app runs on an **iOS Development Build** (EAS), not Expo Go. Use `npx expo start` for dev; only suggest `eas build` when adding/removing native modules. Do not re-add `expo-barcode-scanner`, `expo-camera`, or the invalid `undefined` dependency. See [Build & Distribution: Development Build (EAS)](#build--distribution-development-build-eas) for full context.
 
-2. **Profile Features:** Currently hidden (`PROFILE_FEATURES_ENABLED = false`). Don't modify profile-related code unless explicitly asked.
+2. **Payments:** RevenueCat is fully wired: purchase screen, restore/manage in settings, webhook + sync-subscription Edge Functions, `Purchases.logIn(user.id)` in root layout, profile refresh on foreground. Premium/creator comes from `profiles`. See [Payments & Subscriptions (RevenueCat)](#payments--subscriptions-revenuecat).
 
-3. **User Preferences:** Many UI improvements were user-approved. Don't revert changes unless user requests.
+3. **Progress Tab:** Fully implemented under `(tabs)/meals/`: carousel, progress graphs, skill map, consistency score, training statistics; hooks and APIs listed in [Progress Tab (Meals)](#progress-tab-meals). Don’t assume it’s unfinished.
 
-4. **Loops Integration:** User sync is working. Focus on:
-   - Setting up Loops Journeys for welcome emails
-   - Implementing event tracking
-   - Email preferences management
+4. **Notifications:** Local scheduled notifications are implemented (workout reminders, consistency score, AI Trainer reminder). See [Notifications (Implemented)](#notifications-implemented). Push token registration / server-side push is not documented here.
 
-5. **Notifications:** Package is installed but not implemented. Need to:
-   - Request permissions
-   - Register push tokens
-   - Implement notification scheduling
-   - Handle notification events
+5. **Profile Features:** Currently hidden (`PROFILE_FEATURES_ENABLED = false`). Don’t modify profile-related code unless explicitly asked. When enabled: profile tab, highlights, creator workouts, privacy, blocked users.
 
-6. **Code Quality:** The codebase is well-structured. Follow existing patterns when adding new features.
+6. **Console logs:** Client-side logs have been removed from all app code (profile, providers, lib, hooks, components). Edge Functions retain server-side logs for debugging. See [Console Log Cleanup](#console-log-cleanup).
 
-7. **Testing:** Test on real devices when possible, especially for:
-   - Haptic feedback
-   - Animations
-   - Notifications
-   - Push notifications
+7. **Loops:** User sync on signup works. Next: Loops Journeys (welcome emails), event tracking in app, email preferences. Trial-ending-soon Edge Function exists for trial reminder emails.
+
+8. **Code Quality:** Follow existing patterns. Prefer keeping console usage minimal in client code; Edge Functions can keep logs for server debugging unless user wants them reduced.
+
+9. **Testing:** Test on real devices when possible (haptics, animations, notifications, purchases).
 
 ---
 

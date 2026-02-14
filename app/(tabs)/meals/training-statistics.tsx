@@ -49,9 +49,8 @@ function formatDate(dateString: string): string {
     
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${monthNames[date.getMonth()]} ${date.getDate()}, ${year}`;
-  } catch (error) {
-    console.error('❌ [TrainingStatistics] Error formatting date:', error);
-    return dateString; // Return as-is on error
+  } catch {
+    return dateString;
   }
 }
 

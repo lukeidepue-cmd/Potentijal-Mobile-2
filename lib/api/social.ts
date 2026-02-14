@@ -105,10 +105,7 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
       .order('created_at', { ascending: false })
       .limit(50); // Get more to sort properly
 
-    if (error) {
-      console.error('❌ [Recommended Profiles] Query error:', error);
-      return { data: null, error };
-    }
+    if (error) return { data: null, error };
 
     if (!allProfiles || allProfiles.length === 0) {
       return { data: [], error: null };
@@ -124,25 +121,11 @@ export async function listRecommendedProfiles(): Promise<{ data: ProfileWithFoll
       .select('user_id, who_can_see_profile, who_can_see_highlights, suggest_me_to_others')
       .in('user_id', profileIds); // Only get settings for profiles we're checking
 
-    if (privacyError) {
-      console.error('❌ [Recommendations] Error fetching privacy settings:', privacyError);
-      console.error('❌ [Recommendations] Error code:', privacyError.code);
-      console.error('❌ [Recommendations] Error message:', privacyError.message);
-      // If RLS is blocking, privacySettings will be empty but no error
-      // If there's a real error, log it but continue
-    }
-
     const privacyMap = new Map();
     (privacySettings || []).forEach(ps => {
       privacyMap.set(ps.user_id, ps);
     });
     
-    // If we got 0 settings but have profiles, this might be an RLS issue
-    if (privacyMap.size === 0 && allProfiles.length > 0 && !privacyError) {
-      console.warn('⚠️ [Recommendations] WARNING: No privacy settings found but no error. This might indicate RLS is blocking access or settings don\'t exist.');
-      console.warn('⚠️ [Recommendations] You may need to run migration 019_fix_privacy_settings_rls.sql to allow reading privacy settings.');
-    }
-
     // Get mutual followers for each profile
     // profileIds already declared above for privacy settings query
     const { data: allFollows } = await supabase
@@ -532,8 +515,6 @@ export async function follow(profileId: string): Promise<{ data: boolean | null;
       .select();
 
     if (error) {
-      console.error(`❌ [Follow] Error following user:`, error);
-      // Check if already following (unique constraint violation)
       if (error.code === '23505') {
         return { data: true, error: null }; // Already following, treat as success
       }
@@ -542,7 +523,6 @@ export async function follow(profileId: string): Promise<{ data: boolean | null;
 
     return { data: true, error: null };
   } catch (error: any) {
-    console.error(`❌ [Follow] Exception:`, error);
     return { data: null, error };
   }
 }

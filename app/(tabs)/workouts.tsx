@@ -187,10 +187,10 @@ export default function WorkoutsScreen() {
   const params = useLocalSearchParams<{ workoutId?: string }>();
   const m = (mode || "lifting").toLowerCase() as ModeKey;
 
-  // Redirect to test auth if not signed in
+  // Redirect to onboarding/welcome if not signed in
   useEffect(() => {
     if (!user) {
-      router.replace('/(tabs)/test-auth');
+      router.replace('/onboarding/welcome');
     }
   }, [user]);
 
@@ -291,7 +291,6 @@ export default function WorkoutsScreen() {
         const { data: workout, error } = await getWorkoutWithDetails(params.workoutId);
         
         if (error || !workout) {
-          console.error(`❌ [Workouts] Failed to load workout:`, error);
           Alert.alert("Error", "Failed to load copied workout");
           return;
         }
@@ -382,8 +381,6 @@ export default function WorkoutsScreen() {
             
             // Start the workout
             setIsCreating(true);
-          } else {
-            console.error(`❌ [Workouts] No setter found for mode: ${currentMode}`);
           }
         }, 200);
       }
@@ -420,9 +417,8 @@ export default function WorkoutsScreen() {
   const clearWorkoutState = useCallback(async () => {
     try {
       await AsyncStorage.removeItem(WORKOUT_STORAGE_KEY);
-      console.log('✅ [Workouts] Cleared workout state from AsyncStorage');
-    } catch (error) {
-      console.error('❌ [Workouts] Error clearing workout state:', error);
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -446,9 +442,8 @@ export default function WorkoutsScreen() {
             },
           };
           await AsyncStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(stateToSave));
-          console.log('✅ [Workouts] Saved workout state to AsyncStorage');
-        } catch (error) {
-          console.error('❌ [Workouts] Error saving workout state:', error);
+        } catch {
+          // ignore
         }
       };
       saveWorkoutState();
@@ -483,7 +478,6 @@ export default function WorkoutsScreen() {
               const setDraft = draftSetters[m];
               if (setDraft && state.drafts && state.drafts[m]) {
                 setDraft(state.drafts[m]);
-                console.log('✅ [Workouts] Restored workout state from AsyncStorage');
               }
             }
           } else {
@@ -499,8 +493,8 @@ export default function WorkoutsScreen() {
             setHkDraft([]);
             setTnDraft([]);
           }
-        } catch (error) {
-          console.error('❌ [Workouts] Error loading workout state:', error);
+        } catch {
+          // ignore
         }
       };
       loadWorkoutState();
@@ -526,10 +520,9 @@ export default function WorkoutsScreen() {
               setScDraft([]);
               setHkDraft([]);
               setTnDraft([]);
-              console.log('✅ [Workouts] Reset workout state - workout was saved');
             }
-          } catch (error) {
-            console.error('❌ [Workouts] Error checking workout state:', error);
+          } catch {
+            // ignore
           }
         };
         checkAndReset();
@@ -544,7 +537,6 @@ export default function WorkoutsScreen() {
         const { data: workout, error } = await getWorkoutWithDetails(params.workoutId);
         
         if (error || !workout) {
-          console.error(`❌ [Workouts] Failed to load workout:`, error);
           Alert.alert("Error", "Failed to load copied workout");
           return;
         }
@@ -634,7 +626,7 @@ export default function WorkoutsScreen() {
             // Start the workout
             setIsCreating(true);
           } else {
-            console.error(`❌ [Workouts] No setter found for mode: ${frontendMode}`);
+            // no setter for this mode
           }
         }, 300);
       }

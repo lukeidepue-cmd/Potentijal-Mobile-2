@@ -81,8 +81,8 @@ export default function NotificationsSettings() {
           ai_trainer_insights: prefs.ai_trainer_insights ?? true,
         });
       }
-    } catch (error) {
-      console.error('Error loading notifications:', error);
+    } catch {
+      // ignore
     } finally {
       setLoading(false);
     }
@@ -113,19 +113,11 @@ export default function NotificationsSettings() {
               await cancelNotification(notification.identifier);
             }
           }
-          console.log('✅ [Notifications] Canceled all workout reminder notifications');
         } else if (key === 'workout_reminders' && value) {
-          // Reschedule workout notifications if re-enabled
-          scheduleAllWorkoutNotifications().catch((error) => {
-            console.error('❌ [Notifications] Error rescheduling workout notifications:', error);
-          });
-          scheduleConsistencyScoreNotification().catch((error) => {
-            console.error('❌ [Notifications] Error rescheduling consistency score notification:', error);
-          });
+          scheduleAllWorkoutNotifications().catch(() => {});
+          scheduleConsistencyScoreNotification().catch(() => {});
         } else if (key === 'ai_trainer_insights' && !value) {
-          // Cancel AI Trainer reminder notification
           await cancelNotification(NOTIFICATION_IDS.AI_TRAINER_REMINDER);
-          console.log('✅ [Notifications] Canceled AI Trainer reminder notification');
         }
       }
     } catch (error) {

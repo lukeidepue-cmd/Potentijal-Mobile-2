@@ -1,12 +1,18 @@
 // lib/api/loops.ts
 // Loops email service integration
 // Documentation: https://loops.so/docs
-// 
+//
 // ⚠️ SECURITY: This file calls a Supabase Edge Function, NOT Loops directly.
 // The Loops API key is stored securely in Supabase secrets and never exposed to the client.
 // According to Loops docs: "Your Loops API key should never be used client side or exposed to your end users."
 
+import Constants from 'expo-constants';
 import { supabase } from '../supabase';
+
+// Use same config source as lib/supabase.ts so Loops works when URL/key come from .env OR app.json extra (e.g. dev builds)
+const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
+const getSupabaseUrl = () => process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra.supabaseUrl ?? '';
+const getSupabaseAnonKey = () => process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? extra.supabaseAnonKey ?? '';
 
 export interface LoopsContact {
   email: string;
@@ -39,25 +45,21 @@ export async function createOrUpdateContact(contact: LoopsContact): Promise<{ da
     // Get the current user's session token
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !session) {
-      console.error('❌ [Loops] Failed to get session:', sessionError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    // Get the Supabase URL from the client
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error('❌ [Loops] Supabase URL not configured');
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseAnonKey = getSupabaseAnonKey();
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { data: null, error: { message: 'Service not configured' } };
     }
 
-    // Call the Supabase Edge Function
-    console.log('🔵 [Loops] Calling Edge Function to create/update contact:', contact.email);
     const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
-        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        'apikey': supabaseAnonKey,
       },
       body: JSON.stringify({
         action: 'createOrUpdateContact',
@@ -67,19 +69,12 @@ export async function createOrUpdateContact(contact: LoopsContact): Promise<{ da
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [Loops] Edge Function error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData,
-      });
       return { data: null, error: errorData.error || { message: 'Failed to create/update contact' } };
     }
 
     const result = await response.json();
-    console.log('✅ [Loops] Edge Function response:', result);
     return { data: result.data, error: result.error };
   } catch (error: any) {
-    console.error('❌ [Loops] Error creating/updating contact:', error);
     return { data: null, error };
   }
 }
@@ -93,24 +88,21 @@ export async function sendTransactionalEmail(params: LoopsTransactionalEmail): P
     // Get the current user's session token
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !session) {
-      console.error('❌ [Loops] Failed to get session:', sessionError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    // Get the Supabase URL from the client
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error('❌ [Loops] Supabase URL not configured');
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseAnonKey = getSupabaseAnonKey();
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { data: null, error: { message: 'Service not configured' } };
     }
 
-    // Call the Supabase Edge Function
     const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
-        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        'apikey': supabaseAnonKey,
       },
       body: JSON.stringify({
         action: 'sendTransactional',
@@ -122,14 +114,12 @@ export async function sendTransactionalEmail(params: LoopsTransactionalEmail): P
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [Loops] Edge Function error:', errorData);
       return { data: null, error: errorData.error || { message: 'Failed to send email' } };
     }
 
     const result = await response.json();
     return { data: result.data, error: result.error };
   } catch (error: any) {
-    console.error('❌ [Loops] Error sending transactional email:', error);
     return { data: null, error };
   }
 }
@@ -143,24 +133,21 @@ export async function trackEvent(event: LoopsEvent): Promise<{ data: any | null;
     // Get the current user's session token
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !session) {
-      console.error('❌ [Loops] Failed to get session:', sessionError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    // Get the Supabase URL from the client
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error('❌ [Loops] Supabase URL not configured');
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseAnonKey = getSupabaseAnonKey();
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { data: null, error: { message: 'Service not configured' } };
     }
 
-    // Call the Supabase Edge Function
     const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
-        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        'apikey': supabaseAnonKey,
       },
       body: JSON.stringify({
         action: 'trackEvent',
@@ -170,14 +157,12 @@ export async function trackEvent(event: LoopsEvent): Promise<{ data: any | null;
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [Loops] Edge Function error:', errorData);
       return { data: null, error: errorData.error || { message: 'Failed to track event' } };
     }
 
     const result = await response.json();
     return { data: result.data, error: result.error };
   } catch (error: any) {
-    console.error('❌ [Loops] Error tracking event:', error);
     return { data: null, error };
   }
 }
@@ -191,24 +176,21 @@ export async function deleteContact(email: string): Promise<{ data: any | null; 
     // Get the current user's session token
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !session) {
-      console.error('❌ [Loops] Failed to get session:', sessionError);
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    // Get the Supabase URL from the client
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error('❌ [Loops] Supabase URL not configured');
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseAnonKey = getSupabaseAnonKey();
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { data: null, error: { message: 'Service not configured' } };
     }
 
-    // Call the Supabase Edge Function
     const response = await fetch(`${supabaseUrl}/functions/v1/loops`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
-        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        'apikey': supabaseAnonKey,
       },
       body: JSON.stringify({
         action: 'deleteContact',
@@ -218,14 +200,12 @@ export async function deleteContact(email: string): Promise<{ data: any | null; 
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [Loops] Edge Function error:', errorData);
       return { data: null, error: errorData.error || { message: 'Failed to delete contact' } };
     }
 
     const result = await response.json();
     return { data: result.data, error: result.error };
   } catch (error: any) {
-    console.error('❌ [Loops] Error deleting contact:', error);
     return { data: null, error };
   }
 }

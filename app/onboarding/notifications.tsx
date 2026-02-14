@@ -56,20 +56,9 @@ export default function NotificationsScreen() {
       });
       
       if (prefsError) {
-        console.warn('⚠️ [Notifications] Failed to save preferences:', prefsError);
-      } else {
-        console.log('✅ [Notifications] Preferences saved:', notificationsEnabled);
+        // ignore
       }
-      
-      if (status === 'granted') {
-        // Permissions granted
-        console.log('✅ Notifications permission granted');
-      } else {
-        // Permissions denied
-        console.log('❌ Notifications permission denied');
-      }
-    } catch (error) {
-      console.error('Error requesting notification permissions:', error);
+    } catch {
       Alert.alert('Error', 'Failed to request notification permissions');
     }
   };
@@ -87,7 +76,6 @@ export default function NotificationsScreen() {
         });
         
         if (prefsError) {
-          console.warn('⚠️ [Notifications] Failed to save preferences:', prefsError);
           const isNetworkError = prefsError.message?.toLowerCase().includes('network') || 
                                 prefsError.message?.toLowerCase().includes('fetch') ||
                                 prefsError.message?.toLowerCase().includes('connection');
@@ -112,7 +100,6 @@ export default function NotificationsScreen() {
       });
       
       if (progressError) {
-        console.warn('⚠️ [Notifications] Failed to save progress:', progressError);
         const isNetworkError = progressError.message?.toLowerCase().includes('network') || 
                               progressError.message?.toLowerCase().includes('fetch') ||
                               progressError.message?.toLowerCase().includes('connection');
@@ -128,15 +115,11 @@ export default function NotificationsScreen() {
           );
           return;
         }
-        // Don't block navigation on progress save failure, but log it
-      } else {
-        console.log('✅ [Notifications] Progress saved: notifications, enabled =', notificationsEnabled);
       }
 
       // Navigate to next screen
       router.push('/onboarding/premium-offer');
     } catch (error: any) {
-      console.error('❌ [Notifications] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

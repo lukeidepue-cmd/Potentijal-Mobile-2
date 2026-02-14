@@ -34,8 +34,6 @@ export function initializePostHog(apiKey: string, host?: string): PostHog {
     maxQueueSize: 1000,
   });
 
-  console.log('✅ [PostHog] Initialized successfully');
-
   return posthogInstance;
 }
 
@@ -51,37 +49,23 @@ export function getPostHog(): PostHog | null {
  * Call this when a user logs in or when you have their user ID
  */
 export function identifyUser(userId: string, properties?: Record<string, any>): void {
-  if (!posthogInstance) {
-    console.warn('⚠️ [PostHog] Cannot identify user - PostHog not initialized');
-    return;
-  }
-
+  if (!posthogInstance) return;
   posthogInstance.identify(userId, properties);
-  console.log('✅ [PostHog] User identified:', userId);
 }
 
 /**
  * Reset user identification (call on logout)
  */
 export function resetUser(): void {
-  if (!posthogInstance) {
-    console.warn('⚠️ [PostHog] Cannot reset user - PostHog not initialized');
-    return;
-  }
-
+  if (!posthogInstance) return;
   posthogInstance.reset();
-  console.log('✅ [PostHog] User reset');
 }
 
 /**
  * Capture a custom event
  */
 export function captureEvent(eventName: string, properties?: Record<string, any>): void {
-  if (!posthogInstance) {
-    console.warn('⚠️ [PostHog] Cannot capture event - PostHog not initialized');
-    return;
-  }
-
+  if (!posthogInstance) return;
   posthogInstance.capture(eventName, properties);
 }
 
@@ -89,10 +73,6 @@ export function captureEvent(eventName: string, properties?: Record<string, any>
  * Set user properties
  */
 export function setUserProperties(properties: Record<string, any>): void {
-  if (!posthogInstance) {
-    console.warn('⚠️ [PostHog] Cannot set user properties - PostHog not initialized');
-    return;
-  }
-
+  if (!posthogInstance) return;
   posthogInstance.identify(undefined, properties);
 }

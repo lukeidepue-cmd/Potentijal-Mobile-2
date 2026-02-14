@@ -43,13 +43,7 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
         setLoading(true);
         const { data } = await getMyProfile();
         setProfile(data);
-        console.log('✅ [useFeatures] Profile loaded:', {
-          is_premium: data?.is_premium,
-          plan: data?.plan,
-          is_creator: data?.is_creator,
-        });
-      } catch (error) {
-        console.error('❌ [useFeatures] Error loading profile:', error);
+      } catch (_error) {
         setProfile(null);
       } finally {
         setLoading(false);
@@ -67,18 +61,6 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
   const isCreator = !loading && profile
     ? (profile.plan === 'creator' || profile.is_creator === true)
     : false;
-
-  // Debug logging
-  if (__DEV__ && !loading) {
-    console.log('🔒 [useFeatures] Premium check:', {
-      hasProfile: !!profile,
-      plan: profile?.plan,
-      is_premium: profile?.is_premium,
-      is_creator: profile?.is_creator,
-      calculatedIsPremium: isPremium,
-      calculatedIsCreator: isCreator,
-    });
-  }
 
   return {
     isPremium,

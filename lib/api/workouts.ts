@@ -263,8 +263,6 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
       .single();
 
     if (workoutError || !workout) {
-      console.error(`❌ [Workout Details] Workout query error:`, workoutError);
-      console.error(`❌ [Workout Details] Workout data:`, workout);
       return { data: null, error: workoutError || { message: 'Workout not found' } };
     }
 
@@ -276,9 +274,6 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
       .order('created_at');
 
     if (exercisesError) {
-      console.error(`❌ [Workout Details] Exercises query error:`, exercisesError);
-      console.error(`❌ [Workout Details] Error code:`, exercisesError.code);
-      console.error(`❌ [Workout Details] Error message:`, exercisesError.message);
       return { data: null, error: exercisesError };
     }
 
@@ -292,7 +287,7 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
           .order('set_index');
 
         if (setsError) {
-          console.error(`❌ [Workout Details] Sets query error for exercise ${exercise.id}:`, setsError);
+          // continue with empty sets for this exercise
         }
 
         return {
@@ -336,7 +331,6 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
 
     return result;
   } catch (error: any) {
-    console.error(`❌ [Workout Details] Exception:`, error);
     return { data: null, error };
   }
 }
@@ -378,8 +372,7 @@ export async function saveCompleteWorkout(params: {
       });
 
       if (exerciseError || !exerciseId) {
-        console.error('Failed to add exercise:', exerciseError);
-        continue; // Skip this exercise but continue with others
+        continue;
       }
 
       // Add sets
@@ -490,7 +483,6 @@ export async function copyWorkoutSkeleton(params: {
         });
 
       if (exerciseError) {
-        console.error('Error copying exercise:', exerciseError);
         // Continue with other exercises
       }
     }

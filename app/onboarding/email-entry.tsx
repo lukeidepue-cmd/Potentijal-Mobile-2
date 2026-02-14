@@ -107,8 +107,6 @@ export default function EmailEntryScreen() {
       const { error: otpError } = await signInWithOtp(email.trim());
       
       if (otpError) {
-        console.error('❌ [EmailEntry] Failed to send OTP:', otpError);
-        
         // Check for network errors
         const isNetworkError = otpError.message?.toLowerCase().includes('network') || 
                               otpError.message?.toLowerCase().includes('fetch') ||
@@ -142,7 +140,6 @@ export default function EmailEntryScreen() {
       });
       setLoading(false);
     } catch (error: any) {
-      console.error('❌ [EmailEntry] Exception:', error);
       const isNetworkError = error.message?.toLowerCase().includes('network') || 
                             error.message?.toLowerCase().includes('fetch') ||
                             error.message?.toLowerCase().includes('connection');

@@ -197,7 +197,6 @@ export async function getMostLoggedExercises(
       .order('performed_at', { ascending: false });
 
     if (workoutError) {
-      console.error('❌ [MostLoggedExercises] Error fetching workouts:', workoutError);
       return { data: [], error: workoutError };
     }
 
@@ -218,7 +217,6 @@ export async function getMostLoggedExercises(
       .in('workout_id', workoutIds);
 
     if (exerciseError) {
-      console.error('❌ [MostLoggedExercises] Error fetching exercises:', exerciseError);
       return { data: [], error: exerciseError };
     }
 
@@ -297,7 +295,6 @@ export async function getMostLoggedExercises(
 
     return { data: result, error: null };
   } catch (error: any) {
-    console.error('❌ [MostLoggedExercises] Exception:', error);
     return { data: [], error };
   }
 }

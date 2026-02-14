@@ -1,9 +1,10 @@
 // app/(tabs)/settings/support-legal/privacy-policy.tsx
 // Privacy Policy (Static Content)
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { PRIVACY_POLICY_URL } from "../../../../constants/links";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../../constants/theme";
@@ -57,6 +58,13 @@ export default function PrivacyPolicy() {
           Effective Date: January 1, 2025{"\n"}
           Last Updated: January 1, 2025
         </Text>
+        <Pressable
+          onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+          style={styles.viewOnlineRow}
+        >
+          <Ionicons name="open-outline" size={18} color={theme.colors.primary500} />
+          <Text style={styles.viewOnlineText}>View full policy online</Text>
+        </Pressable>
 
         <Text style={styles.introText}>
           This Privacy Policy explains how Potentijal ("we," "us," "our") collects, uses, discloses, and protects information when you use the Potentijal app and related services (the "Service"). By using the Service, you agree to this policy.
@@ -159,8 +167,7 @@ export default function PrivacyPolicy() {
         <Text style={styles.sectionTitle}>11. Contact</Text>
         <Text style={styles.contentText}>
           For privacy-related questions, access or deletion requests, or complaints:{"\n\n"}
-          Email: support@potentijal.com{"\n\n"}
-          Mailing address: Replace with your business or support address before publishing the app.
+          Email: lukeidepue@gmail.com
         </Text>
       </ScrollView>
     </View>
@@ -205,8 +212,19 @@ const styles = StyleSheet.create({
   effectiveDate: {
     fontSize: 12,
     color: theme.colors.textLo,
-    marginBottom: 24,
+    marginBottom: 8,
     fontFamily: FONT.uiRegular,
+  },
+  viewOnlineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 24,
+  },
+  viewOnlineText: {
+    fontSize: 15,
+    color: theme.colors.primary500,
+    fontFamily: FONT.uiMedium,
   },
   introText: {
     fontSize: 16,

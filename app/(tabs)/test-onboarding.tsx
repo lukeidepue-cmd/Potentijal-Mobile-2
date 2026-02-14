@@ -4,7 +4,7 @@
  * This will be removed or kept for debugging after testing
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useAuth } from '../../providers/AuthProvider';
 import {
@@ -22,15 +22,6 @@ export default function TestOnboarding() {
   const [onboardingState, setOnboardingState] = useState<OnboardingData | null>(null);
   const [needsOnboardingResult, setNeedsOnboardingResult] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // Log AuthProvider onboarding status when it changes
-  useEffect(() => {
-    console.log('🔵 [AuthProvider] Onboarding Status:', {
-      needsOnboarding: authNeedsOnboarding,
-      loading: onboardingLoading,
-      user: user?.id,
-    });
-  }, [authNeedsOnboarding, onboardingLoading, user]);
 
   const handleGetState = async () => {
     setLoading(true);

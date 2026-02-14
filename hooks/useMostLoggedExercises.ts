@@ -67,10 +67,6 @@ export function useMostLoggedExercises(
       );
 
       if (exercisesError) {
-        console.error(
-          '❌ [useMostLoggedExercises] Error fetching most logged exercises:',
-          exercisesError
-        );
         setError(exercisesError);
         setExercises([]);
       } else {
@@ -78,7 +74,6 @@ export function useMostLoggedExercises(
         setError(null);
       }
     } catch (err: any) {
-      console.error('❌ [useMostLoggedExercises] Exception:', err);
       setError(err);
       setExercises([]);
     } finally {

@@ -224,7 +224,6 @@ export async function getPersonalRecords(
     });
 
     if (typeError) {
-      console.error('❌ [PersonalRecords] Error detecting exercise type:', typeError);
       return { data: null, error: typeError };
     }
 
@@ -241,7 +240,6 @@ export async function getPersonalRecords(
       .order('performed_at', { ascending: false });
 
     if (workoutError) {
-      console.error('❌ [PersonalRecords] Error fetching workouts:', workoutError);
       return { data: null, error: workoutError };
     }
 
@@ -263,7 +261,6 @@ export async function getPersonalRecords(
       .eq('exercise_type', exerciseType);
 
     if (exerciseError) {
-      console.error('❌ [PersonalRecords] Error fetching exercises:', exerciseError);
       return { data: null, error: exerciseError };
     }
 
@@ -290,7 +287,6 @@ export async function getPersonalRecords(
       .order('set_index');
 
     if (setsError) {
-      console.error('❌ [PersonalRecords] Error fetching sets:', setsError);
       return { data: null, error: setsError };
     }
 
@@ -758,7 +754,6 @@ export async function getPersonalRecords(
 
     return { data: result, error: null };
   } catch (error: any) {
-    console.error('❌ [PersonalRecords] Exception:', error);
     return { data: null, error };
   }
 }

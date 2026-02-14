@@ -123,75 +123,27 @@ export async function setPendingDiscountOfferId(offerId: string | null): Promise
  */
 export async function getProfileStats(profileId: string): Promise<{ data: ProfileStats | null; error: any }> {
   try {
-    console.log(`📊 [Profile Stats] ===== START Fetching stats for profile: ${profileId} =====`);
-    
-    // Get current user for debugging
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    console.log(`📊 [Profile Stats] Current user: ${currentUser?.id || 'not authenticated'}`);
-    console.log(`📊 [Profile Stats] Viewing profile: ${profileId}`);
-    console.log(`📊 [Profile Stats] Is viewing own profile: ${currentUser?.id === profileId}`);
-    
-    // Get followers count (people who follow this profile)
-    // following_id = profileId means people following this profile
-    console.log(`📊 [Profile Stats] Querying follows table where following_id = ${profileId}`);
-    const { count: followersCount, error: followersError } = await supabase
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('following_id', profileId);
-
-    if (followersError) {
-      console.error('❌ [Profile Stats] Followers count query error:', followersError);
-      return { data: null, error: followersError };
-    }
-    console.log(`📊 [Profile Stats] Followers count query result: ${followersCount || 0}`);
-
-    // Get actual followers data to ensure accurate count
-    console.log(`📊 [Profile Stats] Fetching actual followers data...`);
     const { data: followersData, error: followersDataError } = await supabase
       .from('follows')
       .select('follower_id, following_id')
       .eq('following_id', profileId);
-    
-    if (followersDataError) {
-      console.error('❌ [Profile Stats] Followers data query error:', followersDataError);
-    } else {
-      console.log(`📊 [Profile Stats] Followers data query returned ${followersData?.length || 0} rows`);
-      if (followersData && followersData.length > 0) {
-        console.log(`📊 [Profile Stats] Followers data:`, followersData.map(f => ({ 
-          follower: f.follower_id, 
-          following: f.following_id 
-        })));
-      } else {
-        console.log(`📊 [Profile Stats] No followers found in database for profile ${profileId}`);
-        // Debug: Let's check ALL follows to see what's in the table
-        const { data: allFollows } = await supabase
-          .from('follows')
-          .select('follower_id, following_id')
-          .limit(100);
-        console.log(`📊 [Profile Stats] DEBUG: All follows in table (first 100):`, allFollows?.map(f => ({
-          follower: f.follower_id,
-          following: f.following_id
-        })));
-      }
-    }
-    
-    const actualFollowersCount = followersData?.length || 0;
-    console.log(`📊 [Profile Stats] Final followers count: ${actualFollowersCount}`);
 
-    // Get following count (people this profile follows)
-    console.log(`📊 [Profile Stats] Querying follows table where follower_id = ${profileId}`);
+    if (followersDataError) {
+      return { data: null, error: followersDataError };
+    }
+
+    const actualFollowersCount = followersData?.length || 0;
+
     const { data: followingData, error: followingError } = await supabase
       .from('follows')
       .select('following_id')
       .eq('follower_id', profileId);
 
     if (followingError) {
-      console.error('❌ [Profile Stats] Following query error:', followingError);
       return { data: null, error: followingError };
     }
-    
+
     const followingCount = followingData?.length || 0;
-    console.log(`📊 [Profile Stats] Following count: ${followingCount}`);
 
     // Get highlights count - count all highlights in DB
     // Note: Some highlights may have missing/corrupted files, but we count them all
@@ -206,22 +158,14 @@ export async function getProfileStats(profileId: string): Promise<{ data: Profil
       return { data: null, error: highlightsError };
     }
 
-    const result = {
+    return {
       data: {
-        followers: Math.min(actualFollowersCount, 999), // Use actual data count for accuracy
+        followers: Math.min(actualFollowersCount, 999),
         following: Math.min(followingCount, 999),
         highlights: Math.min(highlightsCount || 0, 999),
       },
       error: null,
     };
-    
-    console.log(`📊 [Profile Stats] ===== FINAL RESULT =====`);
-    console.log(`📊 [Profile Stats] Followers: ${result.data.followers}`);
-    console.log(`📊 [Profile Stats] Following: ${result.data.following}`);
-    console.log(`📊 [Profile Stats] Highlights: ${result.data.highlights}`);
-    console.log(`📊 [Profile Stats] ===== END =====`);
-    
-    return result;
   } catch (error: any) {
     return { data: null, error };
   }
@@ -242,19 +186,11 @@ export async function uploadProfileImage(imageUri: string): Promise<{ data: stri
     // Store directly in bucket root with user ID prefix
     const filePath = `${user.id}/profile.${fileExt}`;
 
-    console.log('📤 [Profile Image] Starting upload:', { filePath, imageUri });
-
-    // Read file as base64 using expo-file-system legacy API
     const base64 = await FileSystem.readAsStringAsync(imageUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
 
-    console.log('📤 [Profile Image] File size (base64 length):', base64.length);
-
-    // Convert base64 to ArrayBuffer using base64-arraybuffer
     const arrayBuffer = decode(base64);
-    
-    console.log('📤 [Profile Image] ArrayBuffer size:', arrayBuffer.byteLength);
 
     // Upload to Supabase storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -265,18 +201,12 @@ export async function uploadProfileImage(imageUri: string): Promise<{ data: stri
       });
 
     if (uploadError) {
-      console.error('❌ [Profile Image] Upload error:', uploadError);
       return { data: null, error: uploadError };
     }
 
-    console.log('✅ [Profile Image] Upload successful:', filePath);
-
-    // Get public URL
     const { data: urlData } = supabase.storage
       .from('profiles')
       .getPublicUrl(filePath);
-    
-    console.log('✅ [Profile Image] Public URL:', urlData.publicUrl);
 
     // Update profile with image URL
     const { error: updateError } = await supabase
@@ -290,7 +220,6 @@ export async function uploadProfileImage(imageUri: string): Promise<{ data: stri
 
     return { data: urlData.publicUrl, error: null };
   } catch (error: any) {
-    console.error('❌ [Profile Image] Exception:', error);
     return { data: null, error };
   }
 }

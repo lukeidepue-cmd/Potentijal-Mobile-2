@@ -51,7 +51,6 @@ export function useAvailableModes() {
       const { data: profile, error } = await getMyProfile();
       
       if (error || !profile) {
-        console.warn('⚠️ [useAvailableModes] Failed to load profile, showing all modes:', error);
         // Default to all modes if profile can't be loaded
         setAvailableModes(ALL_MODES);
         setLoading(false);
@@ -63,7 +62,6 @@ export function useAvailableModes() {
       
       // If no sports selected, default to all modes (shouldn't happen after onboarding, but handle gracefully)
       if (userSports.length === 0) {
-        console.warn('⚠️ [useAvailableModes] No sports in profile, showing all modes');
         setAvailableModes(ALL_MODES);
         setLoading(false);
         return;
@@ -79,10 +77,8 @@ export function useAvailableModes() {
         availableModeKeys.includes(mode.key)
       );
 
-      console.log('✅ [useAvailableModes] Available modes:', filteredModes.map(m => m.key));
       setAvailableModes(filteredModes);
-    } catch (error) {
-      console.error('❌ [useAvailableModes] Error loading available modes:', error);
+    } catch {
       // Default to all modes on error
       setAvailableModes(ALL_MODES);
     } finally {

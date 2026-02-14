@@ -159,20 +159,7 @@ export async function getScheduleWithStatus(params: {
       .eq('mode', sportMode) // CRITICAL: Filter by mode so each sport mode only checks its own workouts
       .in('performed_at', weekDates);
 
-    if (workoutsError) {
-      console.error('Error fetching workouts:', workoutsError);
-    }
-
-    // Double-check: filter out any workouts that don't match the mode (defensive programming)
-    // This is critical - we must ONLY count workouts from the current mode
-    const filteredWorkouts = (workouts || []).filter(w => {
-      const matches = w.mode === sportMode;
-      if (!matches && w.mode) {
-        // Log if we find workouts from other modes (shouldn't happen due to query filter, but defensive)
-        console.warn(`Found workout with wrong mode: expected ${sportMode}, got ${w.mode}`);
-      }
-      return matches;
-    });
+    const filteredWorkouts = (workouts || []).filter(w => w.mode === sportMode);
     
     const workoutDates = new Set(filteredWorkouts.map(w => w.performed_at));
     
