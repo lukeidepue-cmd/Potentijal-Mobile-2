@@ -11,8 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "associatedDomains": [
-        "applinks:yourapp.com",
-        "applinks:yourapp.com"
+        "applinks:potentijal.com"
       ],
       "bundleIdentifier": "com.lukedepue.myfirstapp",
       "infoPlist": {
@@ -40,9 +39,6 @@
             "DEFAULT"
           ]
         }
-      ],
-      "permissions": [
-        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -63,7 +59,20 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Potentijal uses your photo library so you can choose a profile picture and add highlight videos.",
+          "cameraPermission": false
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "Potentijal uses this to understand how the app is used and to improve your experience. We do not use this for advertising."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -73,16 +73,12 @@
 
 ## 4. Permissions and usage descriptions
 
-### 4.1 iOS usage descriptions
+### 4.1 iOS usage descriptions ✅ Done
 
-- **Current state:** `app.json` has minimal `infoPlist` (e.g. `ITSAppUsesNonExemptEncryption`). The app uses:
-  - **Photo library / media:** Profile photo and highlights (video) via `expo-image-picker` (library, not camera).
-  - **Notifications:** `expo-notifications` for workout/consistency/AI reminders.
-
-- **Action:** Ensure your built app has the correct usage description keys (Expo may add some via plugins). Verify that:
-  - Photo library access has an `NSPhotoLibraryUsageDescription` (and `NSPhotoLibraryAddUsageDescription` if you save to library) that clearly explains why (e.g. “To choose a profile photo” / “To add highlight videos”).
-  - Notifications are requested in context (e.g. onboarding or before scheduling reminders); the system prompt is sufficient if you don’t add custom text.
-  - You do **not** request camera, location, or other permissions you don’t use.
+- **Done:** Added `expo-image-picker` config plugin in `app.json` with:
+  - **photosPermission:** “Potentijal uses your photo library so you can choose a profile picture and add highlight videos.” → sets `NSPhotoLibraryUsageDescription`.
+  - **cameraPermission: false** → no `NSCameraUsageDescription` and no camera permission (app uses library only; profile/camera features are currently hidden).
+- **Notifications:** `expo-notifications` is used in onboarding and for reminders; the system prompt is used (no custom plugin needed). No other permissions (location, microphone, etc.) are requested.
 
 ### 4.2 Android permissions
 

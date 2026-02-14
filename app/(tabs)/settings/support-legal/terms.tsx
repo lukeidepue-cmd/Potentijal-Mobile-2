@@ -54,8 +54,8 @@ export default function Terms() {
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <Text style={styles.effectiveDate}>
-          Effective Date: January 1, 2025{"\n"}
-          Last Updated: January 1, 2025
+          Effective Date: January 1, 2026{"\n"}
+          Last Updated: January 1, 2026
         </Text>
 
         <Text style={styles.introText}>

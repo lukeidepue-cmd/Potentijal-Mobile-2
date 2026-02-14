@@ -435,8 +435,11 @@ export default function PurchasePremium() {
             continueButtonScale.value = withSpring(1, { damping: 15, stiffness: 300 });
           }}
         >
-          <Text style={styles.continueButtonText}>{purchasing ? "Processing…" : "Continue"}</Text>
+          <Text style={styles.continueButtonText}>{purchasing ? "Processing…" : "Try Free for 1 Week"}</Text>
         </AnimatedPressable>
+        <Text style={styles.subscriptionDisclaimer}>
+          This is a renewing subscription and you can cancel in the Manage Subscription section in Settings
+        </Text>
       </ScrollView>
     </View>
   );
@@ -716,5 +719,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#06160D",
     fontFamily: FONT.uiBold,
+  },
+  subscriptionDisclaimer: {
+    marginTop: 12,
+    paddingHorizontal: 8,
+    fontSize: 12,
+    color: theme.colors.textLo,
+    fontFamily: FONT.uiRegular,
+    textAlign: "center",
+    lineHeight: 18,
   },
 });

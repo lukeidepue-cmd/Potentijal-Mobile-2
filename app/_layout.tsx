@@ -1,7 +1,11 @@
 // app/_layout.tsx
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { View, StyleSheet, Image, AppState } from 'react-native';
+import { View, StyleSheet, Image, AppState, Platform } from 'react-native';
+import {
+  getTrackingPermissionsAsync,
+  requestTrackingPermissionsAsync,
+} from 'expo-tracking-transparency';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -77,6 +81,23 @@ function RootLayoutNav() {
     });
     return () => sub.remove();
   }, [profileRefresh]);
+
+  // App Tracking Transparency (ATT) – request on iOS before PostHog is used for tracking
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const run = async () => {
+      try {
+        const { status } = await getTrackingPermissionsAsync();
+        if (status === 'undetermined') {
+          await requestTrackingPermissionsAsync();
+        }
+      } catch (_) {
+        // Ignore; app works without ATT
+      }
+    };
+    const t = setTimeout(run, 1500);
+    return () => clearTimeout(t);
+  }, []);
 
   // Track user in PostHog when they log in/out
   usePostHogUserTracking();
@@ -196,13 +217,13 @@ function RootLayoutNav() {
       }
     } else if (needsOnboarding === false) {
       if (!inTabsGroup) {
-        router.replace('/(tabs)');
+        router.replace('/(tabs)' as import('expo-router').Href);
       }
       scheduleAllWorkoutNotifications().catch(() => {});
       scheduleConsistencyScoreNotification().catch(() => {});
     } else {
       if (user && !inTabsGroup && !inOnboardingGroup) {
-        router.replace('/(tabs)');
+        router.replace('/(tabs)' as import('expo-router').Href);
       }
     }
   }, [user, authLoading, needsOnboarding, onboardingLoading, segments]);

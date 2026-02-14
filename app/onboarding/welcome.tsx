@@ -9,11 +9,13 @@ import {
   ImageBackground,
   Platform,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../../constants/links';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -208,8 +210,14 @@ export default function WelcomeScreen() {
             <View style={styles.termsSection}>
               <Text style={styles.termsText}>
                 By continuing, you agree to our{' '}
-                <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-                <Text style={styles.termsLink}>Privacy Policy</Text>.
+                <Text style={styles.termsLink} onPress={() => Linking.openURL(TERMS_OF_SERVICE_URL)}>
+                  Terms of Service
+                </Text>
+                {' '}and{' '}
+                <Text style={styles.termsLink} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+                  Privacy Policy
+                </Text>
+                .
               </Text>
             </View>
           </View>
