@@ -211,7 +211,7 @@ export default function Help() {
 
         <Text style={styles.sectionTitle}>Contact us</Text>
         <Text style={styles.contentText}>
-          For account issues, billing questions, or feedback, use the Contact option in Settings or email lukeidepue@gmail.com. We'll get back to you as soon as we can.
+          For account issues, billing questions, or feedback, use the Contact option in Settings or email potentijal@gmail.com. We'll get back to you as soon as we can.
         </Text>
 
         <Text style={styles.sectionTitle}>Final note</Text>

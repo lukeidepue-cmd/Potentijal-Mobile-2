@@ -38,7 +38,7 @@ export default function ContactSupport() {
     return null;
   }
 
-  const supportEmail = "lukeidepue@gmail.com";
+  const supportEmail = "potentijal@gmail.com";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

@@ -10,11 +10,11 @@
 
 ### 1.1 Privacy policy and terms – placeholders and links ✅ Done
 
-- **Terms of Service (in-app):** Contact section now uses `lukeidepue@gmail.com`; mailing address placeholder removed in `app/(tabs)/settings/support-legal/terms.tsx`.
+- **Terms of Service (in-app):** Contact section now uses `potentijal@gmail.com`; mailing address placeholder removed in `app/(tabs)/settings/support-legal/terms.tsx`.
 
-- **Privacy Policy (in-app):** Contact section now uses `lukeidepue@gmail.com`; mailing address placeholder removed in `app/(tabs)/settings/support-legal/privacy-policy.tsx`.
+- **Privacy Policy (in-app):** Contact section now uses `potentijal@gmail.com`; mailing address placeholder removed in `app/(tabs)/settings/support-legal/privacy-policy.tsx`.
 
-- **Support email consistency:** One support email used everywhere: `lukeidepue@gmail.com` (Contact screen, Help, Terms, Privacy Policy). Ensure that inbox is monitored for App Review and user support.
+- **Support email consistency:** One support email used everywhere: `potentijal@gmail.com` (Contact screen, Help, Terms, Privacy Policy). Ensure that inbox is monitored for App Review and user support.
 
 - **Privacy policy URL for App Store Connect:** Apple requires a **URL** to your privacy policy in App Store Connect (not only in-app text).  
   **Action:** Host your privacy policy at a stable URL (e.g. your website) and enter that URL in App Store Connect → App Information → Privacy Policy URL. The in-app Privacy Policy screen can remain; the URL is for the store listing and reviewer verification.
@@ -158,8 +158,8 @@ Before you submit:
 
 | Area | Item |
 |------|------|
-| Legal / contact | ✅ Done: placeholder removed; contact is lukeidepue@gmail.com. |
-| Legal / contact | ✅ Done: lukeidepue@gmail.com used in Contact, Help, Terms, Privacy. |
+| Legal / contact | ✅ Done: placeholder removed; contact is potentijal@gmail.com. |
+| Legal / contact | ✅ Done: potentijal@gmail.com used in Contact, Help, Terms, Privacy. |
 | App Store Connect | ✅ Done: Privacy Policy URL set to https://potentijal-privacy-policy.base44.app. |
 | App Store Connect | Set Support URL (working, with contact info). |
 | App Store Connect | Add App Review notes (login flow, account deletion path; optional: demo account). |

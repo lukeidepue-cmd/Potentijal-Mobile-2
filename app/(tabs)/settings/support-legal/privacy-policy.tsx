@@ -167,7 +167,7 @@ export default function PrivacyPolicy() {
         <Text style={styles.sectionTitle}>11. Contact</Text>
         <Text style={styles.contentText}>
           For privacy-related questions, access or deletion requests, or complaints:{"\n\n"}
-          Email: lukeidepue@gmail.com
+          Email: potentijal@gmail.com
         </Text>
       </ScrollView>
     </View>

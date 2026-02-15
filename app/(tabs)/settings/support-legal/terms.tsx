@@ -165,7 +165,7 @@ export default function Terms() {
         <Text style={styles.sectionTitle}>18. Contact</Text>
         <Text style={styles.contentText}>
           For questions about these Terms or the Service:{"\n\n"}
-          Email: lukeidepue@gmail.com
+          Email: potentijal@gmail.com
         </Text>
       </ScrollView>
     </View>

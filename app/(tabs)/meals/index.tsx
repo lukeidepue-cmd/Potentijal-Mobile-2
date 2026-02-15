@@ -371,7 +371,7 @@ export default function ProgressScreen() {
     const premiumCards = [1, 2, 3]; // Skill Map, Consistency Score, Training Statistics
     
     if (premiumCards.includes(cardIndex) && !isPremium) {
-      // Do nothing for premium features when not premium
+      router.push("/(tabs)/purchase-premium");
       return;
     }
     

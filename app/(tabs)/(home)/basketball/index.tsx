@@ -478,7 +478,7 @@ export default function BasketballHome() {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               if (!canLogGames) {
-                // Do nothing for premium features when not premium
+                router.push("/(tabs)/purchase-premium");
                 return;
               }
               // Measure image position before navigation
@@ -550,7 +550,7 @@ export default function BasketballHome() {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               if (!canLogPractices) {
-                // Do nothing for premium features when not premium
+                router.push("/(tabs)/purchase-premium");
                 return;
               }
               // Measure image position before navigation

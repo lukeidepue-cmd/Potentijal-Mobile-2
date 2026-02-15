@@ -381,13 +381,14 @@ export default function HistoryIndex() {
                 <Pressable
                   key={tab}
                   onPress={() => {
-                    if (!isDisabled) {
-                      Haptics.selectionAsync();
-                      setHistoryType(tab);
+                    if (isDisabled) {
+                      router.push("/(tabs)/purchase-premium");
+                      return;
                     }
+                    Haptics.selectionAsync();
+                    setHistoryType(tab);
                   }}
                   style={[styles.segmentTab, isDisabled && styles.segmentTabDisabled]}
-                  disabled={isDisabled}
                 >
                   <Text
                     style={[

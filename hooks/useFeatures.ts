@@ -2,12 +2,16 @@
  * Premium Features Hook
  * Checks user's premium/creator status and determines feature access.
  * Creator accounts get all premium features for free (set manually in DB); no subscription required.
+ * Caches premium status in AsyncStorage so returning premium users see unlocks immediately on load.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMyProfile, type Profile } from '../lib/api/profile';
 import { useAuth } from '../providers/AuthProvider';
 import { useProfileRefresh } from '../providers/ProfileRefreshContext';
+
+const PREMIUM_CACHE_KEY_PREFIX = '@app_profile_premium_';
 
 export interface FeatureAccess {
   isPremium: boolean;
@@ -20,9 +24,25 @@ export interface FeatureAccess {
   canAddMoreSports: boolean;
 }
 
+function stubProfileFromCache(userId: string, cached: { is_premium?: boolean; plan?: string; is_creator?: boolean }): Profile {
+  return {
+    id: userId,
+    username: '',
+    display_name: '',
+    bio: '',
+    profile_image_url: null,
+    is_premium: !!cached.is_premium,
+    is_creator: !!cached.is_creator,
+    plan: (cached.plan === 'premium' || cached.plan === 'creator' ? cached.plan : 'free') as 'free' | 'premium' | 'creator',
+    sports: [],
+    primary_sport: null,
+  };
+}
+
 /**
  * Hook to check premium feature access
- * Returns feature access based on user's premium/creator status
+ * Returns feature access based on user's premium/creator status.
+ * Uses cached premium status on load so premium users don't see locks for 10–15s.
  */
 export function useFeatures(): FeatureAccess & { loading: boolean } {
   const { user } = useAuth();
@@ -30,28 +50,56 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
   const refreshKey = profileRefresh?.refreshKey ?? 0;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    const loadProfile = async () => {
+    mountedRef.current = true;
+
+    const run = async () => {
       if (!user) {
         setProfile(null);
         setLoading(false);
         return;
       }
 
+      const cacheKey = PREMIUM_CACHE_KEY_PREFIX + user.id;
+      setLoading(true);
+
+      // Read cache first so premium users see unlocks immediately
       try {
-        setLoading(true);
+        const raw = await AsyncStorage.getItem(cacheKey);
+        if (mountedRef.current && raw) {
+          const parsed = JSON.parse(raw) as { is_premium?: boolean; plan?: string; is_creator?: boolean };
+          if (parsed && (typeof parsed.is_premium === 'boolean' || parsed.plan)) {
+            setProfile(stubProfileFromCache(user.id, parsed));
+            setLoading(false);
+          }
+        }
+      } catch (_) {
+        // Ignore cache parse errors
+      }
+
+      // Fetch fresh profile and update cache
+      try {
         const { data } = await getMyProfile();
+        if (!mountedRef.current) return;
         setProfile(data);
+        if (data) {
+          const toCache = { is_premium: data.is_premium, plan: data.plan, is_creator: data.is_creator };
+          AsyncStorage.setItem(cacheKey, JSON.stringify(toCache)).catch(() => {});
+        }
       } catch (_error) {
-        setProfile(null);
+        if (mountedRef.current) setProfile((p) => p ?? null);
       } finally {
-        setLoading(false);
+        if (mountedRef.current) setLoading(false);
       }
     };
 
-    loadProfile();
-  }, [user?.id, refreshKey]); // Reload when user changes or profile refresh requested (e.g. after purchase)
+    run();
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [user?.id, refreshKey]);
 
   // Premium access: subscription (plan 'premium' / is_premium) OR creator (plan 'creator' / is_creator).
   // Creators are set manually in the database and get all premium features without subscribing.
