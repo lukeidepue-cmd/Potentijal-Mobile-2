@@ -1,0 +1,17 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:8081",
+  "executionArgs": {
+    "projectName": "my-first-app",
+    "projectPath": "c:\\Users\\lukei\\hello-node\\my-first-app",
+    "testIds": [],
+    "additionalInstruction": "",
+    "envs": {
+      "API_KEY": "sk-user-9iidUmQ4OUpffjqhIoUj96CMfVcTekwp1BhMakr4eajkwRxq4A6EJ4ea-5IX2Azya0t8WutCYnqsRMA9d9YOdQ8z8CZP9VAJpBYf-kqsdrwT1E-trYIt0IWFn3OvoLnNDj0"
+    }
+  },
+  "serverPort": 52562,
+  "proxy": "http://2e064b6f-c6e0-411d-92a0-2d1117cd1fd6:2D2kzFSipGEyWs6lSn3V0bp6qj9ckmyY@tun.testsprite.com:8080"
+}

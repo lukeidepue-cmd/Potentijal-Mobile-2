@@ -2,11 +2,12 @@
  * Premium Features Hook
  * Checks user's premium/creator status and determines feature access.
  * Creator accounts get all premium features for free (set manually in DB); no subscription required.
- * Caches premium status in AsyncStorage so returning premium users see unlocks immediately on load.
+ * Caches premium status in secure storage on native (M2), AsyncStorage on web, so returning
+ * premium users see unlocks immediately on load. Server always re-validates for authorization.
  */
 
 import { useState, useEffect, useRef } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getPremiumCacheItem, setPremiumCacheItem } from '../lib/premium-cache-storage';
 import { getMyProfile, type Profile } from '../lib/api/profile';
 import { useAuth } from '../providers/AuthProvider';
 import { useProfileRefresh } from '../providers/ProfileRefreshContext';
@@ -65,9 +66,9 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
       const cacheKey = PREMIUM_CACHE_KEY_PREFIX + user.id;
       setLoading(true);
 
-      // Read cache first so premium users see unlocks immediately
+      // Read cache first so premium users see unlocks immediately (secure storage on native)
       try {
-        const raw = await AsyncStorage.getItem(cacheKey);
+        const raw = await getPremiumCacheItem(cacheKey);
         if (mountedRef.current && raw) {
           const parsed = JSON.parse(raw) as { is_premium?: boolean; plan?: string; is_creator?: boolean };
           if (parsed && (typeof parsed.is_premium === 'boolean' || parsed.plan)) {
@@ -79,14 +80,14 @@ export function useFeatures(): FeatureAccess & { loading: boolean } {
         // Ignore cache parse errors
       }
 
-      // Fetch fresh profile and update cache
+      // Fetch fresh profile and update cache; server always authorizes premium actions
       try {
         const { data } = await getMyProfile();
         if (!mountedRef.current) return;
         setProfile(data);
         if (data) {
           const toCache = { is_premium: data.is_premium, plan: data.plan, is_creator: data.is_creator };
-          AsyncStorage.setItem(cacheKey, JSON.stringify(toCache)).catch(() => {});
+          setPremiumCacheItem(cacheKey, JSON.stringify(toCache)).catch(() => {});
         }
       } catch (_error) {
         if (mountedRef.current) setProfile((p) => p ?? null);

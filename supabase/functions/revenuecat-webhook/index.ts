@@ -4,17 +4,24 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "../_shared/rate-limit.ts";
+import {
+  readJsonWithMaxSize,
+  badRequest,
+  stringOrUndefined,
+  MAX_BODY_SIZE_WEBHOOK,
+} from "../_shared/validation.ts";
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 /** RevenueCat sends optional Authorization header you set in dashboard; we verify it. */
 function verifyWebhookAuth(req: Request): boolean {
   const secret = Deno.env.get("REVENUECAT_WEBHOOK_SECRET");
-  if (!secret) return true; // If not set, skip verification (not recommended for production)
+  // Fail closed: if secret is not set, reject. Prevents unauthenticated webhook abuse in production.
+  if (!secret || secret.trim() === "") return false;
   const raw = req.headers.get("Authorization");
   if (!raw) return false;
   const auth = raw.trim();
@@ -66,7 +73,24 @@ const PREMIUM_EVENT_TYPES: EventType[] = [
   "SUBSCRIPTION_PAUSED",
 ];
 
+/** Allowlist of known RevenueCat event types (strict validation). */
+const ALLOWED_EVENT_TYPES: readonly string[] = [
+  "INITIAL_PURCHASE",
+  "RENEWAL",
+  "CANCELLATION",
+  "EXPIRATION",
+  "BILLING_ISSUE",
+  "UNCANCELLATION",
+  "NON_RENEWING_PURCHASE",
+  "SUBSCRIPTION_EXTENDED",
+  "PRODUCT_CHANGE",
+  "REFUND_REVERSED",
+  "SUBSCRIPTION_PAUSED",
+  "TRANSFER",
+];
+
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -88,27 +112,52 @@ Deno.serve(async (req) => {
     });
   }
 
-  let body: WebhookBody;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  // Rate limit: 60 requests per minute per IP (webhook bursts)
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (supabaseUrl && supabaseServiceKey) {
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const allowed = await checkRateLimit(
+      supabase,
+      "revenuecat-webhook",
+      getClientIp(req),
+      60
+    );
+    if (!allowed) {
+      return rateLimitResponse(corsHeaders);
+    }
   }
 
-  const event = body?.event;
-  if (!event || typeof event !== "object") {
-    return new Response(JSON.stringify({ error: "Missing event" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  const [body, bodyError] = await readJsonWithMaxSize(req, MAX_BODY_SIZE_WEBHOOK, corsHeaders);
+  if (bodyError) return bodyError;
+
+  const raw = body as WebhookBody;
+  const event = raw?.event;
+  if (!event || typeof event !== "object" || Array.isArray(event)) {
+    return badRequest("Missing or invalid event", corsHeaders);
   }
 
-  const eventType = (event.type ?? "") as EventType;
-  const appUserId = event.app_user_id as string | undefined;
-  const environment = (event as { environment?: string }).environment ?? "unknown";
+  const eventTypeRaw = event.type;
+  if (typeof eventTypeRaw !== "string" || eventTypeRaw.length === 0) {
+    return badRequest("Missing or invalid event.type", corsHeaders);
+  }
+  if (!ALLOWED_EVENT_TYPES.includes(eventTypeRaw)) {
+    return badRequest("Unknown event.type", corsHeaders);
+  }
+  const eventType = eventTypeRaw as EventType;
+
+  const appUserId = stringOrUndefined(event.app_user_id, 256);
+  const productId = stringOrUndefined(event.product_id, 128);
+  const periodType = stringOrUndefined(event.period_type, 32);
+  let expirationAtMs: number | null = null;
+  if (event.expiration_at_ms != null) {
+    if (typeof event.expiration_at_ms !== "number" || !Number.isFinite(event.expiration_at_ms)) {
+      return badRequest("Invalid event.expiration_at_ms", corsHeaders);
+    }
+    expirationAtMs = event.expiration_at_ms;
+  }
+
+  const environment = stringOrUndefined((event as { environment?: unknown }).environment, 32) ?? "unknown";
 
   console.log("[revenuecat-webhook] Received event:", { type: eventType, app_user_id: appUserId, environment });
 
@@ -129,9 +178,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl || !supabaseServiceKey) {
     console.error("[revenuecat-webhook] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
     return new Response(JSON.stringify({ error: "Server configuration error" }), {
       status: 500,
@@ -139,7 +186,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
@@ -187,10 +234,7 @@ Deno.serve(async (req) => {
   }
 
   if (PREMIUM_EVENT_TYPES.includes(eventType)) {
-    const productId = (event as RevenueCatEvent).product_id ?? undefined;
-    const periodType = (event as RevenueCatEvent).period_type ?? undefined;
-    const expirationAtMs = (event as RevenueCatEvent).expiration_at_ms;
-    const premiumExpiresAt = expirationAtMs
+    const premiumExpiresAt = expirationAtMs != null
       ? new Date(expirationAtMs).toISOString()
       : null;
 

@@ -1,0 +1,2120 @@
+[
+  {
+    "id": "TC001",
+    "title": "Welcome screen loads and shows primary call-to-action",
+    "description": "Verifies the onboarding welcome screen renders and shows the Continue action for new users.",
+    "category": "Onboarding welcome",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/welcome"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Welcome\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Continue\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Continue from Welcome navigates to Email Entry",
+    "description": "Verifies tapping Continue from the welcome screen takes the user to the email entry step.",
+    "category": "Onboarding welcome",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/welcome"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Continue\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Email\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Continue is not duplicated and remains usable after a scroll",
+    "description": "Verifies the Continue control remains available and functional after scrolling the welcome screen.",
+    "category": "Onboarding welcome",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/welcome"
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the bottom of the page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Continue\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Continue\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Rapid repeated taps on Continue do not break navigation",
+    "description": "Verifies repeated Continue taps do not result in an error state and the user ends on email entry.",
+    "category": "Onboarding welcome",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/welcome"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Continue\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Continue\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Email\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Welcome screen does not show authenticated-only onboarding steps",
+    "description": "Verifies the welcome screen does not expose later onboarding steps (account basics/sport selection) before email entry.",
+    "category": "Onboarding welcome",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/welcome"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Account basics\" is not visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Sport selection\" is not visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Continue\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Successful email submission navigates to email verification screen",
+    "description": "Verifies that entering a valid email and submitting proceeds to the email verification screen.",
+    "category": "Email sign up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Email\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"new.user@example.com\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-verification\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"verification\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Invalid email format shows inline validation error",
+    "description": "Verifies that an improperly formatted email is rejected with a visible validation message and does not proceed.",
+    "category": "Email sign up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "action",
+        "description": "Type \"not-an-email\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"invalid email\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Empty email submission shows required-field validation",
+    "description": "Verifies that submitting with an empty email shows a required/empty error message.",
+    "category": "Email sign up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"required\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Whitespace-only email is rejected",
+    "description": "Verifies that an email consisting of only spaces is treated as invalid and shows a visible error.",
+    "category": "Email sign up",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "action",
+        "description": "Type \"   \" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"invalid\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Email with leading/trailing spaces is accepted after trimming",
+    "description": "Verifies that a valid email with surrounding spaces can still be submitted and proceeds to verification.",
+    "category": "Email sign up",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "action",
+        "description": "Type \"  spaced.user@example.com  \" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-verification\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"verification\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Supabase signUp failure shows a visible API error message",
+    "description": "Verifies that when the sign-up request fails, the user sees a clear error message and remains on the email entry screen.",
+    "category": "Email sign up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "action",
+        "description": "Type \"failcase@example.com\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"error\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-entry\""
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Resubmitting after an error can succeed and proceeds to verification",
+    "description": "Verifies that after an API error is shown, the user can change the email and successfully submit to reach verification.",
+    "category": "Email sign up",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /onboarding/email-entry"
+      },
+      {
+        "type": "action",
+        "description": "Type \"failcase@example.com\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"error\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"recovered.user@example.com\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/onboarding/email-verification\""
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Home loads for authenticated user and shows sport switcher",
+    "description": "Verifies an authenticated user can reach the Home tab and see the main home content including sport switching UI.",
+    "category": "Home tab navigation",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Sports\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Sport switcher\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Navigate from Home to a sport screen via sport card",
+    "description": "Verifies tapping a sport card from Home navigates to the selected sport screen (e.g., Basketball).",
+    "category": "Home tab navigation",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Basketball\" sport card"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify page title contains \"Basketball\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Basketball\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Navigate from Home to Settings via Settings icon",
+    "description": "Verifies tapping the Settings icon from Home opens the Settings screen.",
+    "category": "Home tab navigation",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Settings\" icon"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/settings\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Settings\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Switch sports on Home and verify different sport card content is shown",
+    "description": "Verifies the user can switch the selected sport on the Home screen and see corresponding sport-specific content update.",
+    "category": "Home tab navigation",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Sport switcher\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sport switcher\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the sport option \"Basketball\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Basketball\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Home tab: Settings screen is reachable and remains stable on load",
+    "description": "Verifies Settings opens from Home and key Settings content is visible without requiring additional navigation.",
+    "category": "Home tab navigation",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Settings\" icon"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/settings\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Settings\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Account\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Home tab: Sport card navigation works after returning to Home via tab bar",
+    "description": "Verifies sport navigation still works after moving away and coming back to Home using the tab bar.",
+    "category": "Home tab navigation",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/workouts\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Home\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Basketball\" sport card"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Attempt sign-in with invalid credentials and verify user stays on login",
+    "description": "Verifies that invalid credentials prevent access to Home and show an on-screen error.",
+    "category": "Home tab navigation",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"invalid.user@example.com\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"WrongPassword123!\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/login\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Invalid\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Sign in\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Add Game from Basketball sport screen and verify it appears in History",
+    "description": "Verifies a user can add a Game from the Basketball dashboard and then see the saved session listed in History.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Basketball\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Add Game\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Add Game\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Today\" into the Date field"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Opponent\" into the Opponent field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Save\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"History\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Opponent\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Add Practice with missing required fields shows validation error",
+    "description": "Verifies the Practice form blocks saving when required fields are empty and shows a visible validation message.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Basketball\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Add Practice\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Add Practice\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Save\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Required\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Basketball sport dashboard loads and shows quick actions",
+    "description": "Verifies the Basketball sport dashboard is reachable and displays expected quick actions.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Add Game\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Add Practice\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Open Schedule Week from Basketball sport screen",
+    "description": "Verifies the Schedule Week view can be opened from the Basketball dashboard and renders a week view header.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Schedule Week\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Schedule\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Open Settings from Basketball sport screen",
+    "description": "Verifies that tapping Settings from the Basketball dashboard routes the user to the Settings screen.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Settings\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Settings\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Cancel out of Add Game returns to Basketball dashboard without saving",
+    "description": "Verifies the user can exit the Add Game flow without saving and returns to the Basketball dashboard.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Add Game\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Add Game\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Cancel\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Add Game\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC026",
+    "title": "History remains accessible after returning from Basketball screen",
+    "description": "Verifies tab navigation from Basketball to History works and the History screen renders its list area.",
+    "category": "Sport screen (e.g. Basketball)",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Basketball\" from the Home screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Basketball\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"History\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC027",
+    "title": "Start a workout from the Workouts tab and reach the workout summary",
+    "description": "Verifies a signed-in user can open Workouts, start a workout, complete it, and see a summary screen.",
+    "category": "Workouts",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Workouts\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout list\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC028",
+    "title": "Open a workout details screen from the workout list",
+    "description": "Verifies a user can tap a workout in the list and land on a workout details screen with a Start option.",
+    "category": "Workouts",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first workout in the workout list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Start\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC029",
+    "title": "Complete a workout and verify it appears in History",
+    "description": "Verifies that after completing a workout, the completed workout is visible as an entry in History.",
+    "category": "Workouts",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first workout in the workout list"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Start\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout summary\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"History\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout entry\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC030",
+    "title": "Finish workout via completion control and land on summary screen",
+    "description": "Verifies that using the in-workout completion action transitions to the workout summary screen.",
+    "category": "Workouts",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first workout in the workout list"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Start\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Finish\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout summary\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC031",
+    "title": "Attempt to start an empty workout and see an empty/error message",
+    "description": "Verifies that starting a workout with no exercises shows a clear empty-workout or error message instead of starting a normal session.",
+    "category": "Workouts",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on a workout in the list that indicates it has no exercises"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Start\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No exercises\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC032",
+    "title": "Workouts list loads and is scrollable to reveal more items",
+    "description": "Verifies the workout list renders and the user can scroll to see additional workouts.",
+    "category": "Workouts",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the bottom of the workout list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout list item\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC033",
+    "title": "Workout details page shows expected core sections before starting",
+    "description": "Verifies that a workout details view shows basic information and a Start control before the workout begins.",
+    "category": "Workouts",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Workouts\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first workout in the workout list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"workout title\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"exercise list\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Start\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC034",
+    "title": "Search exercise with no results shows empty state in Progress Graphs",
+    "description": "Verifies searching for an exercise that does not exist shows an empty state or no-results message.",
+    "category": "Progress (Meals tab)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /meals"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Progress Graphs\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Progress Graphs\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the exercise search field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"zzzznonexistentexercise\" into the exercise search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No results\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC035",
+    "title": "Search exercise with no data shows 'no data' empty graph state",
+    "description": "Verifies selecting an exercise that returns no historical data shows a clear empty/no-data state for the graph.",
+    "category": "Progress (Meals tab)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /meals"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Progress Graphs\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Progress Graphs\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the exercise search field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"test\" into the exercise search field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first exercise result"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No data\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC036",
+    "title": "Time-range toggle controls are visible on Progress Graphs screen",
+    "description": "Verifies the Progress Graphs screen exposes all time-range options (30/90/180/360) for the selected exercise.",
+    "category": "Progress (Meals tab)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /meals"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Progress Graphs\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Progress Graphs\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"30\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"90\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"180\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"360\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC037",
+    "title": "Clearing exercise search restores default/empty state",
+    "description": "Verifies clearing the exercise search input removes prior filtering and returns to the default state (prompt to search or list of suggestions).",
+    "category": "Progress (Meals tab)",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /meals"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Progress Graphs\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Progress Graphs\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the exercise search field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"bench\" into the exercise search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"search results\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Press Escape"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Search\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC038",
+    "title": "View history list and open a session to see details",
+    "description": "Verifies a signed-in user can view the History list and open a session to see details like date, sport, and metrics.",
+    "category": "History",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Home\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"History\" in the tab bar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/history\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first session item in the history list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Date\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Sport\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC039",
+    "title": "History list is in reverse chronological order (newest first)",
+    "description": "Verifies the History list presents sessions in reverse chronological order by checking the first item appears as the most recent date shown.",
+    "category": "History",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"History\" in the tab bar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first session item in the history list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Date\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Press Escape"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC040",
+    "title": "History list persists after returning from session details",
+    "description": "Verifies the user can open a session detail and then return to History without losing the list view.",
+    "category": "History",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"History\" in the tab bar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first session item in the history list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Sport\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Back\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC041",
+    "title": "Session details show at least one metric value",
+    "description": "Verifies the session details screen displays a metrics section/value rather than only headers.",
+    "category": "History",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"History\" in the tab bar"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first session item in the history list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Metrics\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Metric value\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Date\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Sport\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC042",
+    "title": "History screen can be reached from another tab",
+    "description": "Verifies navigation to History works when starting from a different tab (e.g., Workouts).",
+    "category": "History",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /workouts"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/workouts\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Workouts\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"History\" in the tab bar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/history\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"History\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC043",
+    "title": "Open Settings and view the main settings list",
+    "description": "Verifies that a signed-in user can open Settings and see key settings options.",
+    "category": "Settings",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Settings\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"My Sports\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC044",
+    "title": "My Sports: open from Settings and return back to Settings",
+    "description": "Verifies navigation from Settings to My Sports and back returns to the Settings screen.",
+    "category": "Settings",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"My Sports\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"My Sports\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Back\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Settings\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC045",
+    "title": "My Sports: edit sports selection and see the updated state",
+    "description": "Verifies that a user can change selected sports in My Sports and the change is reflected after saving/returning.",
+    "category": "Settings",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"My Sports\""
+      },
+      {
+        "type": "action",
+        "description": "Click on a sport option to toggle its selection state"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Saved\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC046",
+    "title": "Premium: Restore Purchases shows a confirmation message",
+    "description": "Verifies that tapping Restore Purchases results in a visible success confirmation in the UI.",
+    "category": "Settings",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Premium\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Restore Purchases\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Restore Purchases\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC047",
+    "title": "Premium: Restore Purchases updates premium state indicator",
+    "description": "Verifies that after Restore Purchases, the screen reflects an updated premium status (e.g., Active/Unlocked).",
+    "category": "Settings",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Premium\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Restore Purchases\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Premium\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC048",
+    "title": "Settings sub-pages are reachable: Notifications screen opens from Settings",
+    "description": "Verifies that Notifications can be opened from Settings and presents expected screen title/content.",
+    "category": "Settings",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Notifications\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Notifications\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Back\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC049",
+    "title": "Settings sub-pages are reachable: Account screen opens from Settings",
+    "description": "Verifies that Account settings can be opened from Settings and returns back successfully.",
+    "category": "Settings",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Account\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Account\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Back\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC050",
+    "title": "Support & Legal section is visible from Settings",
+    "description": "Verifies that the Support/Legal options are present and can be opened without breaking navigation.",
+    "category": "Settings",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Support\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Legal\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Help\""
+      }
+    ]
+  },
+  {
+    "id": "TC051",
+    "title": "Sign out from Settings returns user to the login screen",
+    "description": "Verifies that signing out from Settings ends the session and shows the login screen UI.",
+    "category": "Settings",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Settings\" tab"
+      },
+      {
+        "type": "action",
+        "description": "Scroll to \"Sign out\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign out\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/login\""
+      }
+    ]
+  },
+  {
+    "id": "TC052",
+    "title": "Load premium purchase screen and display available plans",
+    "description": "Verifies that a signed-in user can open the Purchase premium screen and see at least one premium plan option displayed.",
+    "category": "Purchase premium",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Purchase premium\" tab or menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify page title contains \"Purchase\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Premium\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a premium plan option is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC053",
+    "title": "Premium options screen provides a way to go back without purchasing",
+    "description": "Verifies that the user can back out of the purchase screen and return to the previous area of the app.",
+    "category": "Purchase premium",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Purchase premium\" tab or menu item"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Back\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      }
+    ]
+  },
+  {
+    "id": "TC054",
+    "title": "Premium screen shows loading state before plans are visible",
+    "description": "Verifies that a loading indicator is shown while premium options are being fetched, then options appear.",
+    "category": "Purchase premium",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Purchase premium\" tab or menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Loading\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Wait for premium plan options to appear"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a premium plan option is visible"
+      }
+    ]
+  }
+]

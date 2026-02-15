@@ -72,7 +72,8 @@
         {
           "userTrackingPermission": "Potentijal uses this to understand how the app is used and to improve your experience. We do not use this for advertising."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

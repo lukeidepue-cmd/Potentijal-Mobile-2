@@ -5,6 +5,12 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "../_shared/rate-limit.ts";
+import { readJsonWithMaxSize, MAX_BODY_SIZE_SMALL } from "../_shared/validation.ts";
 
 const LOOPS_EVENTS_URL = "https://app.loops.so/api/v1/events/send";
 const TRIAL_ONE_DAY_WINDOW_DAYS = 1; // "trial ending soon" = 1 day before
@@ -160,8 +166,33 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Validate body size (cron typically sends empty or {}); reject oversized
+  const jsonHeaders = { "Content-Type": "application/json" };
+  const [body, bodyError] = await readJsonWithMaxSize(req, MAX_BODY_SIZE_SMALL, jsonHeaders);
+  if (bodyError) return bodyError;
+  if (body != null && (typeof body !== "object" || Array.isArray(body))) {
+    return new Response(JSON.stringify({ error: "Invalid body" }), {
+      status: 400,
+      headers: jsonHeaders,
+    });
+  }
+
+  // Rate limit: 10 requests per minute per IP (cron runs once/day; protect from abuse)
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (supabaseUrl && supabaseServiceKey) {
+    const supabaseRateLimit = createClient(supabaseUrl, supabaseServiceKey);
+    const allowed = await checkRateLimit(
+      supabaseRateLimit,
+      "trial-ending-soon",
+      getClientIp(req),
+      10
+    );
+    if (!allowed) {
+      return rateLimitResponse(jsonHeaders);
+    }
+  }
+
   const loopsApiKey = Deno.env.get("LOOPS_API_KEY");
 
   if (!supabaseUrl || !supabaseServiceKey) {

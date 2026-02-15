@@ -50,10 +50,11 @@ function fmtDateFromISO(iso: string) {
 }
 
 /**
- * List workouts for history tab
+ * List workouts for the current user's history tab.
+ * Always uses the authenticated user's id (no optional userId) to prevent BOLA/IDOR.
+ * For viewing another user's profile, use listWorkoutsForProfile({ profileId }).
  */
 export async function listWorkouts(params: {
-  userId?: string;
   limit?: number;
   offset?: number;
   search?: string;
@@ -64,11 +65,10 @@ export async function listWorkouts(params: {
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const userId = params.userId || user.id;
     let query = supabase
       .from('workouts')
       .select('id, name, mode, performed_at, created_at')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .order('performed_at', { ascending: false })
       .order('created_at', { ascending: false });
 
@@ -142,10 +142,11 @@ export async function getWorkoutDetail(workoutId: string): Promise<{ data: Worko
 }
 
 /**
- * List practices for history tab
+ * List practices for the current user's history tab.
+ * Always uses the authenticated user's id (no optional userId) to prevent BOLA/IDOR.
+ * For viewing another user's profile, use listPracticesForProfile({ profileId }).
  */
 export async function listPractices(params: {
-  userId?: string;
   limit?: number;
   offset?: number;
   search?: string;
@@ -156,11 +157,10 @@ export async function listPractices(params: {
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const userId = params.userId || user.id;
     let query = supabase
       .from('practices')
       .select('id, mode, practiced_at, title, drill, notes, created_at')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .order('practiced_at', { ascending: false })
       .order('created_at', { ascending: false });
 
@@ -172,6 +172,46 @@ export async function listPractices(params: {
     }
     if (params.search) {
       query = query.or(`title.ilike.%${params.search}%,drill.ilike.%${params.search}%,notes.ilike.%${params.search}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    return { data: data || [], error: null };
+  } catch (error: any) {
+    return { data: null, error };
+  }
+}
+
+/**
+ * List practices for a specific profile (for viewing other users' profiles).
+ */
+export async function listPracticesForProfile(params: {
+  profileId: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: HistoryPractice[] | null; error: any }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { data: null, error: { message: 'User not authenticated' } };
+    }
+
+    let query = supabase
+      .from('practices')
+      .select('id, mode, practiced_at, title, drill, notes, created_at')
+      .eq('user_id', params.profileId)
+      .order('practiced_at', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (params.limit) {
+      query = query.limit(params.limit);
+    }
+    if (params.offset) {
+      query = query.range(params.offset, params.offset + (params.limit || 50) - 1);
     }
 
     const { data, error } = await query;
@@ -213,10 +253,11 @@ export async function getPracticeDetail(practiceId: string): Promise<{ data: His
 }
 
 /**
- * List games for history tab
+ * List games for the current user's history tab.
+ * Always uses the authenticated user's id (no optional userId) to prevent BOLA/IDOR.
+ * For viewing another user's profile, use listGamesForProfile({ profileId }).
  */
 export async function listGames(params: {
-  userId?: string;
   limit?: number;
   offset?: number;
   search?: string;
@@ -227,11 +268,10 @@ export async function listGames(params: {
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const userId = params.userId || user.id;
     let query = supabase
       .from('games')
       .select('id, mode, played_at, result, title, notes, stats, created_at')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .order('played_at', { ascending: false })
       .order('created_at', { ascending: false });
 
@@ -243,6 +283,46 @@ export async function listGames(params: {
     }
     if (params.search) {
       query = query.or(`title.ilike.%${params.search}%,notes.ilike.%${params.search}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    return { data: data || [], error: null };
+  } catch (error: any) {
+    return { data: null, error };
+  }
+}
+
+/**
+ * List games for a specific profile (for viewing other users' profiles).
+ */
+export async function listGamesForProfile(params: {
+  profileId: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: HistoryGame[] | null; error: any }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { data: null, error: { message: 'User not authenticated' } };
+    }
+
+    let query = supabase
+      .from('games')
+      .select('id, mode, played_at, result, title, notes, stats, created_at')
+      .eq('user_id', params.profileId)
+      .order('played_at', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (params.limit) {
+      query = query.limit(params.limit);
+    }
+    if (params.offset) {
+      query = query.range(params.offset, params.offset + (params.limit || 50) - 1);
     }
 
     const { data, error } = await query;

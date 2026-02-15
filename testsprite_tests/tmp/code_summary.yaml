@@ -1,0 +1,167 @@
+version: "2"
+type: frontend
+tech_stack:
+  - JavaScript
+  - TypeScript
+  - React
+  - React Native
+  - Expo
+  - expo-router
+  - Supabase
+  - Victory Native
+  - react-native-reanimated
+routes:
+  - path: /onboarding/welcome
+    file: app/onboarding/welcome.tsx
+    auth_required: false
+    description: Onboarding welcome screen
+  - path: /onboarding/email-entry
+    file: app/onboarding/email-entry.tsx
+    auth_required: false
+    description: Email entry for sign up
+  - path: /onboarding/email-verification
+    file: app/onboarding/email-verification.tsx
+    auth_required: false
+    description: Email verification
+  - path: /onboarding/account-basics
+    file: app/onboarding/account-basics.tsx
+    auth_required: true
+    description: Account basics (name, etc.)
+  - path: /onboarding/sport-selection
+    file: app/onboarding/sport-selection.tsx
+    auth_required: true
+    description: Select sports
+  - path: /onboarding/training-intent
+    file: app/onboarding/training-intent.tsx
+    auth_required: true
+    description: Training intent
+  - path: /onboarding/app-intro
+    file: app/onboarding/app-intro.tsx
+    auth_required: true
+    description: App intro
+  - path: /onboarding/notifications
+    file: app/onboarding/notifications.tsx
+    auth_required: true
+    description: Notification permissions
+  - path: /onboarding/premium-offer
+    file: app/onboarding/premium-offer.tsx
+    auth_required: true
+    description: Premium offer
+  - path: /onboarding/completion
+    file: app/onboarding/completion.tsx
+    auth_required: true
+    description: Onboarding completion
+  - path: /
+    file: app/(tabs)/(home)/index.tsx
+    auth_required: true
+    description: Home tab
+  - path: /workouts
+    file: app/(tabs)/workouts.tsx
+    auth_required: true
+    description: Workouts tab
+  - path: /history
+    file: app/(tabs)/history/index.tsx
+    auth_required: true
+    description: History tab
+  - path: /meals
+    file: app/(tabs)/meals/index.tsx
+    auth_required: true
+    description: Meals / Progress tab
+  - path: /profile
+    file: app/(tabs)/profile/index.tsx
+    auth_required: true
+    description: Profile tab
+  - path: /settings
+    file: app/(tabs)/settings/index.tsx
+    auth_required: true
+    description: Settings
+  - path: /purchase-premium
+    file: app/(tabs)/purchase-premium/index.tsx
+    auth_required: true
+    description: Purchase premium
+features:
+  - name: Onboarding welcome
+    description: User lands on welcome and can continue to email entry
+    files:
+      - app/onboarding/welcome.tsx
+    entry_route: /onboarding/welcome
+    user_interactions:
+      - Tap Continue to go to email entry
+    api_calls: []
+    auth_required: false
+  - name: Email sign up
+    description: Enter email and submit for verification
+    files:
+      - app/onboarding/email-entry.tsx
+      - providers/AuthProvider.tsx
+    entry_route: /onboarding/email-entry
+    user_interactions:
+      - Fill email input
+      - Tap Submit
+      - See verification or error
+    api_calls:
+      - method: POST
+        endpoint: Supabase auth signUp
+    auth_required: false
+  - name: Home tab navigation
+    description: View home and navigate to sport screens or settings
+    files:
+      - app/(tabs)/(home)/index.tsx
+      - app/(tabs)/_layout.tsx
+    entry_route: /
+    user_interactions:
+      - See home content
+      - Tap sport cards to open sport screen
+      - Tap Settings icon
+    api_calls: []
+    auth_required: true
+  - name: Sport screen (e.g. Basketball)
+    description: View sport dashboard, add game or practice, open schedule
+    files:
+      - app/(tabs)/(home)/basketball/index.tsx
+    entry_route: /(tabs)/(home)/basketball
+    user_interactions:
+      - View sport dashboard
+      - Tap Add Game or Add Practice
+      - Tap Schedule Week
+      - Tap Settings
+    api_calls: []
+    auth_required: true
+  - name: Workouts
+    description: Browse and start workouts
+    files:
+      - app/(tabs)/workouts.tsx
+    entry_route: /workouts
+    user_interactions:
+      - View workout list
+      - Tap workout to start or view details
+    api_calls: []
+    auth_required: true
+  - name: Settings
+    description: Open settings and sub-screens
+    files:
+      - app/(tabs)/settings/index.tsx
+    entry_route: /settings
+    user_interactions:
+      - View settings list
+      - Tap My Sports, Notifications, Account, Premium, Help, etc.
+      - Tap back to return
+    api_calls: []
+    auth_required: true
+  - name: Purchase premium
+    description: View premium purchase flow
+    files:
+      - app/(tabs)/purchase-premium/index.tsx
+    entry_route: /purchase-premium
+    user_interactions:
+      - View premium options
+      - Tap purchase or restore
+      - Tap back
+    api_calls:
+      - method: various
+        endpoint: RevenueCat
+    auth_required: true
+known_limitations:
+  - issue: Expo web may throw "window is not defined" during SSR when Supabase auth uses AsyncStorage
+    location: Supabase auth init / AsyncStorage
+    impact: App may not load on web until SSR-safe storage or guards are used

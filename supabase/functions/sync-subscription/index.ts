@@ -4,6 +4,12 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  checkRateLimit,
+  getRateLimitId,
+  rateLimitResponse,
+} from "../_shared/rate-limit.ts";
+import { readJsonWithMaxSize, MAX_BODY_SIZE_SMALL } from "../_shared/validation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +28,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const [body, bodyError] = await readJsonWithMaxSize(req, MAX_BODY_SIZE_SMALL, corsHeaders);
+  if (bodyError) return bodyError;
+  if (body != null && (typeof body !== "object" || Array.isArray(body))) {
+    return new Response(JSON.stringify({ error: "Invalid body: expected JSON object or empty" }), {
+      status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -60,6 +75,22 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Rate limit: 15 requests per minute per user
+  const supabaseUrlForRpc = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (supabaseUrlForRpc && supabaseServiceKey) {
+    const supabaseRpc = createClient(supabaseUrlForRpc, supabaseServiceKey);
+    const allowed = await checkRateLimit(
+      supabaseRpc,
+      "sync-subscription",
+      getRateLimitId(req, user.id),
+      15
+    );
+    if (!allowed) {
+      return rateLimitResponse(corsHeaders);
+    }
+  }
+
   const appUserId = user.id;
   const secretKey = Deno.env.get("REVENUECAT_SECRET_API_KEY");
   if (!secretKey) {
@@ -83,7 +114,7 @@ Deno.serve(async (req) => {
     const text = await rcRes.text();
     console.error("[sync-subscription] RevenueCat API error:", rcRes.status, text);
     return new Response(
-      JSON.stringify({ error: "Could not fetch subscription status", details: rcRes.status === 404 ? "Customer not found" : undefined }),
+      JSON.stringify({ error: "Could not fetch subscription status" }),
       { status: rcRes.status === 404 ? 404 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
