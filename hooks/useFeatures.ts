@@ -1,126 +1,22 @@
 /**
  * Premium Features Hook
- * Checks user's premium/creator status and determines feature access.
- * Creator accounts get all premium features for free (set manually in DB); no subscription required.
- * Caches premium status in secure storage on native (M2), AsyncStorage on web, so returning
- * premium users see unlocks immediately on load. Server always re-validates for authorization.
+ * Prefers FeaturesContext (loaded once at app root) so all screens get premium state
+ * instantly. Falls back to local fetch only when used outside FeaturesProvider.
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { getPremiumCacheItem, setPremiumCacheItem } from '../lib/premium-cache-storage';
-import { getMyProfile, type Profile } from '../lib/api/profile';
-import { useAuth } from '../providers/AuthProvider';
-import { useProfileRefresh } from '../providers/ProfileRefreshContext';
+import { useFeaturesContext } from '../providers/FeaturesContext';
+import { useFeaturesFallback } from './useFeaturesFallback';
 
-const PREMIUM_CACHE_KEY_PREFIX = '@app_profile_premium_';
-
-export interface FeatureAccess {
-  isPremium: boolean;
-  isCreator: boolean;
-  canLogGames: boolean;
-  canLogPractices: boolean;
-  canUseAITrainer: boolean;
-  canAddHighlights: boolean;
-  canViewCreatorWorkouts: boolean;
-  canAddMoreSports: boolean;
-}
-
-function stubProfileFromCache(userId: string, cached: { is_premium?: boolean; plan?: string; is_creator?: boolean }): Profile {
-  return {
-    id: userId,
-    username: '',
-    display_name: '',
-    bio: '',
-    profile_image_url: null,
-    is_premium: !!cached.is_premium,
-    is_creator: !!cached.is_creator,
-    plan: (cached.plan === 'premium' || cached.plan === 'creator' ? cached.plan : 'free') as 'free' | 'premium' | 'creator',
-    sports: [],
-    primary_sport: null,
-  };
-}
+export type { FeatureAccess } from '../providers/FeaturesContext';
 
 /**
- * Hook to check premium feature access
- * Returns feature access based on user's premium/creator status.
- * Uses cached premium status on load so premium users don't see locks for 10–15s.
+ * Hook to check premium feature access.
+ * When inside FeaturesProvider (normal app usage), returns app-level state so Home,
+ * Settings, Progress, etc. show unlocked immediately with no per-tab delay.
  */
-export function useFeatures(): FeatureAccess & { loading: boolean } {
-  const { user } = useAuth();
-  const profileRefresh = useProfileRefresh();
-  const refreshKey = profileRefresh?.refreshKey ?? 0;
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    const run = async () => {
-      if (!user) {
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-
-      const cacheKey = PREMIUM_CACHE_KEY_PREFIX + user.id;
-      setLoading(true);
-
-      // Read cache first so premium users see unlocks immediately (secure storage on native)
-      try {
-        const raw = await getPremiumCacheItem(cacheKey);
-        if (mountedRef.current && raw) {
-          const parsed = JSON.parse(raw) as { is_premium?: boolean; plan?: string; is_creator?: boolean };
-          if (parsed && (typeof parsed.is_premium === 'boolean' || parsed.plan)) {
-            setProfile(stubProfileFromCache(user.id, parsed));
-            setLoading(false);
-          }
-        }
-      } catch (_) {
-        // Ignore cache parse errors
-      }
-
-      // Fetch fresh profile and update cache; server always authorizes premium actions
-      try {
-        const { data } = await getMyProfile();
-        if (!mountedRef.current) return;
-        setProfile(data);
-        if (data) {
-          const toCache = { is_premium: data.is_premium, plan: data.plan, is_creator: data.is_creator };
-          setPremiumCacheItem(cacheKey, JSON.stringify(toCache)).catch(() => {});
-        }
-      } catch (_error) {
-        if (mountedRef.current) setProfile((p) => p ?? null);
-      } finally {
-        if (mountedRef.current) setLoading(false);
-      }
-    };
-
-    run();
-    return () => {
-      mountedRef.current = false;
-    };
-  }, [user?.id, refreshKey]);
-
-  // Premium access: subscription (plan 'premium' / is_premium) OR creator (plan 'creator' / is_creator).
-  // Creators are set manually in the database and get all premium features without subscribing.
-  const isPremium = !loading && profile
-    ? (profile.plan === "premium" || profile.is_premium === true || profile.plan === "creator" || profile.is_creator === true)
-    : false;
-  const isCreator = !loading && profile
-    ? (profile.plan === 'creator' || profile.is_creator === true)
-    : false;
-
-  return {
-    isPremium,
-    isCreator,
-    canLogGames: isPremium,
-    canLogPractices: isPremium,
-    canUseAITrainer: isPremium,
-    canAddHighlights: isPremium,
-    canViewCreatorWorkouts: isPremium,
-    canAddMoreSports: isPremium,
-    loading,
-  };
+export function useFeatures(): ReturnType<typeof useFeaturesFallback> {
+  const context = useFeaturesContext();
+  const fallback = useFeaturesFallback();
+  return context ?? fallback;
 }
 

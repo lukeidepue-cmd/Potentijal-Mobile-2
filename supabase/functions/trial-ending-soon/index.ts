@@ -155,9 +155,11 @@ Deno.serve(async (req) => {
     });
   }
 
+  // L1: Use header-only auth so the secret is never in the URL (and thus never at risk in logs).
+  // Do not log req.url or any query string for this function.
   const cronSecret = Deno.env.get("CRON_SECRET");
   if (cronSecret) {
-    const provided = req.headers.get("x-cron-secret") ?? new URL(req.url).searchParams.get("secret");
+    const provided = req.headers.get("x-cron-secret");
     if (provided !== cronSecret) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,

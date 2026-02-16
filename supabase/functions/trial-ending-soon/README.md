@@ -10,7 +10,7 @@ See the main plan doc: **Loops — What you need to do for Loops (Steps 49–52)
 ## Secrets
 
 - `LOOPS_API_KEY` (required) — Loops API key for sending events.
-- `CRON_SECRET` (optional) — If set, requests must include `x-cron-secret: <value>` or `?secret=<value>`.
+- `CRON_SECRET` (optional) — If set, requests must include header `x-cron-secret: <value>` (query params are not accepted; secret must not appear in URLs or logs).
 
 ## Invoke
 
@@ -18,7 +18,7 @@ See the main plan doc: **Loops — What you need to do for Loops (Steps 49–52)
 # No auth (only if CRON_SECRET is not set)
 curl -X POST "https://<project-ref>.supabase.co/functions/v1/trial-ending-soon"
 
-# With secret header
+# With secret (header only; do not pass secret in URL)
 curl -X POST "https://<project-ref>.supabase.co/functions/v1/trial-ending-soon" \
   -H "x-cron-secret: YOUR_CRON_SECRET"
 ```

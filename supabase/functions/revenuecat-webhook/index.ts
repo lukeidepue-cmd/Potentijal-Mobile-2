@@ -102,10 +102,8 @@ Deno.serve(async (req) => {
     });
   }
 
-  const authHeader = req.headers.get("Authorization");
-  const secretLen = (Deno.env.get("REVENUECAT_WEBHOOK_SECRET") ?? "").length;
   if (!verifyWebhookAuth(req)) {
-    console.error("[revenuecat-webhook] Unauthorized: Authorization header missing or does not match secret. (Header length:", (authHeader ?? "").length, ", secret length:", secretLen, ")");
+    console.error("[revenuecat-webhook] Unauthorized: missing or invalid Authorization");
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

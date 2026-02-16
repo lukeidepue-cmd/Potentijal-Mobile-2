@@ -292,7 +292,9 @@ Execution order within Critical: **2.1 (API keys) → 2.2 (rate limiting) → 2.
 | # | Task | Owner |
 |---|------|--------|
 | L1 | **Cron secret:** Ensure `trial-ending-soon` and similar cron-invoked functions are never logged with full URL (avoid `secret` in query params in logs). Use header-based auth where possible. | Backend |
+| L1 | **Implemented (5):** `trial-ending-soon` now accepts **only** the `x-cron-secret` header for auth; query-param secret removed so the secret never appears in the URL or logs. Comment in code: do not log `req.url`. | `supabase/functions/trial-ending-soon/` | — |
 | L2 | **Root/jailbreak:** Only if justified by fraud risk, consider optional checks; do not rely on them as sole control. Document in threat model. | Mobile |
+| L2 | **Implemented (5):** No root/jailbreak detection added. Documented here: optional; only consider if fraud risk justifies it; do not rely as sole control. No code change. | This plan | — |
 
 ---
 

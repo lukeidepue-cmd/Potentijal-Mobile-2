@@ -253,21 +253,21 @@ export default function Settings() {
                   <Text style={styles.settingRowText}>Manage Subscription</Text>
                   <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
                 </Pressable>
-
-                <View style={styles.settingRowSeparator} />
-                <Pressable
-                  style={[styles.settingRow, styles.settingRowLast]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push("/(tabs)/settings/premium/restore-purchases");
-                  }}
-                >
-                  <Ionicons name="refresh-outline" size={20} color={theme.colors.textHi} />
-                  <Text style={styles.settingRowText}>Restore Purchases</Text>
-                  <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-                </Pressable>
               </>
             )}
+
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(tabs)/settings/premium/restore-purchases");
+              }}
+            >
+              <Ionicons name="refresh-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Restore Purchases</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
 
           </View>
         </View>

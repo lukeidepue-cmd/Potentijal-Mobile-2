@@ -20,6 +20,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../providers/AuthProvider';
 import { ModeProvider } from '../providers/ModeContext';
 import { ProfileRefreshProvider, useProfileRefresh } from '../providers/ProfileRefreshContext';
+import { FeaturesProvider } from '../providers/FeaturesContext';
 import { SettingsProvider } from '../providers/SettingsContext';
 import { PostHogProvider } from '../providers/PostHogProvider';
 import { usePostHogUserTracking } from '../lib/posthog/user-tracking';
@@ -280,9 +281,11 @@ export default function RootLayout() {
       <AuthProvider>
         <SettingsProvider>
           <ProfileRefreshProvider>
-            <ModeProvider>
-              <RootLayoutNav />
-            </ModeProvider>
+            <FeaturesProvider>
+              <ModeProvider>
+                <RootLayoutNav />
+              </ModeProvider>
+            </FeaturesProvider>
           </ProfileRefreshProvider>
         </SettingsProvider>
       </AuthProvider>
