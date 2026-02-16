@@ -48,13 +48,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
+    // Get initial session (defensive: data may be undefined in edge cases)
+    supabase.auth.getSession().then(({ data, error }) => {
+      const session = data?.session ?? null;
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      
-      // Check onboarding status after session is loaded
+
       if (session?.user) {
         checkOnboardingStatus();
       }

@@ -41,7 +41,7 @@ export async function checkRateLimit(
     p_max_per_minute: maxPerMinute,
   });
   if (error) {
-    console.error(`[rate-limit] ${functionName} RPC error:`, error.message);
+    console.error("[rate-limit] RPC error:", functionName, error.message);
     return false; // fail closed
   }
   return data === true;

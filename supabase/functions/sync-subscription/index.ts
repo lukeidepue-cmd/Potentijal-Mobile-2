@@ -129,8 +129,8 @@ Deno.serve(async (req) => {
     });
   }
 
-  const body = raw && typeof raw === "object" && "value" in raw ? (raw as { value: unknown }).value : raw;
-  const subscriber = body && typeof body === "object" && "subscriber" in body ? (body as { subscriber: unknown }).subscriber : null;
+  const rcBody = raw && typeof raw === "object" && "value" in raw ? (raw as { value: unknown }).value : raw;
+  const subscriber = rcBody && typeof rcBody === "object" && "subscriber" in rcBody ? (rcBody as { subscriber: unknown }).subscriber : null;
   const entitlements = subscriber && typeof subscriber === "object" && "entitlements" in subscriber ? (subscriber as { entitlements: Record<string, { expires_date?: string | null }> }).entitlements : {};
   const ent = entitlements[ENTITLEMENT_ID];
   const entitlement = ent && typeof ent === "object" ? ent : null;

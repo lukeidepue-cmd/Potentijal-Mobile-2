@@ -43,7 +43,8 @@ export interface LoopsTransactionalEmail {
 export async function createOrUpdateContact(contact: LoopsContact): Promise<{ data: any | null; error: any }> {
   try {
     // Get the current user's session token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const session = data?.session;
     if (sessionError || !session) {
       return { data: null, error: { message: 'User not authenticated' } };
     }
@@ -86,7 +87,8 @@ export async function createOrUpdateContact(contact: LoopsContact): Promise<{ da
 export async function sendTransactionalEmail(params: LoopsTransactionalEmail): Promise<{ data: any | null; error: any }> {
   try {
     // Get the current user's session token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const session = data?.session;
     if (sessionError || !session) {
       return { data: null, error: { message: 'User not authenticated' } };
     }
@@ -131,7 +133,8 @@ export async function sendTransactionalEmail(params: LoopsTransactionalEmail): P
 export async function trackEvent(event: LoopsEvent): Promise<{ data: any | null; error: any }> {
   try {
     // Get the current user's session token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const session = data?.session;
     if (sessionError || !session) {
       return { data: null, error: { message: 'User not authenticated' } };
     }
@@ -174,7 +177,8 @@ export async function trackEvent(event: LoopsEvent): Promise<{ data: any | null;
 export async function deleteContact(email: string): Promise<{ data: any | null; error: any }> {
   try {
     // Get the current user's session token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const session = data?.session;
     if (sessionError || !session) {
       return { data: null, error: { message: 'User not authenticated' } };
     }

@@ -43,8 +43,6 @@ function RootLayoutNav() {
   const { user, loading: authLoading, needsOnboarding, onboardingLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const [resumeStep, setResumeStep] = React.useState<string | null>(null);
-
   // Steps 18–19: RevenueCat — configure at launch (extra or .env so dev builds work).
   useEffect(() => {
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;

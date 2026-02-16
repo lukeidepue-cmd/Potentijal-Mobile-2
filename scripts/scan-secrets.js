@@ -12,7 +12,14 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const SCAN_DIR = process.argv[2] || ROOT;
+const rawScanDir = process.argv[2] || ROOT;
+const resolvedRoot = path.resolve(ROOT);
+const resolvedScanDir = path.resolve(rawScanDir);
+// Restrict scan to repo: only allow SCAN_DIR under ROOT to prevent path traversal
+const SCAN_DIR =
+  resolvedScanDir === resolvedRoot || resolvedScanDir.startsWith(resolvedRoot + path.sep)
+    ? resolvedScanDir
+    : ROOT;
 
 // Patterns that strongly suggest a secret (key/value or assignment). Keep generic to reduce false positives.
 const PATTERNS = [

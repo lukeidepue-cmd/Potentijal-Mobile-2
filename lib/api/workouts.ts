@@ -2,7 +2,6 @@
 // API functions for workout management
 
 import { supabase } from '../supabase';
-import { useAuth } from '../../providers/AuthProvider';
 import { SportMode, ExerciseType, mapItemKindToExerciseType, mapModeKeyToSportMode } from '../types';
 
 export interface CreateWorkoutParams {

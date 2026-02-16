@@ -63,8 +63,9 @@ export async function handleEmailVerificationLink(url: string): Promise<{
     // Don't auto-navigate - let the verification screen detect the auth state change
     
     // Check if we have a session (Supabase may have already handled it)
-    const { data: { session } } = await supabase.auth.getSession();
-    
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+
     if (session) {
       return { success: true };
     }
@@ -77,8 +78,8 @@ export async function handleEmailVerificationLink(url: string): Promise<{
       });
 
       if (error) {
-        const { data: { session: retrySession } } = await supabase.auth.getSession();
-        if (retrySession) return { success: true };
+        const { data: retryData } = await supabase.auth.getSession();
+        if (retryData?.session) return { success: true };
         return { success: false, error: error.message };
       }
 
@@ -86,8 +87,8 @@ export async function handleEmailVerificationLink(url: string): Promise<{
     }
 
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const { data: { session: finalSession } } = await supabase.auth.getSession();
-    if (finalSession) return { success: true };
+    const { data: finalData } = await supabase.auth.getSession();
+    if (finalData?.session) return { success: true };
 
     return { success: false, error: 'No verification token found and no session created' };
   } catch (error: any) {

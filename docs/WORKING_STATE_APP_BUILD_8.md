@@ -54,9 +54,9 @@ Keep the `extra` object exactly like this (only the values may change if you rot
   "eas": {
     "projectId": "01792316-d8cf-483b-a425-8fbf73fa7a9c"
   },
-  "revenueCatPublicApiKey": "appl_gRgPvKhKRMxxLkJWNzJKKXsRfbD",
-  "supabaseUrl": "https://oskbdhiidjsndtzfzxrh.supabase.co",
-  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9za2JkaGlpZGpzbmR0emZ6eHJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzNDk1MDYsImV4cCI6MjA3NzkyNTUwNn0.ZLNxRgh3OUrIcCMuZXSWs5yBQM4thkkeLOXXE6oUTNA"
+  "revenueCatPublicApiKey": "your-revenuecat-public-sdk-key",
+  "supabaseUrl": "https://your-project.supabase.co",
+  "supabaseAnonKey": "your-supabase-anon-key"
 }
 ```
 

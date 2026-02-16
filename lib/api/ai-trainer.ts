@@ -70,7 +70,7 @@ export function formatUserContextForAI(context: UserContextData): string {
   prompt += `PROFILE:\n`;
   prompt += `- Username: ${context.profile.username}\n`;
   prompt += `- Display Name: ${context.profile.displayName}\n`;
-  prompt += `- Sports: ${context.profile.sports.join(', ')}\n`;
+  prompt += `- Sports: ${(context.profile.sports ?? []).join(', ')}\n`;
   if (context.profile.primarySport) {
     prompt += `- Primary Sport: ${context.profile.primarySport}\n`;
   }
@@ -80,7 +80,7 @@ export function formatUserContextForAI(context: UserContextData): string {
   prompt += `\n`;
 
   // Recent workouts
-  if (context.recentWorkouts.length > 0) {
+  if ((context.recentWorkouts ?? []).length > 0) {
     prompt += `RECENT WORKOUTS (last ${context.recentWorkouts.length}):\n`;
     context.recentWorkouts.forEach((workout, idx) => {
       prompt += `${idx + 1}. ${workout.name} (${workout.mode} mode, ${workout.performedAt})\n`;
@@ -107,7 +107,7 @@ export function formatUserContextForAI(context: UserContextData): string {
   }
 
   // Recent games
-  if (context.recentGames.length > 0) {
+  if ((context.recentGames ?? []).length > 0) {
     prompt += `RECENT GAMES (last ${context.recentGames.length}):\n`;
     context.recentGames.forEach((game, idx) => {
       prompt += `${idx + 1}. ${game.mode} game (${game.playedAt}): ${game.result}\n`;
@@ -118,7 +118,7 @@ export function formatUserContextForAI(context: UserContextData): string {
   }
 
   // Recent practices
-  if (context.recentPractices.length > 0) {
+  if ((context.recentPractices ?? []).length > 0) {
     prompt += `RECENT PRACTICES (last ${context.recentPractices.length}):\n`;
     context.recentPractices.forEach((practice, idx) => {
       prompt += `${idx + 1}. ${practice.mode} practice (${practice.practicedAt}): ${practice.drill}\n`;
@@ -145,7 +145,8 @@ export async function sendMessageToAI(
 ): Promise<{ data: string | null; error: any }> {
   try {
     // Get the current user's session token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const session = data?.session;
     if (sessionError || !session) {
       return { data: null, error: { message: 'User not authenticated' } };
     }
