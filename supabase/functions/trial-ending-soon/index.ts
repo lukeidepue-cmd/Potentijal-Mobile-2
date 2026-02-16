@@ -223,7 +223,8 @@ Deno.serve(async (req) => {
     oneDay = result.oneDay;
   } catch (e) {
     console.error("[trial-ending-soon] Error:", e);
-    selectError = String(e);
+    // Log full error server-side; return only a generic message to avoid exposing stack trace
+    selectError = "Internal server error while sending trial reminders";
   }
 
   return new Response(
