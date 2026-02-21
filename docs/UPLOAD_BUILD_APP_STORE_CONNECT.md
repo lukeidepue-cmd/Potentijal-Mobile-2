@@ -25,6 +25,8 @@ This gets a build into App Store Connect so you can **select it** for version 1.
 
 **Set EAS Secrets (one-time, so production build can log in):**
 
+The project uses `app.config.js` to inject `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` into the app at build time. Without these EAS secrets, the TestFlight build uses placeholders and shows "Connection Error" on login.
+
 ```bash
 cd my-first-app
 eas secret:create --name EXPO_PUBLIC_SUPABASE_URL --value "https://YOUR_PROJECT.supabase.co" --scope project

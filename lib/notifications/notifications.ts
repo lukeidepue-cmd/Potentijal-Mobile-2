@@ -181,7 +181,7 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     // Create a new date object for today at midnight, then set to 11:21 PM
     const dayDate = new Date();
     dayDate.setHours(0, 0, 0, 0); // Start with today at midnight
-    dayDate.setHours(23, 21, 0, 0); // 11:21 PM (TESTING - will revert to 12:00 PM)
+    dayDate.setHours(18, 0, 0, 0); // 11:21 PM (TESTING - will revert to 12:00 PM)
 
     // Only schedule if the notification time hasn't passed yet
     const now = new Date();

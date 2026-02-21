@@ -176,8 +176,8 @@ export async function sendMessageToAI(
       return { data: null, error: { message: errorData.error || 'Failed to get AI response' } };
     }
 
-    const data = await response.json();
-    const aiResponse = data.data;
+    const responseData = await response.json();
+    const aiResponse = responseData.data;
 
     if (!aiResponse) {
       return { data: null, error: { message: 'No response from AI' } };
