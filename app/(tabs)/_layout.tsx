@@ -79,20 +79,6 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
-        name="test-auth"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-
-      <Tabs.Screen
-        name="test-onboarding"
-        options={{
-          href: null, // Hide from tab bar (testing tab - removed from frontend)
-        }}
-      />
-
-      <Tabs.Screen
         name="meals"
         options={{
           title: "Progress",

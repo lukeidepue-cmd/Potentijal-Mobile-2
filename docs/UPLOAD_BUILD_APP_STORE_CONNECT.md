@@ -40,6 +40,17 @@ Use the same values as in your local `.env`. Then run `eas build --platform ios 
 - [ ] EAS Secrets: `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` set for the project.
 - [ ] After build + submit + Apple email: **Select the build for version 1.0** in App Store Connect (Step 4 below).
 
+**How to confirm you're using the right RevenueCat key (for production/App Store):**
+
+1. Go to [RevenueCat Dashboard](https://app.revenuecat.com) → your project.
+2. Open **Project** → **API Keys** (or **Apps** → select your **iOS app** → **API Keys**).
+3. You’ll see at least two keys for iOS:
+   - **Public app-specific API key** (sometimes labeled “Public SDK key” or “iOS Public API key”) — **use this one** in `app.json` / app config. It usually starts with `appl_` and is meant for production and TestFlight.
+   - **Test Store / Sandbox key** (if listed) — **do not use this** for the build you submit. RevenueCat can crash the app on purpose when the Test Store key is used in a production build.
+4. Compare the key value in RevenueCat (the **Public** one) with what’s in your app:
+   - In this project the key is in `app.json` → `expo.extra.revenueCatPublicApiKey` (and can be overridden by `EXPO_PUBLIC_REVENUECAT_API_KEY` in env/EAS).
+5. If they match the **Public** key from step 3, you’re good. If your app currently has the Test Store key, replace it with the Public key and rebuild.
+
 ---
 
 ## Everything we tried from the beginning (to fix the product configuration / offerings error)

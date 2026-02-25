@@ -8,20 +8,20 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput,
   Image,
   Platform,
   ActivityIndicator,
   Alert,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../../constants/theme";
+import { PRIVACY_POLICY_URL, APPLE_EULA_URL } from "../../../constants/links";
 import { useProfileRefresh } from "../../../providers/ProfileRefreshContext";
 import { useAuth } from "../../../providers/AuthProvider";
 import { getMyProfile } from "../../../lib/api/profile";
-import { recordPaywallCodeEntered, setPendingPaywallCode } from "../../../lib/api/settings";
 import { completeOnboarding } from "../../../lib/api/onboarding";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
@@ -71,8 +71,6 @@ export default function PurchasePremium() {
   const [currentOffering, setCurrentOffering] = useState<{ monthly: any; annual: any } | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
 
   const loadOfferings = useCallback(async () => {
     setOfferingsError(null);
@@ -105,15 +103,7 @@ export default function PurchasePremium() {
 
   const handleContinue = async () => {
     setPurchaseError(null);
-    setCodeError(null);
     setPurchasing(true);
-    const trimmedCode = code.trim();
-    if (trimmedCode) {
-      recordPaywallCodeEntered(trimmedCode).catch(() => {});
-      setPendingPaywallCode(trimmedCode).catch(() => {});
-    } else {
-      setPendingPaywallCode("").catch(() => {});
-    }
     try {
       // If user already has an active subscription or is premium (e.g. creator), don't present purchase
       const { data: profile } = await getMyProfile();
@@ -170,7 +160,6 @@ export default function PurchasePremium() {
 
       if (customerInfo?.entitlements?.active?.premium != null) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setCode("");
         try {
           await supabase.functions.invoke("sync-subscription");
         } catch (_) {}
@@ -397,24 +386,6 @@ export default function PurchasePremium() {
           </View>
         )}
 
-        {/* Enter Code line (same style as email settings screen): under plans, above Continue */}
-        <View style={styles.inputLine}>
-          <TextInput
-            style={styles.lineInput}
-            value={code}
-            onChangeText={(t) => { setCode(t); setCodeError(null); setPurchaseError(null); }}
-            placeholder="Enter Code"
-            placeholderTextColor={theme.colors.textLo}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            editable={!purchasing}
-          />
-          <View style={styles.lineUnderline} />
-        </View>
-        {codeError ? (
-          <Text style={[styles.pricingCardLabel, { color: theme.colors.error ?? "#ef4444", marginBottom: 8 }]}>{codeError}</Text>
-        ) : null}
-
         {purchaseError ? (
           <Text style={[styles.pricingCardLabel, { color: theme.colors.error ?? "#ef4444", marginBottom: 12 }]}>{purchaseError}</Text>
         ) : null}
@@ -438,7 +409,12 @@ export default function PurchasePremium() {
           <Text style={styles.continueButtonText}>{purchasing ? "Processing…" : "Try Free for 1 Week"}</Text>
         </AnimatedPressable>
         <Text style={styles.subscriptionDisclaimer}>
-          This is a renewing subscription and you can cancel in the Manage Subscription section in Settings
+          This is a renewing subscription and you can cancel in the Manage Subscription section in Settings.
+          {" "}
+          By subscribing you agree to our{" "}
+          <Text style={styles.subscriptionDisclaimerLink} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>Privacy Policy</Text>
+          {" "}and the{" "}
+          <Text style={styles.subscriptionDisclaimerLink} onPress={() => Linking.openURL(APPLE_EULA_URL)}>Terms of Use (EULA)</Text>.
         </Text>
       </ScrollView>
     </View>
@@ -726,6 +702,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.colors.textLo,
     fontFamily: FONT.uiRegular,
+  },
+  subscriptionDisclaimerLink: {
+    color: theme.colors.primary500,
+    fontFamily: FONT.uiMedium,
+    textDecorationLine: "underline",
     textAlign: "center",
     lineHeight: 18,
   },

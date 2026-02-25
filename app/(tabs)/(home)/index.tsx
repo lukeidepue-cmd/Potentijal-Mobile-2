@@ -133,15 +133,17 @@ export default function HomeIndex() {
   const m = (mode || "lifting").toLowerCase() as ModeKey;
   const isDedicated = DEDICATED.includes(m);
 
-  // Animation for spinning star loading
+  // Animation for spinning star loading (faster spin, shown longer)
   const starRotation = useSharedValue(0);
-  
-  // Hide loading overlay after initial mount
+  const HOME_LOADING_STAR_SIZE = 180;
+  const HOME_LOADING_SPIN_DURATION_MS = 480;
+  const HOME_LOADING_DISPLAY_MS = 10000;
+
   React.useEffect(() => {
     if (isInitialLoad) {
       starRotation.value = withRepeat(
         withTiming(360, {
-          duration: 800,
+          duration: HOME_LOADING_SPIN_DURATION_MS,
           easing: Easing.linear,
         }),
         -1,
@@ -159,7 +161,7 @@ export default function HomeIndex() {
   React.useEffect(() => {
     const timer = setTimeout(() => {
       setIsInitialLoad(false);
-    }, 2000); // Show loading for 2 seconds on initial load
+    }, HOME_LOADING_DISPLAY_MS);
     return () => clearTimeout(timer);
   }, []);
 
@@ -171,7 +173,7 @@ export default function HomeIndex() {
         <Animated.View style={starAnimatedStyle}>
           <Image
             source={require("../../../assets/star.png")}
-            style={{ width: 150, height: 150 }}
+            style={{ width: HOME_LOADING_STAR_SIZE, height: HOME_LOADING_STAR_SIZE }}
             resizeMode="contain"
           />
         </Animated.View>
@@ -190,7 +192,7 @@ export default function HomeIndex() {
               <Animated.View style={starAnimatedStyle}>
                 <Image
                   source={require("../../../assets/star.png")}
-                  style={{ width: 150, height: 150 }}
+                  style={{ width: HOME_LOADING_STAR_SIZE, height: HOME_LOADING_STAR_SIZE }}
                   resizeMode="contain"
                 />
               </Animated.View>

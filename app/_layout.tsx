@@ -1,7 +1,7 @@
 // app/_layout.tsx
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { View, StyleSheet, Image, AppState, Platform } from 'react-native';
+import { View, StyleSheet, Image, ImageBackground, AppState, Platform } from 'react-native';
 import {
   getTrackingPermissionsAsync,
   requestTrackingPermissionsAsync,
@@ -123,15 +123,16 @@ function RootLayoutNav() {
     }
   }, [posthog, user?.id]);
 
-  // Animation for spinning star loading
+  // Animation for spinning star loading (same speed on both loading screens)
   const starRotation = useSharedValue(0);
-  
+  const STAR_SPIN_DURATION_MS = 400;
+
   useEffect(() => {
     const isLoading = authLoading || onboardingLoading || (!user && segments[0] !== 'onboarding');
     if (isLoading) {
       starRotation.value = withRepeat(
         withTiming(360, {
-          duration: 800,
+          duration: STAR_SPIN_DURATION_MS,
           easing: Easing.linear,
         }),
         -1,
@@ -222,11 +223,14 @@ function RootLayoutNav() {
     }
   }, [user, authLoading, needsOnboarding, onboardingLoading, segments]);
 
-  // Show loading screen while checking auth/onboarding status
-  // This prevents showing the wrong screen (like home) before auth state is determined
-  if (authLoading || onboardingLoading) {
-    return (
-      <View style={styles.loadingContainer}>
+  // Shared loading screen UI: background image fills screen + centered spinning star (same size/position/speed on both)
+  const LoadingScreen = () => (
+    <View style={styles.loadingScreenWrapper}>
+      <ImageBackground
+        source={require('../assets/images/loading-background.png')}
+        style={styles.loadingBackground}
+        resizeMode="cover"
+      >
         <Animated.View style={starAnimatedStyle}>
           <Image
             source={require('../assets/star.png')}
@@ -234,24 +238,18 @@ function RootLayoutNav() {
             resizeMode="contain"
           />
         </Animated.View>
-      </View>
-    );
+      </ImageBackground>
+    </View>
+  );
+
+  // Show loading screen while checking auth/onboarding status
+  if (authLoading || onboardingLoading) {
+    return <LoadingScreen />;
   }
 
-  // If no user and we're not in onboarding, show loading to prevent flash of home screen
-  // This ensures we don't show home screen before routing to welcome
+  // If no user and we're not in onboarding, show loading (same screen, star spins) before routing to welcome
   if (!user && segments[0] !== 'onboarding') {
-    return (
-      <View style={styles.loadingContainer}>
-        <Animated.View style={starAnimatedStyle}>
-          <Image
-            source={require('../assets/star.png')}
-            style={styles.loadingStar}
-            resizeMode="contain"
-          />
-        </Animated.View>
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   // Always define both screens - expo-router needs all routes defined
@@ -302,15 +300,21 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  loadingScreenWrapper: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0B1513',
+  },
+  loadingBackground: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0b0b0c',
+    backgroundColor: '#0B1513',
   },
   loadingStar: {
-    width: 150,
-    height: 150,
+    width: 220,
+    height: 220,
   },
 });
 

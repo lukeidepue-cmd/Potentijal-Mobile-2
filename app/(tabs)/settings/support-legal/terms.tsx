@@ -1,12 +1,13 @@
 // app/(tabs)/settings/support-legal/terms.tsx
 // Terms of Service (Static Content)
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../../constants/theme";
+import { TERMS_OF_SERVICE_URL } from "../../../../constants/links";
 
 /* ---- Fonts ---- */
 import {
@@ -57,6 +58,13 @@ export default function Terms() {
           Effective Date: January 1, 2026{"\n"}
           Last Updated: January 1, 2026
         </Text>
+        <Pressable
+          onPress={() => Linking.openURL(TERMS_OF_SERVICE_URL)}
+          style={styles.viewOnlineRow}
+        >
+          <Ionicons name="open-outline" size={18} color={theme.colors.primary500} />
+          <Text style={styles.viewOnlineText}>View full terms online</Text>
+        </Pressable>
 
         <Text style={styles.introText}>
           These Terms of Service ("Terms") govern your access to and use of the Potentijal mobile application available on the Apple App Store and Google Play Store (the "App") and related services (collectively, the "Service"). The Service is operated by Potentijal ("we," "us," or "our"). By downloading, installing, or using the App, you accept and agree to these Terms. If you do not agree, do not use the Service. These Terms should be read alongside our Privacy Policy.
@@ -117,6 +125,9 @@ export default function Terms() {
         <Text style={styles.sectionTitle}>9. Premium Subscriptions and Billing</Text>
         <Text style={styles.contentText}>
           Some features require a paid subscription ("Premium" or "Potentijal Premium"). Subscriptions are offered through the Apple App Store or Google Play (as applicable). Payment is charged to your Apple ID or Google account at confirmation of purchase. Subscriptions automatically renew at the end of each period (e.g., one month or one year) unless you cancel. You can manage your subscription, turn off auto-renewal, or request refunds through your device's App Store or Play Store settings; refunds are subject to Apple's or Google's policies.
+        </Text>
+        <Text style={styles.contentText}>
+          We may offer promotional pricing (e.g., 20% off) via offer codes. If you have an offer code, you can redeem it via the redemption link we provide or through the App Store (e.g., Settings → App Store → Redeem). Promotional offer codes apply only to monthly subscriptions unless otherwise stated. Eligibility, availability, and terms of each offer are determined by us and the applicable store.
         </Text>
 
         <Text style={styles.sectionTitle}>10. Content and Conduct</Text>
@@ -210,8 +221,19 @@ const styles = StyleSheet.create({
   effectiveDate: {
     fontSize: 12,
     color: theme.colors.textLo,
-    marginBottom: 24,
+    marginBottom: 8,
     fontFamily: FONT.uiRegular,
+  },
+  viewOnlineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 24,
+  },
+  viewOnlineText: {
+    fontSize: 15,
+    color: theme.colors.primary500,
+    fontFamily: FONT.uiMedium,
   },
   introText: {
     fontSize: 16,
