@@ -1,6 +1,6 @@
 // app/(tabs)/(home)/schedule-week.tsx
 // Screen for editing weekly schedule (current week only)
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   ImageBackground,
   Dimensions,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -67,6 +69,23 @@ export default function ScheduleWeekScreen() {
   const m = (mode || 'lifting').toLowerCase();
   const insets = useSafeAreaInsets();
   const [sgLoaded] = useSpaceGrotesk({ SpaceGrotesk_700Bold });
+  const scrollRef = useRef<ScrollView>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const onHide = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, []);
   
   const [currentWeekSchedule, setCurrentWeekSchedule] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -283,48 +302,60 @@ export default function ScheduleWeekScreen() {
           </View>
         </LinearGradient>
 
-        <ScrollView 
-          style={styles.content} 
-          contentContainerStyle={styles.contentContainer}
+        <ScrollView
+          ref={scrollRef}
+          style={styles.content}
+          contentContainerStyle={[
+            styles.contentContainer,
+            {
+              paddingBottom:
+                200 +
+                keyboardHeight +
+                (keyboardHeight > 0 && Platform.OS === 'ios' ? insets.bottom : 0),
+            },
+          ]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* STEP 1: Days float directly on background - NO container */}
-          {currentWeekDates.map((date, idx) => {
-            const hasValue = currentWeekSchedule[idx]?.label?.trim();
-            
-            return (
-              <View 
-                key={idx} 
-                style={styles.dayRowContainer}
-              >
-                {/* STEP 2: Two-column rhythm - day anchor + lightweight interaction */}
-                <View style={styles.dayRow}>
-                  <View style={styles.dayInfo}>
-                    <Text style={styles.dayName} numberOfLines={1}>
-                      {DAY_NAMES[idx]}
-                    </Text>
-                    <Text style={styles.dayDate}>
-                      {formatDate(date)}
-                    </Text>
-                  </View>
-                  
-                  {/* Simple TextInput - stable structure */}
-                  <View style={styles.entryPillBase}>
-                    <TextInput
-                      style={styles.inputBase}
-                      placeholder="Rest"
-                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                      value={currentWeekSchedule[idx]?.label || ''}
-                      onChangeText={(text) => updateCurrentWeekLabel(idx, text)}
-                      autoCorrect={false}
-                      autoCapitalize="words"
-                      returnKeyType="done"
-                    />
-                  </View>
+          {currentWeekDates.map((date, idx) => (
+            <View key={idx} style={styles.dayRowContainer}>
+              {/* STEP 2: Two-column rhythm - day anchor + lightweight interaction */}
+              <View style={styles.dayRow}>
+                <View style={styles.dayInfo}>
+                  <Text style={styles.dayName} numberOfLines={1}>
+                    {DAY_NAMES[idx]}
+                  </Text>
+                  <Text style={styles.dayDate}>{formatDate(date)}</Text>
+                </View>
+
+                <View style={styles.entryPillBase}>
+                  <TextInput
+                    style={styles.inputBase}
+                    placeholder="Rest"
+                    placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                    value={currentWeekSchedule[idx]?.label || ''}
+                    onChangeText={(text) => updateCurrentWeekLabel(idx, text)}
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                    returnKeyType="done"
+                    onFocus={() => {
+                      // Fri/Sat sit near bottom — scroll row above keyboard (no KeyboardAvoidingView)
+                      if (idx < 5) return;
+                      const rowHeight = 96;
+                      const delay = Platform.OS === 'ios' ? 280 : 120;
+                      setTimeout(() => {
+                        scrollRef.current?.scrollTo({
+                          y: Math.max(0, idx * rowHeight - 24),
+                          animated: true,
+                        });
+                      }, delay);
+                    }}
+                  />
                 </View>
               </View>
-            );
-          })}
+            </View>
+          ))}
         </ScrollView>
 
         {/* STEP 7: Save button in detached action layer with bottom fade */}
@@ -405,7 +436,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 16,
     paddingTop: 24,
-    paddingBottom: 200, // Extra space for keyboard and footer
+    // paddingBottom extended at runtime: base 200 + keyboard height (+ safe area on iOS)
   },
   // STEP 4: Increased vertical spacing (30-40% more)
   dayRowContainer: {

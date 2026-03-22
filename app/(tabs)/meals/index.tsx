@@ -19,10 +19,6 @@ import Animated, {
   interpolate,
   withSpring,
   withTiming,
-  withRepeat,
-  withSequence,
-  withDelay,
-  Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -286,7 +282,6 @@ export default function ProgressScreen() {
   const [sgLoaded] = useSpaceGrotesk({
     SpaceGrotesk_800ExtraBold,
   });
-  const fontsReady = geistLoaded && sgLoaded;
   const [showAITrainer, setShowAITrainer] = useState(false);
   const [aiTrainerEnabled, setAiTrainerEnabled] = useState(true); // Default to enabled
   const { canUseAITrainer, isPremium } = useFeatures();
@@ -314,9 +309,6 @@ export default function ProgressScreen() {
   // Animation values for AI Trainer button
   const aiButtonScale = useSharedValue(1);
   const aiButtonTranslateY = useSharedValue(0);
-  
-  // Shimmer animation for sparkly effect
-  const shimmerTranslateX = useSharedValue(-200);
 
   const aiButtonAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -326,26 +318,6 @@ export default function ProgressScreen() {
   }));
 
   // Removed shadow style - no shadows on button
-
-  const shimmerAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmerTranslateX.value }],
-  }));
-
-  // Start shimmer animation
-  useEffect(() => {
-    if (!fontsReady) return; // Don't start animations until fonts are ready
-    
-    if (aiTrainerEnabled && canUseAITrainer) {
-      // Shimmer animation
-      shimmerTranslateX.value = withRepeat(
-        withTiming(400, { duration: 2000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      shimmerTranslateX.value = withTiming(-200, { duration: 0 });
-    }
-  }, [aiTrainerEnabled, canUseAITrainer, fontsReady]);
 
   const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -479,35 +451,12 @@ export default function ProgressScreen() {
               locations={[0, 0.5, 1]}
               style={StyleSheet.absoluteFill}
             />
-            {/* Sparkly texture overlay - animated shimmer effect */}
+            {/* Sparkle layers only (no top gloss — avoids horizontal seam) */}
             {(aiTrainerEnabled && canUseAITrainer) && (
               <>
-                {/* Top highlight for glossy effect */}
-                <LinearGradient
-                  colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0.15)", "transparent"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 0.4 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                {/* Sparkle texture - noise/grain effect with more texture */}
                 <View style={styles.sparkleTexture} />
                 <View style={styles.sparkleTexture2} />
                 <View style={styles.sparkleTexture3} />
-                {/* Animated shimmer overlay - more intense */}
-                <Animated.View style={[styles.shimmerOverlay, shimmerAnimatedStyle]}>
-                  <LinearGradient
-                    colors={[
-                      "transparent",
-                      "rgba(255,255,255,0.5)",
-                      "rgba(255,255,255,0.8)",
-                      "rgba(255,255,255,0.5)",
-                      "transparent",
-                    ]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                </Animated.View>
               </>
             )}
             <View style={styles.aiTrainerButtonContent}>
@@ -683,16 +632,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
     opacity: 0.3,
     // Third texture layer for more depth
-  },
-  shimmerOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: 200,
-    height: "100%",
-    backgroundColor: "rgba(255,255,255,0.3)",
-    // Diagonal gradient for shimmer
-    transform: [{ skewX: "-20deg" }],
   },
   carousel: {
     position: "absolute",

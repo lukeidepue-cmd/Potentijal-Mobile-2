@@ -26,6 +26,7 @@ import { useMode } from "../../../../providers/ModeContext";
 import { useBottomTabOverflow } from "../../../../components/ui/TabBarBackground";
 import { useAvailableModes } from "../../../../hooks/useAvailableModes";
 import { Confetti } from "../../../../components/Confetti";
+import { WorkoutStatsExerciseCards } from "../../../../components/WorkoutStatsExerciseCards";
 import { useFeatures } from "../../../../hooks/useFeatures";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from "react-native-reanimated";
 
@@ -612,31 +613,8 @@ export default function BasketballHome() {
         </Pressable>
         </View>
 
-        {/* Workout Stats Section */}
-        <View style={styles.statsSection}>
-          <View style={styles.statCard}>
-            <View style={styles.statRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.statKicker}>Total</Text>
-                <Text style={styles.statTitle}>Workouts</Text>
-              </View>
-              <Text style={styles.statValueRight}>{workoutStats.total}</Text>
-            </View>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={styles.statRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.statKicker}>Workout</Text>
-                <Text style={styles.statTitle}>Streak</Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={styles.statValueRight}>{workoutStats.streak}</Text>
-                <MaterialCommunityIcons name="fire" size={16} color="#4A9EFF" />
-              </View>
-            </View>
-          </View>
-        </View>
+        {/* Workout Stats Section — same visual language as History workout exercise boxes (blue) */}
+        <WorkoutStatsExerciseCards total={workoutStats.total} streak={workoutStats.streak} />
       </ScrollView>
 
       {/* FIX #5: Sticky bottom primary CTA */}
@@ -1205,43 +1183,6 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0, 0, 0, 0.5)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
-  },
-  
-  // Stats Section
-  statsSection: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 24,
-    marginBottom: 24,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: "#1A1F28",
-    borderColor: "#2A2F38",
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-  },
-  statRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statKicker: {
-    color: "#9E9E9E",
-    fontSize: 11,
-    marginBottom: 4,
-    fontWeight: "600",
-  },
-  statTitle: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  statValueRight: {
-    color: "#FFFFFF",
-    fontSize: 24,
-    fontWeight: "700",
   },
   
   // Disabled styles for non-premium users

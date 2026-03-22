@@ -284,7 +284,7 @@ export default function HomeIndex() {
               if (user) {
                 signOut();
               } else {
-                router.replace("/onboarding/welcome");
+                router.replace("/onboarding/identity");
               }
             }}
             style={({ pressed }) => ({

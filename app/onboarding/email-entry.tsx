@@ -26,11 +26,12 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useAuth } from '../../providers/AuthProvider';
 import { theme } from '../../constants/theme';
 
-const TOTAL_STEPS = 10; // Total number of onboarding steps
-const CURRENT_STEP = 2; // This is step 2
+const TOTAL_STEPS = 7;
+const CURRENT_STEP = 5;
 
 export default function EmailEntryScreen() {
   const insets = useSafeAreaInsets();
@@ -165,25 +166,10 @@ export default function EmailEntryScreen() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Layer A: Base gradient - EXACT same as workout tab */}
-      <LinearGradient
-        colors={['#0B1513', '#0F2A22', '#0F3B2E', '#070B0A']}
-        locations={[0, 0.3, 0.6, 1]}
-        style={styles.baseGradient}
-      />
-      
-      {/* Layer B: Vignette overlay - EXACT same as workout tab */}
-      <LinearGradient
-        colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent', 'rgba(0,0,0,0.5)']}
-        locations={[0, 0.15, 0.85, 1]}
-        style={styles.vignetteGradient}
-        pointerEvents="none"
-      />
-      
-      {/* Layer C: Subtle grain - EXACT same as workout tab */}
-      <View style={styles.grainOverlay} pointerEvents="none" />
+      {/* Same background as previous onboarding screens */}
+      <View style={styles.background} />
 
-      {/* Header with Back Button and Progress Bar */}
+      {/* Header - same as previous screens */}
       <View style={[styles.header, { zIndex: 10 }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -192,8 +178,6 @@ export default function EmailEntryScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
         </TouchableOpacity>
-
-        {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBarBackground}>
             <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
@@ -202,46 +186,66 @@ export default function EmailEntryScreen() {
         </View>
       </View>
 
-      {/* Content */}
+      {/* Content - same heading style as previous screens */}
       <View style={[styles.content, { zIndex: 10 }]}>
-        {/* Heading */}
-        <Text style={styles.heading}>
-          Get started with <Text style={styles.headingAccent}>Potentijal</Text>
-        </Text>
-        
-        {/* Log in text */}
-        <Text style={styles.loginText}>or Log in</Text>
+        <Text style={styles.title}>Unlock your full Potentijal</Text>
+        <Text style={styles.subtitle}>Create an account to start your training journey</Text>
 
-        {/* Email Input */}
+        {/* Email input - liquid glass */}
         <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Email address</Text>
-          <TextInput
-            style={[styles.input, error && styles.inputError]}
-            placeholder="Enter your email"
-            placeholderTextColor={theme.colors.textLo}
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              setError('');
-            }}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-            editable={!loading}
-          />
+          <View style={[styles.inputGlass, error && styles.inputGlassError]}>
+            <BlurView
+              intensity={Platform.OS === 'ios' ? 36 : 28}
+              tint="dark"
+              style={styles.inputGlassBlur}
+            />
+            <LinearGradient
+              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)']}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              placeholderTextColor={theme.colors.textLo}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setError('');
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              textContentType="emailAddress"
+              editable={!loading}
+            />
+          </View>
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
       </View>
 
-      {/* Next Button */}
+      {/* Next button - same style as sport-selection / first-win */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 20, zIndex: 10 }]}>
         <TouchableOpacity
-          style={[styles.nextButton, loading && styles.nextButtonDisabled]}
+          style={[
+            styles.nextButton,
+            !loading && styles.nextButtonEnabled,
+            loading && styles.nextButtonDisabled,
+          ]}
           onPress={handleNext}
           disabled={loading}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
+          {loading && (
+            <>
+              <BlurView intensity={Platform.OS === 'ios' ? 32 : 24} tint="dark" style={StyleSheet.absoluteFill} />
+              <LinearGradient
+                colors={['rgba(255,255,255,0.12)', 'rgba(255,255,255,0.06)']}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+            </>
+          )}
           {loading ? (
             <View style={styles.loadingContainer}>
               <Animated.View style={[styles.bouncingDot, dot1Style]} />
@@ -249,7 +253,7 @@ export default function EmailEntryScreen() {
               <Animated.View style={[styles.bouncingDot, dot3Style]} />
             </View>
           ) : (
-            <Text style={styles.nextButtonText}>Next</Text>
+            <Text style={styles.nextButtonText}>Continue</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -261,44 +265,29 @@ export default function EmailEntryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg0,
     position: 'relative',
   },
-  baseGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  vignetteGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  grainOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    opacity: 0.06,
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1C1C1E',
   },
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   backButton: {
-    marginBottom: 16,
+    padding: 8,
   },
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    marginLeft: 20,
   },
   progressBarBackground: {
     flex: 1,
@@ -321,74 +310,57 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 24,
   },
-  heading: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: theme.colors.textHi,
-    marginBottom: 32,
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 32,
+    marginBottom: 12,
     letterSpacing: -0.3,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.5,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
   },
-  headingAccent: {
-    color: theme.colors.primary600,
-  },
-  loginText: {
-    fontSize: 14,
-    fontWeight: '400',
+  subtitle: {
+    fontSize: 16,
+    fontWeight: '500',
     color: theme.colors.textLo,
-    marginTop: -24,
-    marginBottom: 32,
-    letterSpacing: 0.2,
+    lineHeight: 24,
+    marginBottom: 28,
   },
   inputContainer: {
     marginBottom: 24,
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.textLo,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  inputGlass: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    position: 'relative',
+    minHeight: 52,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+      },
+      android: { elevation: 6 },
+    }),
+  },
+  inputGlassError: {
+    borderColor: theme.colors.danger,
+  },
+  inputGlassBlur: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
   },
   input: {
-    backgroundColor: theme.colors.surface1,
-    borderWidth: 1,
-    borderColor: theme.colors.strokeSoft,
-    borderRadius: theme.radii.md,
+    backgroundColor: 'transparent',
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
     color: theme.colors.textHi,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  inputError: {
-    borderColor: theme.colors.danger,
+    zIndex: 1,
   },
   errorText: {
     fontSize: 12,
@@ -396,37 +368,47 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 16,
   },
   nextButton: {
-    backgroundColor: theme.colors.primary600,
-    borderRadius: theme.radii.pill,
+    width: '100%',
     paddingVertical: 18,
-    paddingHorizontal: 24,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: 'transparent',
     ...Platform.select({
       ios: {
-        shadowColor: theme.colors.primary600,
-        shadowOpacity: 0.4,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 8 },
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
       },
-      android: {
-        elevation: 8,
-      },
+      android: { elevation: 3 },
+    }),
+  },
+  nextButtonEnabled: {
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: { shadowOpacity: 0.2, shadowRadius: 8 },
+      android: { elevation: 4 },
     }),
   },
   nextButtonDisabled: {
-    opacity: 0.7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   nextButtonText: {
-    fontSize: 16,
+    color: '#1C1C1E',
+    fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
   },
   loadingContainer: {
     flexDirection: 'row',

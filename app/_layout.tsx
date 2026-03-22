@@ -23,10 +23,10 @@ import { ProfileRefreshProvider, useProfileRefresh } from '../providers/ProfileR
 import { FeaturesProvider } from '../providers/FeaturesContext';
 import { SettingsProvider } from '../providers/SettingsContext';
 import { PostHogProvider } from '../providers/PostHogProvider';
+import { OnboardingDataProvider } from '../providers/OnboardingDataContext';
 import { usePostHogUserTracking } from '../lib/posthog/user-tracking';
 import { usePostHog } from 'posthog-react-native';
 import { setupDeepLinkListener } from '../lib/deep-links';
-import { getOnboardingState } from '../lib/api/onboarding';
 import { scheduleAllWorkoutNotifications, scheduleConsistencyScoreNotification } from '../lib/notifications/notifications';
 import Constants from 'expo-constants';
 
@@ -172,43 +172,15 @@ function RootLayoutNav() {
 
     if (!user) {
       if (!inOnboardingGroup) {
-        router.replace('/onboarding/welcome');
+        router.replace('/onboarding/identity');
       }
     } else if (needsOnboarding === true) {
-      // Authenticated but needs onboarding - resume from last step
+      // Authenticated but needs onboarding — only post-auth step is name-entry
       if (!inOnboardingGroup) {
-        getOnboardingState().then(({ data, error }) => {
-          if (error) {
-            router.replace('/onboarding/account-basics');
-            return;
-          }
-
-          const currentStep = data?.current_step;
-
-          let targetRoute = '/onboarding/account-basics';
-
-          if (currentStep) {
-            const stepToRoute: Record<string, string> = {
-              'email_entry': '/onboarding/email-entry',
-              'email_verification': '/onboarding/email-verification',
-              'account_basics': '/onboarding/account-basics',
-              'sport_selection': '/onboarding/sport-selection',
-              'training_intent': '/onboarding/training-intent',
-              'app_intro': '/onboarding/app-intro',
-              'notifications': '/onboarding/notifications',
-              'premium_offer': '/onboarding/premium-offer',
-              'completion': '/onboarding/completion',
-            };
-
-            if (user && (currentStep === 'email_entry' || currentStep === 'email_verification')) {
-              targetRoute = '/onboarding/account-basics';
-            } else {
-              targetRoute = stepToRoute[currentStep] || '/onboarding/account-basics';
-            }
-          }
-
-          router.replace(targetRoute as any);
-        });
+        router.replace('/onboarding/name-entry' as any);
+      } else if (segments[1] === 'email-verification') {
+        // User just verified OTP; navigate to name-entry from root to avoid "PUSH not handled" / brief tabs flash
+        router.replace('/onboarding/name-entry' as any);
       }
     } else if (needsOnboarding === false) {
       if (!inTabsGroup) {
@@ -216,11 +188,9 @@ function RootLayoutNav() {
       }
       scheduleAllWorkoutNotifications().catch(() => {});
       scheduleConsistencyScoreNotification().catch(() => {});
-    } else {
-      if (user && !inTabsGroup && !inOnboardingGroup) {
-        router.replace('/(tabs)' as import('expo-router').Href);
-      }
     }
+    // When needsOnboarding is null (unknown), do NOT navigate to tabs — prevents brief home-tab flash
+    // while onboarding status is being fetched after OTP verification.
   }, [user, authLoading, needsOnboarding, onboardingLoading, segments]);
 
   // Shared loading screen UI: background image fills screen + centered spinning star (same size/position/speed on both)
@@ -274,17 +244,19 @@ export default function RootLayout() {
   // Wrap with GestureHandlerRootView for swipe gestures
   const appContent = (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <SettingsProvider>
-          <ProfileRefreshProvider>
-            <FeaturesProvider>
-              <ModeProvider>
-                <RootLayoutNav />
-              </ModeProvider>
-            </FeaturesProvider>
-          </ProfileRefreshProvider>
-        </SettingsProvider>
-      </AuthProvider>
+      <OnboardingDataProvider>
+        <AuthProvider>
+          <SettingsProvider>
+            <ProfileRefreshProvider>
+              <FeaturesProvider>
+                <ModeProvider>
+                  <RootLayoutNav />
+                </ModeProvider>
+              </FeaturesProvider>
+            </ProfileRefreshProvider>
+          </SettingsProvider>
+        </AuthProvider>
+      </OnboardingDataProvider>
     </GestureHandlerRootView>
   );
 

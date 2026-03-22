@@ -1,15 +1,16 @@
 // app/onboarding/sport-selection.tsx
-// Sport Selection Screen - Select up to 2 sports
+// Sport Selection Screen - Select up to 2 sports (UI matches reference: dark background, 2x2-style cards)
 import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Platform,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Animated, {
@@ -18,215 +19,137 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
-import { updateProfileFromOnboarding, updateOnboardingStep } from '../../lib/api/onboarding';
+import { useOnboardingData } from '../../providers/OnboardingDataContext';
 
-const TOTAL_STEPS = 10; // Total number of onboarding steps
-const CURRENT_STEP = 5; // This is step 5
+const TOTAL_STEPS = 7;
+const CURRENT_STEP = 2;
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_GAP = 12;
+const CARD_WIDTH = (SCREEN_WIDTH - 48 - CARD_GAP) / 2; // 24 padding each side, one gap between
 
 const AVAILABLE_SPORTS = [
-  { id: 'workout', name: 'Lifting' },
-  { id: 'basketball', name: 'Basketball' },
-  { id: 'football', name: 'Football' },
-  { id: 'baseball', name: 'Baseball' },
-  { id: 'soccer', name: 'Soccer' },
-  { id: 'hockey', name: 'Hockey' },
-  { id: 'tennis', name: 'Tennis' },
+  { id: 'workout', name: 'Lifting', tagline: 'Build strength', icon: 'dumbbell' as const, lib: 'mci' as const },
+  { id: 'basketball', name: 'Basketball', tagline: 'Shoot better', icon: 'basketball-outline', lib: 'ion' as const },
+  { id: 'football', name: 'Football', tagline: 'Get faster', icon: 'american-football-outline', lib: 'ion' as const },
+  { id: 'baseball', name: 'Baseball', tagline: 'Hit further', icon: 'baseball', lib: 'mci' as const },
+  { id: 'soccer', name: 'Soccer', tagline: 'Score more', icon: 'football-outline', lib: 'ion' as const },
+  { id: 'hockey', name: 'Hockey', tagline: 'Skate stronger', icon: 'hockey-sticks', lib: 'mci' as const },
+  { id: 'tennis', name: 'Tennis', tagline: 'Serve better', icon: 'tennisball-outline', lib: 'ion' as const },
 ];
 
-// Sport Card Component with Animation
 function SportCard({
   sport,
   isSelected,
   isDisabled,
   onToggle,
 }: {
-  sport: { id: string; name: string };
+  sport: (typeof AVAILABLE_SPORTS)[number];
   isSelected: boolean;
   isDisabled: boolean;
   onToggle: () => void;
 }) {
-  // Animated background color
-  const backgroundColor = useSharedValue(
-    isSelected ? theme.colors.primary600 : theme.colors.surface1
-  );
-
-  // Update animated value when selection changes
+  const overlayOpacity = useSharedValue(isSelected ? 1 : 0);
   React.useEffect(() => {
-    backgroundColor.value = withTiming(
-      isSelected ? theme.colors.primary600 : theme.colors.surface1,
-      {
-        duration: 450,
-        easing: Easing.out(Easing.ease),
-      }
-    );
+    overlayOpacity.value = withTiming(isSelected ? 1 : 0, {
+      duration: 280,
+      easing: Easing.out(Easing.ease),
+    });
   }, [isSelected]);
 
-  const animatedCardStyle = useAnimatedStyle(() => ({
-    backgroundColor: backgroundColor.value,
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.value,
   }));
 
-  return (
-    <Animated.View
-      style={[styles.sportCard, animatedCardStyle, isDisabled && styles.sportCardDisabled]}
-    >
-      {/* Gradient Background for Depth */}
-      <LinearGradient
-        colors={
-          isSelected
-            ? ['rgba(255,255,255,0.15)', 'rgba(0,0,0,0.1)']
-            : ['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.04)']
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      
-      {/* Top Sheen Highlight */}
-      <LinearGradient
-        colors={
-          isSelected
-            ? ['rgba(255,255,255,0.20)', 'transparent']
-            : ['rgba(255,255,255,0.10)', 'transparent']
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 0.4 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
+  const iconColor = isSelected ? '#3A3A3C' : theme.colors.textHi;
+  const titleColor = isSelected ? '#1C1C1E' : theme.colors.textHi;
 
+  const IconComponent = sport.lib === 'mci' ? MaterialCommunityIcons : Ionicons;
+
+  return (
+    <View style={[styles.card, isDisabled && styles.cardDisabled]}>
+      {/* Liquid glass base: blur + subtle sheen (unselected frosted look) */}
+      <BlurView
+        intensity={Platform.OS === 'ios' ? 36 : 28}
+        tint="dark"
+        style={styles.cardBlur}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)', 'transparent']}
+        locations={[0, 0.4, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {/* Selected: light glass overlay fades in */}
+      <Animated.View style={[styles.cardSelectedGlass, overlayStyle]} pointerEvents="none">
+        <BlurView
+          intensity={Platform.OS === 'ios' ? 50 : 40}
+          tint="light"
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={['rgba(255,255,255,0.85)', 'rgba(242,242,247,0.9)', 'rgba(229,229,234,0.95)']}
+          locations={[0, 0.3, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
       <TouchableOpacity
-        style={styles.cardContent}
+        style={styles.cardInner}
         onPress={onToggle}
         disabled={isDisabled}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
-        <Text
-          style={[
-            styles.sportName,
-            isSelected && styles.sportNameSelected,
-            isDisabled && styles.sportNameDisabled,
-          ]}
-        >
+        <View style={styles.cardIconWrap}>
+          <IconComponent
+            name={sport.icon}
+            size={44}
+            color={iconColor}
+            style={styles.cardIcon}
+          />
+        </View>
+        <Text style={[styles.cardTitle, { color: titleColor }]} numberOfLines={1}>
           {sport.name}
         </Text>
-        {isSelected && (
-          <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
-        )}
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 }
 
 export default function SportSelectionScreen() {
   const insets = useSafeAreaInsets();
+  const { setSports } = useOnboardingData();
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
 
   const progressPercentage = (CURRENT_STEP / TOTAL_STEPS) * 100;
 
   const handleSportToggle = (sportId: string) => {
     if (selectedSports.includes(sportId)) {
-      // Deselect sport
       setSelectedSports(selectedSports.filter((id) => id !== sportId));
     } else {
-      // Select sport (max 2)
       if (selectedSports.length < 2) {
         setSelectedSports([...selectedSports, sportId]);
       }
     }
   };
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (selectedSports.length === 0) return;
-
-    setLoading(true);
-    try {
-      // Save selected sports to profile
-      // Set primary_sport to the first selected sport
-      const primarySport = selectedSports[0] || null;
-
-      const { error: profileError } = await updateProfileFromOnboarding({
-        sports: selectedSports,
-        primary_sport: primarySport,
-      });
-
-      if (profileError) {
-        const isNetworkError = profileError.message?.toLowerCase().includes('network') || 
-                              profileError.message?.toLowerCase().includes('fetch') ||
-                              profileError.message?.toLowerCase().includes('connection');
-        
-        if (isNetworkError) {
-          Alert.alert(
-            'Connection Error',
-            'Unable to save your sports. Please check your internet connection and try again.',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-              { text: 'Retry', onPress: () => handleNext() },
-            ]
-          );
-          return;
-        } else {
-          Alert.alert('Error', profileError.message || 'Failed to save your sports. Please try again.');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Save progress: mark sport_selection step as completed
-      const { error: progressError } = await updateOnboardingStep('sport_selection');
-      if (progressError) {
-        // Don't block navigation on progress save failure
-      }
-
-      // Navigate to next screen
-      router.push('/onboarding/training-intent');
-    } catch (error: any) {
-      const isNetworkError = error.message?.toLowerCase().includes('network') || 
-                            error.message?.toLowerCase().includes('fetch') ||
-                            error.message?.toLowerCase().includes('connection');
-      
-      if (isNetworkError) {
-        Alert.alert(
-          'Connection Error',
-          'Unable to save your sports. Please check your internet connection and try again.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Retry', onPress: () => handleNext() },
-          ]
-        );
-      } else {
-        Alert.alert('Error', error.message || 'Something went wrong. Please try again.');
-      }
-      setLoading(false);
-    }
+    const primarySport = selectedSports[0];
+    setSports(selectedSports, primarySport);
+    router.push('/onboarding/first-win');
   };
 
   const isFormValid = selectedSports.length > 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Layer A: Base gradient - EXACT same as email-entry screen */}
-      <LinearGradient
-        colors={['#0B1513', '#0F2A22', '#0F3B2E', '#070B0A']}
-        locations={[0, 0.3, 0.6, 1]}
-        style={styles.baseGradient}
-      />
-      
-      {/* Layer B: Vignette overlay - EXACT same as email-entry screen */}
-      <LinearGradient
-        colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent', 'rgba(0,0,0,0.5)']}
-        locations={[0, 0.15, 0.85, 1]}
-        style={styles.vignetteGradient}
-        pointerEvents="none"
-      />
-      
-      {/* Layer C: Subtle grain - EXACT same as email-entry screen */}
-      <View style={styles.grainOverlay} pointerEvents="none" />
+      {/* Solid dark charcoal background (reference) */}
+      <View style={styles.background} />
 
-      {/* Header with Back Button and Progress Bar */}
+      {/* Header: keep current bar */}
       <View style={[styles.header, { zIndex: 10 }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -235,8 +158,6 @@ export default function SportSelectionScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
         </TouchableOpacity>
-
-        {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBarBackground}>
             <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
@@ -247,59 +168,61 @@ export default function SportSelectionScreen() {
 
       {/* Content */}
       <View style={[styles.content, { zIndex: 10 }]}>
-        {/* Heading */}
-        <Text style={styles.heading}>Select your sports</Text>
+        {/* Title - reference style (same typography as reference) */}
+        <Text style={styles.title}>Which sports do you train?</Text>
 
-        {/* Description */}
-        <Text style={styles.descriptionText}>
-          You can select up to 2 sports for now
-        </Text>
-
-        {/* Sports List - Scrollable */}
+        {/* 2-column grid of cards - scrollable */}
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+          contentContainerStyle={[styles.gridWrap, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {AVAILABLE_SPORTS.map((sport) => {
-            const isSelected = selectedSports.includes(sport.id);
-            const isDisabled = !isSelected && selectedSports.length >= 2;
-
-            return (
-              <SportCard
-                key={sport.id}
-                sport={sport}
-                isSelected={isSelected}
-                isDisabled={isDisabled}
-                onToggle={() => handleSportToggle(sport.id)}
-              />
-            );
-          })}
+          <View style={styles.grid}>
+            {AVAILABLE_SPORTS.map((sport) => {
+              const isSelected = selectedSports.includes(sport.id);
+              const isDisabled = !isSelected && selectedSports.length >= 2;
+              return (
+                <SportCard
+                  key={sport.id}
+                  sport={sport}
+                  isSelected={isSelected}
+                  isDisabled={isDisabled}
+                  onToggle={() => handleSportToggle(sport.id)}
+                />
+              );
+            })}
+          </View>
         </ScrollView>
       </View>
 
-      {/* Next Button */}
+      {/* Next button - reference: pill; enabled = solid white, disabled = frosted glass */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 20, zIndex: 10 }]}>
         <TouchableOpacity
           style={[
             styles.nextButton,
-            (!isFormValid || loading) && styles.nextButtonDisabled,
-            isFormValid && !loading && styles.nextButtonEnabled,
+            isFormValid && styles.nextButtonEnabled,
+            !isFormValid && styles.nextButtonDisabled,
           ]}
           onPress={handleNext}
-          disabled={!isFormValid || loading}
-          activeOpacity={0.8}
+          disabled={!isFormValid}
+          activeOpacity={0.85}
         >
-          {loading ? (
-            <Text style={styles.nextButtonText}>Saving...</Text>
-          ) : (
-            <Text style={[
-              styles.nextButtonText,
-              !isFormValid && styles.nextButtonTextDisabled,
-            ]}>
-              Next
-            </Text>
+          {!isFormValid && (
+            <>
+              <BlurView intensity={Platform.OS === 'ios' ? 32 : 24} tint="dark" style={StyleSheet.absoluteFill} />
+              <LinearGradient
+                colors={['rgba(255,255,255,0.12)', 'rgba(255,255,255,0.06)']}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+            </>
           )}
+          <Text style={[
+            styles.nextButtonText,
+            !isFormValid && styles.nextButtonTextDisabled,
+          ]}>
+            Continue
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -309,31 +232,11 @@ export default function SportSelectionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg0,
     position: 'relative',
   },
-  baseGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  vignetteGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  grainOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    opacity: 0.06,
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1C1C1E',
   },
   header: {
     paddingHorizontal: 20,
@@ -375,131 +278,134 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 24,
   },
-  heading: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: theme.colors.textHi,
-    marginBottom: 10,
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.5,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  descriptionText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: theme.colors.textLo,
-    lineHeight: 24,
-    marginBottom: 32,
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 32,
+    marginBottom: 28,
+    letterSpacing: -0.3,
   },
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingTop: 8,
+  gridWrap: {
+    paddingTop: 0,
   },
-  sportCard: {
+  grid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    height: 80,
+    flexWrap: 'wrap',
+    marginHorizontal: -CARD_GAP / 2,
+  },
+  card: {
+    width: CARD_WIDTH,
+    marginHorizontal: CARD_GAP / 2,
+    marginBottom: CARD_GAP,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    position: 'relative',
     overflow: 'hidden',
-    // Enhanced floating effects with depth
+    minHeight: 140,
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.35,
-        shadowRadius: 22,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
       },
       android: {
-        elevation: 12,
+        elevation: 6,
       },
     }),
   },
-  sportCardDisabled: {
-    opacity: 0.4,
+  cardBlur: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
   },
-  cardContent: {
+  cardSelectedGlass: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  cardDisabled: {
+    opacity: 0.5,
+  },
+  cardInner: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    padding: 16,
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    alignItems: 'flex-start',
+    minHeight: 140,
     zIndex: 10,
   },
-  sportName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.textHi,
+  cardIconWrap: {
+    flex: 1,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  sportNameSelected: {
-    color: '#FFFFFF',
+  cardIcon: {
+    marginRight: 0,
+  },
+  cardTitle: {
+    fontSize: 17,
     fontWeight: '700',
   },
-  sportNameDisabled: {
-    color: theme.colors.textLo,
-  },
   footer: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   nextButton: {
     width: '100%',
-    backgroundColor: theme.colors.strokeSoft,
     paddingVertical: 18,
-    borderRadius: theme.radii.pill,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-  },
-  nextButtonDisabled: {
-    backgroundColor: theme.colors.strokeSoft,
-    opacity: 1,
-  },
-  nextButtonEnabled: {
-    backgroundColor: theme.colors.primary600,
+    overflow: 'hidden',
+    position: 'relative',
+    // Default (disabled): transparent so BlurView shows
+    backgroundColor: 'transparent',
     ...Platform.select({
       ios: {
-        shadowColor: theme.colors.primary600,
-        shadowOpacity: 0.4,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 10 },
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
       },
       android: {
-        elevation: 12,
+        elevation: 3,
       },
     }),
   },
+  nextButtonEnabled: {
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  nextButtonDisabled: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
   nextButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: '#1C1C1E',
+    fontSize: 17,
     fontWeight: '700',
   },
   nextButtonTextDisabled: {
-    color: theme.colors.textLo,
+    color: 'rgba(255,255,255,0.6)',
   },
 });

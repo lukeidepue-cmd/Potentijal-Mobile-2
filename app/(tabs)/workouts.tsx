@@ -14,7 +14,6 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
-  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -40,6 +39,7 @@ import { useAuth } from "../../providers/AuthProvider";
 import { useSettings } from "../../providers/SettingsContext";
 import { mapModeKeyToSportMode, mapItemKindToExerciseType } from "../../lib/types";
 import { ErrorToast } from "../../components/ErrorToast";
+import { PremiumShimmerCTASurface } from "../../components/PremiumShimmerCTASurface";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Swipeable } from "react-native-gesture-handler";
 
@@ -187,10 +187,9 @@ export default function WorkoutsScreen() {
   const params = useLocalSearchParams<{ workoutId?: string }>();
   const m = (mode || "lifting").toLowerCase() as ModeKey;
 
-  // Redirect to onboarding/welcome if not signed in
   useEffect(() => {
     if (!user) {
-      router.replace('/onboarding/welcome');
+      router.replace('/onboarding/identity');
     }
   }, [user]);
 
@@ -1070,40 +1069,24 @@ export default function WorkoutsScreen() {
         {/* Empty state with circles and hero button */}
         {!isCreating && (
           <View style={styles.emptyStateContainer}>
-            {/* Mascot star */}
-            <View style={styles.mascotCircles}>
-              <Image 
-                source={require("../../assets/star.png")} 
-                style={styles.starImage}
-                resizeMode="contain"
-              />
-            </View>
-            
-            {/* Hero button */}
             <AnimatedPressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                // Reset scale before state change to ensure animation works next time
                 startWorkoutScale.value = 1;
                 setIsCreating(true);
                 setWorkoutName("");
               }}
               onPressIn={() => {
-                startWorkoutScale.value = withSpring(0.88, { damping: 8, stiffness: 100 });
+                startWorkoutScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
               }}
               onPressOut={() => {
-                startWorkoutScale.value = withSpring(1, { damping: 8, stiffness: 100 });
+                startWorkoutScale.value = withSpring(1, { damping: 15, stiffness: 300 });
               }}
-              style={[styles.startWorkoutButton, startWorkoutAnimatedStyle]}
+              style={[styles.startWorkoutPressable, startWorkoutAnimatedStyle]}
             >
-              <LinearGradient
-                colors={[theme.colors.primary600, theme.colors.primary500]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.startWorkoutGradient}
-              >
-                <Text style={styles.startWorkoutText}>Start Workout</Text>
-              </LinearGradient>
+              <PremiumShimmerCTASurface style={styles.startWorkoutPremiumSurface}>
+                <Text style={styles.startWorkoutPremiumText}>Start Workout</Text>
+              </PremiumShimmerCTASurface>
             </AnimatedPressable>
           </View>
         )}
@@ -1619,58 +1602,36 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  /* Empty state */
+  /* Empty state — CTA matches Settings Upgrade / Progress AI Trainer */
   emptyStateContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: theme.layout.xl,
-    paddingTop: 60,
   },
-  mascotCircles: {
-    width: 262,
-    height: 262,
+  startWorkoutPressable: {
+    width: "100%",
+    maxWidth: 268,
+    alignSelf: "center",
     alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    marginBottom: -32,
-    marginTop: -176,
   },
-  starImage: {
-    width: 262,
-    height: 262,
+  startWorkoutPremiumSurface: {
+    width: "100%",
+    maxWidth: 228,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
   },
-  startWorkoutButton: {
-    borderRadius: 20,
-    overflow: "hidden",
-    marginTop: -4,
-    ...Platform.select({
-      ios: {
-        shadowColor: theme.colors.primary600,
-        shadowOpacity: 0.4,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 10 },
-      },
-      android: {
-        elevation: 12,
-      },
-    }),
-  },
-  startWorkoutButtonPressed: {
-    opacity: 0.9,
-  },
-  startWorkoutGradient: {
-    paddingVertical: 18,
-    paddingHorizontal: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  startWorkoutText: {
-    color: "#052d1b",
-    fontSize: 18,
-    fontFamily: "Geist_700Bold",
-    fontWeight: "700",
-    letterSpacing: 0.5,
+  startWorkoutPremiumText: {
+    color: "#000000",
+    fontSize: 17,
+    fontFamily: "Geist_600SemiBold",
+    fontWeight: "600",
+    letterSpacing: 0.15,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.25)",
+    textShadowOffset: { width: 0, height: 1.2 },
+    textShadowRadius: 2.5,
   },
   nameInputContainer: {
     marginTop: 26,

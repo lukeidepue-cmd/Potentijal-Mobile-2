@@ -25,6 +25,7 @@ import { useBottomTabOverflow } from "../../../../components/ui/TabBarBackground
 import { useMode } from "../../../../providers/ModeContext";
 import { useAvailableModes } from "../../../../hooks/useAvailableModes";
 import { Confetti } from "../../../../components/Confetti";
+import { WorkoutStatsExerciseCards } from "../../../../components/WorkoutStatsExerciseCards";
 import { useFeatures } from "../../../../hooks/useFeatures";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from "react-native-reanimated";
 
@@ -1204,43 +1205,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
     flex: 1,
-  },
-  
-  // Stats Section
-  statsSection: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 24,
-    marginBottom: 24,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: "#1A1F28",
-    borderColor: "#2A2F38",
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-  },
-  statRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statKicker: {
-    color: "#9E9E9E",
-    fontSize: 11,
-    marginBottom: 4,
-    fontWeight: "600",
-  },
-  statTitle: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  statValueRight: {
-    color: "#FFFFFF",
-    fontSize: 24,
-    fontWeight: "700",
   },
   
   // Disabled styles for non-premium users
