@@ -1,6 +1,6 @@
 // app/(tabs)/settings/index.tsx
 // Main Settings Screen - Lists all settings sections
-import React, { useEffect } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import Constants from "expo-constants";
 import { PROFILE_FEATURES_ENABLED } from "@/constants/features";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import { PremiumShimmerCTASurface } from "@/components/PremiumShimmerCTASurface";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -79,7 +80,7 @@ export default function Settings() {
     return null;
   }
 
-  const appVersion = Constants.expoConfig?.version || "1.0.0";
+  const appVersion = Constants.expoConfig?.version || "1.1";
 
   return (
     <Animated.View style={[styles.container, animatedStyle]}>
@@ -227,15 +228,19 @@ export default function Settings() {
                 </View>
               </View>
               {!isPremium && !isCreator && (
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    router.push("/(tabs)/purchase-premium");
-                  }}
-                  style={styles.upgradeButtonNew}
-                >
-                  <Text style={styles.upgradeButtonTextNew}>Upgrade</Text>
-                </Pressable>
+                <View style={styles.upgradeButtonWrap}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      router.push("/(tabs)/purchase-premium");
+                    }}
+                    style={({ pressed }) => [pressed && { opacity: 0.92 }]}
+                  >
+                    <PremiumShimmerCTASurface>
+                      <Text style={styles.upgradeButtonTextNew}>Upgrade</Text>
+                    </PremiumShimmerCTASurface>
+                  </Pressable>
+                </View>
               )}
             </View>
 
@@ -522,23 +527,23 @@ const styles = StyleSheet.create({
     color: theme.colors.textLo,
     fontFamily: FONT.uiRegular,
   },
-  upgradeButtonNew: {
-    alignSelf: "flex-end",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-    backgroundColor: theme.colors.primary600,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+  upgradeButtonWrap: {
+    width: "100%",
+    alignItems: "center",
   },
   upgradeButtonTextNew: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#06160D",
-    fontFamily: FONT.uiBold,
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#000000",
+    fontFamily: FONT.uiSemi,
+    zIndex: 1,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+    paddingRight: 3,
+    letterSpacing: 0.15,
+    textShadowColor: "rgba(0, 0, 0, 0.25)",
+    textShadowOffset: { width: 0, height: 1.2 },
+    textShadowRadius: 2.5,
   },
 });
 
