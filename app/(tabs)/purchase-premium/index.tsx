@@ -32,6 +32,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 import Purchases from "react-native-purchases";
 import { supabase } from "../../../lib/supabase";
+import { isExpoGo } from "../../../lib/expo-env";
 
 /* ---- Fonts ---- */
 import {
@@ -75,6 +76,14 @@ export default function PurchasePremium() {
   const loadOfferings = useCallback(async () => {
     setOfferingsError(null);
     setOfferingsLoading(true);
+    // In Expo Go the RevenueCat native module isn't bundled. Show a friendly
+    // error instead of crashing on Purchases.getOfferings().
+    if (isExpoGo()) {
+      setOfferingsError("Purchases aren't available in Expo Go. Use a development or TestFlight build to test the paywall.");
+      setCurrentOffering(null);
+      setOfferingsLoading(false);
+      return;
+    }
     try {
       const offerings = await Purchases.getOfferings();
       const current = offerings.current;
@@ -103,6 +112,14 @@ export default function PurchasePremium() {
 
   const handleContinue = async () => {
     setPurchaseError(null);
+    if (isExpoGo()) {
+      Alert.alert(
+        "Not available in Expo Go",
+        "Purchases require the native RevenueCat module, which isn't included in Expo Go. Use a development or TestFlight build to complete a purchase.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
     setPurchasing(true);
     try {
       // If user already has an active subscription or is premium (e.g. creator), don't present purchase
@@ -120,8 +137,8 @@ export default function PurchasePremium() {
           }
         };
         Alert.alert(
-          "You're already premium",
-          "Your account has premium access. To manage a subscription, go to Settings → Manage Subscription.",
+          "You're already Pro",
+          "Your account has Pro access. To manage a subscription, go to Settings → Manage Subscription.",
           [{ text: "OK", onPress: onOk }]
         );
         return;
@@ -175,7 +192,7 @@ export default function PurchasePremium() {
             router.back();
           }
         };
-        Alert.alert("You're premium!", "Thanks for upgrading. Enjoy Potentijal Premium.", [
+        Alert.alert("You're Pro!", "Thanks for upgrading. Enjoy AthleteCraft Pro.", [
           { text: "OK", onPress: onSuccess },
         ]);
       } else {
@@ -283,7 +300,7 @@ export default function PurchasePremium() {
         </View>
 
         {/* Title */}
-        <Text style={styles.title}>Upgrade to Potentijal Premium</Text>
+        <Text style={styles.title}>Upgrade to AthleteCraft Pro</Text>
 
         {/* Features - Floating icons and descriptions */}
         <View style={styles.featuresContainer}>

@@ -1,1348 +1,1122 @@
 // app/(tabs)/meals/progress-graphs.tsx
-// Progress Graphs Screen
+// Progress Graph driven by user-built Views (one preset + a stat formula +
+// aggregation). Replaces the sport-mode / fuzzy-exercise-search version.
+//
+// UI flow:
+//   1. Horizontal chip row: [+ Build New View] [view-1] [view-2] ...
+//   2. Timeframe segmented control: 30 / 90 / 180 / 360 days (always 6 buckets)
+//   3. When a view + timeframe are picked, render the line graph.
+//
+// Empty states:
+//   - User has no presets       → tell them to build a preset first
+//   - User has no views         → just the +Build New View button + hint
+//   - View has no data in range → graph hidden, "No data in this timeframe"
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Platform, Dimensions, Image } from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+  Dimensions,
+} from "react-native";
+import { router, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
+import Svg, {
+  G,
+  Path,
+  Circle,
+  Line as SvgLine,
+  Text as SvgText,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Stop,
+} from "react-native-svg";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withRepeat, withTiming, Easing } from "react-native-reanimated";
-import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText } from "react-native-svg";
-import { theme } from "@/constants/theme";
-import { useMode } from "@/providers/ModeContext";
-import { useAvailableModes } from "@/hooks/useAvailableModes";
-import { getAvailableViewsForMode } from "@/lib/api/progress-views";
-import { mapModeKeyToSportMode, SportMode } from "@/lib/types";
-import { TimeInterval, getTimeIntervalLabel } from "@/lib/utils/time-intervals";
-import { useProgressGraphView, ProgressGraphDataPoint } from "@/hooks/useProgressGraphView";
-import { getAvailableExercisesForView, searchExercisesForView } from "@/lib/api/exercise-filtering";
 import { HelpOverlay } from "@/components/HelpOverlay";
 
-// Screen dimensions for star positioning
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { theme } from "@/constants/theme";
+import {
+  listViews,
+  getViewProgress,
+  listPresetExerciseNames,
+  type ExerciseView,
+  type ViewProgressPoint,
+  type ViewDays,
+  VIEW_DAYS_OPTIONS,
+  VIEW_BUCKETS,
+} from "@/lib/api/views";
+import { listPresets } from "@/lib/api/presets";
+import { useTutorial } from "../../../providers/TutorialContext";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// ============================================================================
+//  GraphDisplay — SVG line chart. Inlined here (kept the existing visual
+//  language: green line + glow, right-side Y labels, bottom X labels).
+// ============================================================================
+
+function formatBucketEndForLabel(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${m}/${d}`;
+}
 
 /**
- * Generate random star positions for background
+ * Redesigned chart (May 2026).
+ * Upgrades from the bare-bones version:
+ *   - Hero value header above the chart (Whoop-style "big number + delta")
+ *   - Subtle horizontal gridlines aligned with Y-ticks
+ *   - Soft gradient AREA FILL under the line (line green → transparent)
+ *   - Smooth catmull-rom-ish curve via mid-point quadratic smoothing
+ *   - The most recent point gets a distinct "live" treatment (white ring,
+ *     larger inner, pulse-ready halo) per the peak-end rule.
+ *   - Quieter axis typography so the data does the talking.
  */
-function generateStars(count: number = 150) {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i,
-    x: Math.random() * SCREEN_WIDTH,
-    y: Math.random() * SCREEN_HEIGHT * 2, // Allow stars to extend beyond viewport for scrolling
-    size: Math.random() * 2 + 0.5, // Size between 0.5 and 2.5
-    opacity: Math.random() * 0.6 + 0.3, // Opacity between 0.3 and 0.9
-  }));
-}
-
-// Helper function to format date for display
-function formatDateForDisplay(dateStr: string): string {
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    const month = parseInt(parts[1], 10);
-    const day = parseInt(parts[2], 10);
-    return `${month}/${day}`;
-  }
-  const date = new Date(dateStr);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
-// Graph Display Component
 function GraphDisplay({
   data,
-  minValue,
-  maxValue,
   width,
-  timeInterval,
+  viewName,
+  presetName,
+  exerciseName,
 }: {
-  data: ProgressGraphDataPoint[];
-  minValue: number | null;
-  maxValue: number | null;
+  data: ViewProgressPoint[];
   width: number;
-  timeInterval: TimeInterval;
+  viewName: string;
+  presetName: string;
+  /** The single exercise this graph is plotting. Shown as the hero headline
+   *  since the chart now reflects one exercise, not the whole preset. */
+  exerciseName: string;
 }) {
-  // Edge case: No valid data
-  if (minValue === null || maxValue === null || width === 0) {
-    return null;
-  }
+  if (width === 0) return null;
 
-  // Graph dimensions and margins - right margin for Y-axis labels
-  const M = { top: 20, right: 50, bottom: 40, left: 20 };
-  const H = 300; // Height
-  const W = width || 300;
+  const M = { top: 28, right: 56, bottom: 36, left: 16 };
+  const H = 300;
+  const W = width;
   const chartWidth = W - M.left - M.right;
   const chartHeight = H - M.top - M.bottom;
 
-  // Calculate actual min/max from data
-  const actualValues = data
-    .map(p => p.value)
-    .filter((v): v is number => v !== null && v !== undefined);
-  
-  const actualMin = actualValues.length > 0 ? Math.min(...actualValues) : minValue;
-  const actualMax = actualValues.length > 0 ? Math.max(...actualValues) : maxValue;
-  
-  if (actualMin === null || actualMax === null) {
-    return null;
-  }
+  const values = data.map(p => p.value).filter((v): v is number => v !== null);
+  if (values.length === 0) return null;
 
-  const range = actualMax - actualMin;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
   const isConstant = range === 0;
 
-  let displayMin = actualMin;
-  let displayMax = actualMax;
+  let displayMin = min;
+  let displayMax = max;
   let displayRange = range;
-  
   if (isConstant) {
-    const valueMagnitude = Math.abs(actualMin);
-    let padding: number;
-    
-    if (valueMagnitude >= 100) {
-      padding = valueMagnitude * 0.2;
-    } else if (valueMagnitude >= 10) {
-      padding = valueMagnitude * 0.1;
-    } else {
-      padding = Math.max(valueMagnitude * 0.1, 1);
-    }
-    
-    displayMin = actualMin - padding;
-    displayMax = actualMax + padding;
+    const mag = Math.abs(min);
+    const pad = mag >= 100 ? mag * 0.2 : mag >= 10 ? mag * 0.1 : Math.max(mag * 0.1, 1);
+    displayMin = min - pad;
+    displayMax = max + pad;
     displayRange = displayMax - displayMin;
   }
 
-  // Calculate 6 evenly spaced Y-axis ticks for labels
-  const yTicks: number[] = [];
-  for (let i = 0; i < 6; i++) {
-    const tick = displayMin + (displayRange * (i / 5));
-    yTicks.push(tick);
-  }
-
-  // Y-axis positioning function
-  const yFor = (value: number, isDataPoint: boolean = false): number => {
-    const ratio = (value - displayMin) / displayRange;
-    const y = M.top + chartHeight - (chartHeight * ratio);
-    
-    if (isConstant && isDataPoint) {
-      return M.top + chartHeight / 2;
-    }
-    
-    return y;
+  const yTicks = Array.from({ length: 5 }, (_, i) => displayMin + displayRange * (i / 4));
+  const yFor = (v: number, isPoint = false) => {
+    if (isConstant && isPoint) return M.top + chartHeight / 2;
+    const ratio = (v - displayMin) / displayRange;
+    return M.top + chartHeight - chartHeight * ratio;
   };
 
-  // Format tick labels appropriately
-  const formatTickLabel = (value: number): string => {
-    if (Math.abs(value) >= 1000) {
-      return value.toFixed(0);
-    } else if (Math.abs(value) >= 10) {
-      return value.toFixed(1);
-    } else if (Math.abs(value) >= 1) {
-      return value.toFixed(2);
-    } else {
-      return value.toFixed(3);
-    }
+  const xFor = (bucketIndex: number) => {
+    const t = bucketIndex / (VIEW_BUCKETS - 1);
+    return M.left + chartWidth * t;
   };
 
-  // X-axis positioning function
-  const xFor = (bucketIndex: number): number => {
-    const position = 5 - bucketIndex;
-    return M.left + (chartWidth * (position / 5));
-  };
-
-  // Sort data by bucketIndex
-  const sortedData = [...data].sort((a, b) => b.bucketIndex - a.bucketIndex);
-
-  // Build line path
-  const pointsWithValues = sortedData
+  const pointsWithValues = data
     .filter(p => p.value !== null)
     .map(p => ({
       bucketIndex: p.bucketIndex,
-      value: p.value!,
+      value: p.value as number,
       x: xFor(p.bucketIndex),
-      y: yFor(p.value!, true),
+      y: yFor(p.value as number, true),
     }))
     .sort((a, b) => a.x - b.x);
-  
+
+  // Smoothed line path — quadratic mid-point smoothing makes the chart feel
+  // organic rather than zig-zaggy without needing a real cubic curve.
   let linePath = "";
-  pointsWithValues.forEach((point, i) => {
+  pointsWithValues.forEach((p, i) => {
     if (i === 0) {
-      linePath = `M ${point.x} ${point.y}`;
-    } else {
-      linePath += ` L ${point.x} ${point.y}`;
+      linePath += `M ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+      return;
+    }
+    const prev = pointsWithValues[i - 1];
+    const mx = (prev.x + p.x) / 2;
+    const my = (prev.y + p.y) / 2;
+    linePath += ` Q ${prev.x.toFixed(2)} ${prev.y.toFixed(2)} ${mx.toFixed(2)} ${my.toFixed(2)}`;
+    if (i === pointsWithValues.length - 1) {
+      linePath += ` T ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
     }
   });
 
+  // Area fill — close the path back to the baseline so we can shade beneath.
+  const baselineY = M.top + chartHeight;
+  const areaPath = linePath
+    ? `${linePath} L ${pointsWithValues[pointsWithValues.length - 1].x.toFixed(2)} ${baselineY} L ${pointsWithValues[0].x.toFixed(2)} ${baselineY} Z`
+    : "";
+
+  const formatTickLabel = (v: number) => {
+    if (Math.abs(v) >= 1000) return v.toFixed(0);
+    if (Math.abs(v) >= 10) return v.toFixed(1);
+    if (Math.abs(v) >= 1) return v.toFixed(2);
+    return v.toFixed(3);
+  };
+
+  // ── Hero header values (Whoop-style big number + delta) ─────────────────
+  const latest = pointsWithValues[pointsWithValues.length - 1];
+  const previous =
+    pointsWithValues.length >= 2
+      ? pointsWithValues[pointsWithValues.length - 2]
+      : null;
+  const delta = previous ? latest.value - previous.value : 0;
+  const deltaPct = previous && previous.value !== 0
+    ? (delta / Math.abs(previous.value)) * 100
+    : 0;
+
+  const formatBigNumber = (v: number) => {
+    const abs = Math.abs(v);
+    if (abs >= 1000) return v.toFixed(0);
+    if (abs >= 10) return v.toFixed(1);
+    if (abs >= 1) return v.toFixed(2);
+    return v.toFixed(2);
+  };
+  const deltaColor =
+    delta > 0 ? "#22C55E" : delta < 0 ? "#FF6B6B" : "rgba(255,255,255,0.45)";
+  const deltaIcon = delta > 0 ? "↑" : delta < 0 ? "↓" : "·";
+
+  const LINE_COLOR = "#22C55E";
 
   return (
-    <Svg width={W} height={H}>
-      {/* X-axis labels - no line */}
-      <G>
-        {Array.from({ length: 6 }, (_, i) => 5 - i).map((bucketIndex) => {
-          const x = xFor(bucketIndex);
-          
-          const bucketSizeDays = timeInterval === 30 ? 5 : timeInterval === 90 ? 15 : timeInterval === 180 ? 30 : 60;
-          const today = new Date();
-          today.setHours(23, 59, 59, 999);
-          
-          const bucketEndDate = new Date(today);
-          bucketEndDate.setDate(bucketEndDate.getDate() - (bucketIndex * bucketSizeDays));
-          bucketEndDate.setHours(23, 59, 59, 999);
-          
-          const year = bucketEndDate.getFullYear();
-          const month = String(bucketEndDate.getMonth() + 1).padStart(2, '0');
-          const day = String(bucketEndDate.getDate()).padStart(2, '0');
-          const dateStr = `${year}-${month}-${day}`;
-          const displayLabel = formatDateForDisplay(dateStr);
-          
-          return (
+    <View style={{ width: W }}>
+      {/* Hero value header — research §6 (Whoop big number + sparkline pattern).
+          This is the single biggest jump in perceived premium feel. */}
+      <View style={localStyles.heroValueRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={localStyles.heroLabel} numberOfLines={1}>
+            {exerciseName.toUpperCase()} <Text style={localStyles.heroLabelDim}>· {viewName}</Text>
+          </Text>
+          <View style={localStyles.heroRow}>
+            <Text style={localStyles.heroValue}>{formatBigNumber(latest.value)}</Text>
+            {previous && (
+              <View style={[localStyles.deltaPill, { borderColor: deltaColor + "55", backgroundColor: deltaColor + "1A" }]}>
+                <Text style={[localStyles.deltaText, { color: deltaColor }]}>
+                  {deltaIcon} {Math.abs(delta) >= 10 ? Math.abs(delta).toFixed(1) : Math.abs(delta).toFixed(2)}
+                  {previous.value !== 0 ? ` · ${Math.abs(deltaPct).toFixed(0)}%` : ""}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+
+      <Svg width={W} height={H}>
+        <Defs>
+          {/* Area gradient — line color at top, fade to transparent at baseline */}
+          <SvgLinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={LINE_COLOR} stopOpacity="0.30" />
+            <Stop offset="60%" stopColor={LINE_COLOR} stopOpacity="0.08" />
+            <Stop offset="100%" stopColor={LINE_COLOR} stopOpacity="0" />
+          </SvgLinearGradient>
+          {/* Glow gradient for the most recent point */}
+          <SvgLinearGradient id="pulseGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={LINE_COLOR} stopOpacity="0.5" />
+            <Stop offset="100%" stopColor={LINE_COLOR} stopOpacity="0" />
+          </SvgLinearGradient>
+        </Defs>
+
+        {/* Horizontal gridlines aligned with Y-ticks — research §6 data-ink ratio:
+            hairlines whisper structure without competing with the data. */}
+        <G>
+          {yTicks.map((t, i) => (
+            <SvgLine
+              key={`grid-${i}`}
+              x1={M.left}
+              x2={W - M.right}
+              y1={yFor(t, false)}
+              y2={yFor(t, false)}
+              stroke="rgba(255,255,255,0.06)"
+              strokeWidth={1}
+            />
+          ))}
+        </G>
+
+        {/* Area fill */}
+        {areaPath && pointsWithValues.length > 1 && (
+          <Path d={areaPath} fill="url(#areaGrad)" />
+        )}
+
+        {/* X-axis date labels (lighter, tabular) */}
+        <G>
+          {data.map(p => (
             <SvgText
-              key={`x-${bucketIndex}`}
-              x={x}
-              y={H - 12}
-              fill="#9E9E9E"
+              key={`x-${p.bucketIndex}`}
+              x={xFor(p.bucketIndex)}
+              y={H - 10}
+              fill="rgba(255,255,255,0.40)"
               fontSize={10}
+              fontWeight="500"
               textAnchor="middle"
             >
-              {displayLabel}
+              {formatBucketEndForLabel(p.bucketEnd)}
             </SvgText>
-          );
-        })}
-      </G>
+          ))}
+        </G>
 
-      {/* Y-axis labels - no line, positioned on the right */}
-      <G>
-        {yTicks.map((tick, i) => {
-          const y = yFor(tick, false);
-          return (
+        {/* Y-axis value labels on the right */}
+        <G>
+          {yTicks.map((t, i) => (
             <SvgText
               key={`y-${i}`}
               x={W - M.right + 10}
-              y={y + 3}
-              fill="#9E9E9E"
+              y={yFor(t, false) + 3}
+              fill="rgba(255,255,255,0.45)"
               fontSize={10}
+              fontWeight="500"
               textAnchor="start"
             >
-              {formatTickLabel(tick)}
+              {formatTickLabel(t)}
             </SvgText>
-          );
-        })}
-      </G>
+          ))}
+        </G>
 
-      {/* Data line with glow effect */}
-      {linePath && (
-        <>
-          {/* Glow layer - subtle bright green glow */}
-          <Path
-            d={linePath}
-            fill="none"
-            stroke="#17D67F"
-            strokeWidth={5}
-            opacity={0.4}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Main line - green */}
-          <Path
-            d={linePath}
-            fill="none"
-            stroke="#17D67F"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </>
-      )}
+        {/* Line — keep the glow + solid pattern but use smoothed path + accent color */}
+        {linePath && (
+          <>
+            <Path
+              d={linePath}
+              fill="none"
+              stroke={LINE_COLOR}
+              strokeWidth={6}
+              opacity={0.25}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Path
+              d={linePath}
+              fill="none"
+              stroke={LINE_COLOR}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </>
+        )}
 
-      {/* Data points */}
-      {sortedData.map((point) => {
-        if (point.value === null) return null;
-        const x = xFor(point.bucketIndex);
-        const y = yFor(point.value, true);
-        return (
-          <Circle
-            key={`pt-${point.bucketIndex}`}
-            cx={x}
-            cy={y}
-            r={4.5}
-            stroke="#0F1419"
-            strokeWidth={2}
-            fill="#17D67F"
-          />
-        );
-      })}
-
-    </Svg>
+        {/* Data point dots — last point gets the "live" treatment */}
+        <G>
+          {pointsWithValues.map((p, i) => {
+            const isLast = i === pointsWithValues.length - 1;
+            if (isLast) {
+              return (
+                <React.Fragment key={`pt-${p.bucketIndex}`}>
+                  <Circle cx={p.x} cy={p.y} r={14} fill={LINE_COLOR} opacity={0.10} />
+                  <Circle cx={p.x} cy={p.y} r={8} fill={LINE_COLOR} opacity={0.25} />
+                  <Circle cx={p.x} cy={p.y} r={5} fill={LINE_COLOR} />
+                  <Circle cx={p.x} cy={p.y} r={2} fill="#FFFFFF" />
+                </React.Fragment>
+              );
+            }
+            return (
+              <React.Fragment key={`pt-${p.bucketIndex}`}>
+                <Circle cx={p.x} cy={p.y} r={5} fill={LINE_COLOR} opacity={0.18} />
+                <Circle cx={p.x} cy={p.y} r={2.5} fill={LINE_COLOR} />
+              </React.Fragment>
+            );
+          })}
+        </G>
+      </Svg>
+    </View>
   );
 }
 
+// Chart-specific local styles (kept out of main styles to scope clearly).
+const localStyles = StyleSheet.create({
+  heroValueRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 14,
+  },
+  heroLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.55)",
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  heroLabelDim: {
+    color: "rgba(255,255,255,0.32)",
+    fontWeight: "500",
+  },
+  heroRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 10,
+  },
+  heroValue: {
+    fontSize: 40,
+    fontWeight: "800",
+    color: "rgba(255,255,255,0.96)",
+    letterSpacing: -1.2,
+    fontVariant: ["tabular-nums"],
+    lineHeight: 44,
+  },
+  deltaPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  deltaText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+    fontVariant: ["tabular-nums"],
+  },
+});
+
+// ============================================================================
+//  Screen
+// ============================================================================
+
 export default function ProgressGraphsScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { mode: currentMode, modeLoading } = useMode();
-  const { availableModes } = useAvailableModes();
 
-  // Generate stars for background
-  const [stars] = useState(() => generateStars(150));
+  const [hasAnyPresets, setHasAnyPresets] = useState<boolean | null>(null);
+  const [views, setViews] = useState<ExerciseView[]>([]);
+  const [viewsLoading, setViewsLoading] = useState(true);
 
-  // State management
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
-  const [selectedView, setSelectedView] = useState<string | null>(null);
-  const [selectedExercise, setSelectedExercise] = useState<string>("");
-  const [timeInterval, setTimeInterval] = useState<TimeInterval>(90);
-  const [exerciseSearchQuery, setExerciseSearchQuery] = useState("");
-  const [showModePicker, setShowModePicker] = useState(false);
-  const [showExerciseSearch, setShowExerciseSearch] = useState(false);
-  const [isTouchingSearchResults, setIsTouchingSearchResults] = useState(false);
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  const [days, setDays] = useState<ViewDays>(30);
+
+  // Exercise selection — the user picks ONE exercise name logged under the
+  // selected view's preset; the graph plots only that exercise's data.
+  const [availableExercises, setAvailableExercises] = useState<string[]>([]);
+  const [exercisesLoading, setExercisesLoading] = useState(false);
+  const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
+
+  const [graphData, setGraphData] = useState<ViewProgressPoint[]>([]);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
+
   const [graphWidth, setGraphWidth] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Update selectedMode when currentMode loads
-  useEffect(() => {
-    if (!modeLoading && currentMode) {
-      setSelectedMode(currentMode);
-    }
-  }, [currentMode, modeLoading]);
+  // ---- Tutorial wiring ----------------------------------------------------
+  const { step: tutorialStep, setStep: setTutorialStep, setContentRect } = useTutorial();
+  const buildViewBtnRef = useRef<View>(null);
+  const [buildViewBtnRect, setBuildViewBtnRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const measureBuildViewBtn = useCallback(() => {
+    buildViewBtnRef.current?.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) setBuildViewBtnRect({ x, y, width, height });
+    });
+  }, []);
 
-  // Get available views for selected mode
-  const sportMode = useMemo(() => 
-    selectedMode ? mapModeKeyToSportMode(selectedMode) : 'workout',
-    [selectedMode]
+  // Arriving here from the Progress tab card advances to the intro overlay.
+  useFocusEffect(
+    useCallback(() => {
+      if (tutorialStep === "progress_graph_button") {
+        setTutorialStep("progress_graph_intro");
+      }
+      const t = setTimeout(measureBuildViewBtn, 350);
+      return () => {
+        clearTimeout(t);
+        setContentRect(null);
+      };
+    }, [tutorialStep, setTutorialStep, setContentRect, measureBuildViewBtn])
   );
-  const availableViews = useMemo(() => {
-    return getAvailableViewsForMode(sportMode);
-  }, [sportMode]);
 
-  // Set default view when mode changes
+  // Spotlight the +Build New View button only during that step.
   useEffect(() => {
-    if (availableViews.length > 0 && !availableViews.find(v => v.name === selectedView)) {
-      setSelectedView(availableViews[0].name);
-      setSelectedExercise("");
-    }
-  }, [availableViews, selectedView]);
+    setContentRect(tutorialStep === "progress_build_view_button" ? buildViewBtnRect : null);
+  }, [tutorialStep, buildViewBtnRect, setContentRect]);
 
-  // Load available exercises when view changes
-  const [availableExercises, setAvailableExercises] = useState<string[]>([]);
-  const [loadingExercises, setLoadingExercises] = useState(false);
+  // Bumped on every focus so the exercise loader re-runs and picks up exercises
+  // logged since the last visit, without discarding the current selection.
+  const [focusNonce, setFocusNonce] = useState(0);
 
+  // Reload views + preset-existence when the screen regains focus, so newly
+  // created views or presets show up without a full reload.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setViewsLoading(true);
+      setFocusNonce(n => n + 1);
+      Promise.all([listViews(), listPresets()]).then(([viewsRes, presetsRes]) => {
+        if (!active) return;
+        if (viewsRes.data) {
+          setViews(viewsRes.data);
+          // Auto-select the first view if nothing is selected yet (or the prior
+          // selection no longer exists).
+          setSelectedViewId(prev => {
+            if (prev && viewsRes.data!.some(v => v.id === prev)) return prev;
+            return viewsRes.data!.length > 0 ? viewsRes.data![0].id : null;
+          });
+        }
+        setHasAnyPresets((presetsRes.data?.length ?? 0) > 0);
+        setViewsLoading(false);
+      });
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  const selectedView = useMemo(
+    () => views.find(v => v.id === selectedViewId) ?? null,
+    [views, selectedViewId]
+  );
+
+  // Load the exercise names logged under the selected view's preset. Re-runs
+  // when the preset changes (switching to a view of a different preset) and on
+  // every focus (focusNonce). Default-selects the first exercise on a preset
+  // change; preserves the user's pick on a focus refresh.
+  const selectionPresetRef = React.useRef<string | null>(null);
+  const selectedPresetId = selectedView?.presetId ?? null;
   useEffect(() => {
-    if (!selectedView) {
+    if (!selectedPresetId) {
       setAvailableExercises([]);
+      setSelectedExercise(null);
+      selectionPresetRef.current = null;
       return;
     }
-
-    setLoadingExercises(true);
-    getAvailableExercisesForView(sportMode, selectedView)
-      .then(({ data, error }) => {
-        if (error) {
-          setAvailableExercises([]);
-        } else {
-          setAvailableExercises(data || []);
-        }
-        setLoadingExercises(false);
-      })
-      .catch(() => {
-        setAvailableExercises([]);
-        setLoadingExercises(false);
+    let active = true;
+    setExercisesLoading(true);
+    listPresetExerciseNames({ presetId: selectedPresetId }).then(({ data }) => {
+      if (!active) return;
+      const names = data || [];
+      const isNewPreset = selectionPresetRef.current !== selectedPresetId;
+      selectionPresetRef.current = selectedPresetId;
+      setAvailableExercises(names);
+      setSelectedExercise(prev => {
+        if (isNewPreset) return names[0] ?? null;
+        // Focus refresh — keep the current pick if it still exists.
+        if (prev && names.includes(prev)) return prev;
+        return names[0] ?? null;
       });
-  }, [sportMode, selectedView]);
-
-  // Filter exercises by search query
-  const filteredExercises = useMemo(() => {
-    if (!exerciseSearchQuery.trim()) {
-      return availableExercises;
-    }
-    return availableExercises.filter(ex => {
-      const nameLower = ex.toLowerCase();
-      const queryLower = exerciseSearchQuery.toLowerCase();
-      return nameLower.includes(queryLower) || queryLower.includes(nameLower);
+      setExercisesLoading(false);
     });
-  }, [availableExercises, exerciseSearchQuery]);
-
-  // Determine which exercise to use
-  const exerciseFilter = selectedExercise || (exerciseSearchQuery.trim() || undefined);
-
-  // Connect to data hook
-  const { data: graphData, minValue, maxValue, loading: loadingData, error: dataError } = useProgressGraphView({
-    mode: sportMode,
-    view: selectedView || '',
-    exercise: exerciseFilter,
-    timeInterval,
-  });
-
-  // Spinning star animation for loading state
-  const starRotation = useSharedValue(0);
-  
-  useEffect(() => {
-    if (loadingData) {
-      starRotation.value = withRepeat(
-        withTiming(360, {
-          duration: 800,
-          easing: Easing.linear,
-        }),
-        -1,
-        false
-      );
-    } else {
-      starRotation.value = 0;
-    }
-  }, [loadingData]);
-
-  const starAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${starRotation.value}deg` }],
-  }));
-
-  // Get mode label
-  const getModeLabel = (modeKey: string) => {
-    const mode = availableModes.find(m => m.key === modeKey);
-    return mode?.label || modeKey;
-  };
-
-  // Get mode icon
-  const getModeIcon = (modeKey: string) => {
-    const iconMap: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
-      "lifting": { lib: 'mci', name: 'dumbbell' },
-      "basketball": { lib: 'ion', name: 'basketball-outline' },
-      "football": { lib: 'ion', name: 'american-football-outline' },
-      "baseball": { lib: 'mci', name: 'baseball' },
-      "soccer": { lib: 'ion', name: 'football-outline' },
-      "hockey": { lib: 'mci', name: 'hockey-sticks' },
-      "tennis": { lib: 'ion', name: 'tennisball-outline' },
+    return () => {
+      active = false;
     };
-    return iconMap[modeKey] || { lib: 'mci', name: 'dumbbell' };
-  };
+  }, [selectedPresetId, focusNonce]);
 
-  // Get display name for view (frontend display only, backend keeps original names)
-  const getViewDisplayName = (mode: SportMode, viewName: string): string => {
-    // All modes
-    if (viewName === 'Performance') return 'Peak Set';
-    if (viewName === 'Tonnage') return 'Volume';
-
-    // Mode-specific mappings
-    if (mode === 'basketball') {
-      if (viewName === 'Shooting %') return 'Shooting %';
-      if (viewName === 'Jumpshot') return 'Total Shots';
-      if (viewName === 'Drill') return 'Total Drill Reps';
-    }
-    
-    if (mode === 'football') {
-      if (viewName === 'Completion') return 'Drill %';
-      if (viewName === 'Drill') return 'Total Drill Reps';
-      if (viewName === 'Speed') return 'Sprint Speed';
-      if (viewName === 'Sprints') return 'Total Sprints';
-    }
-    
-    if (mode === 'baseball') {
-      if (viewName === 'Hits') return 'Total Hits';
-      if (viewName === 'Distance') return 'Hitting Distance';
-      if (viewName === 'Fielding') return 'Total Throws';
-      if (viewName === 'Fielding Distance') return 'Fielding Distance';
-    }
-    
-    if (mode === 'soccer') {
-      if (viewName === 'Drill') return 'Total Drill Reps';
-      if (viewName === 'Shots') return 'Total Shots';
-      if (viewName === 'Shot Distance') return 'Shot Distance';
-    }
-    
-    if (mode === 'hockey') {
-      if (viewName === 'Drill') return 'Total Drill Reps';
-      if (viewName === 'Shots') return 'Total Shots';
-      if (viewName === 'Shot Distance') return 'Shot Distance';
-    }
-    
-    if (mode === 'tennis') {
-      if (viewName === 'Drill') return 'Total Drill Reps';
-      if (viewName === 'Rally') return 'Rally Points';
-    }
-
-    // Default: return original name if no mapping found
-    return viewName;
-  };
-
-  // Time interval bar animation
-  const timeIntervalOptions = [
-    { value: 30, label: '1M' },
-    { value: 90, label: '3M' },
-    { value: 180, label: '6M' },
-    { value: 360, label: '1Y' },
-  ];
-  const selectedIndex = timeIntervalOptions.findIndex(opt => opt.value === timeInterval);
-  const markerPosition = useSharedValue(selectedIndex >= 0 ? selectedIndex : 0);
-  const barWidth = useSharedValue(0);
-  
+  // Refetch graph data when the selected view, exercise, or timeframe changes.
+  // The graph plots ONLY the selected exercise (not the whole preset).
   useEffect(() => {
-    const newIndex = timeIntervalOptions.findIndex(opt => opt.value === timeInterval);
-    if (newIndex !== -1) {
-      markerPosition.value = withSpring(newIndex, {
-        damping: 40,
-        stiffness: 200,
-      });
+    if (!selectedView || !selectedExercise) {
+      setGraphData([]);
+      setGraphError(null);
+      return;
     }
-  }, [timeInterval]);
-
-  const markerAnimatedStyle = useAnimatedStyle(() => {
-    if (barWidth.value === 0) {
-      return { opacity: 0 };
-    }
-    const availableWidth = barWidth.value - 8;
-    const optionWidth = availableWidth / timeIntervalOptions.length;
-    const leftPosition = markerPosition.value * optionWidth + 4;
-    return {
-      position: 'absolute',
-      left: leftPosition,
-      width: optionWidth,
-      top: 4,
-      bottom: 4,
-      opacity: 1,
+    let active = true;
+    setGraphLoading(true);
+    setGraphError(null);
+    getViewProgress({ view: selectedView, days, exerciseName: selectedExercise }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) {
+        setGraphError(error.message || "Failed to load graph data.");
+        setGraphData([]);
+      } else {
+        setGraphData(data || []);
+      }
+      setGraphLoading(false);
+    });
+    return () => {
+      active = false;
     };
-  });
+  }, [selectedView, selectedExercise, days]);
+
+  const hasAnyDataPoints = useMemo(
+    () => graphData.some(p => p.value !== null),
+    [graphData]
+  );
 
   return (
-    <View style={styles.container}>
-      {/* Full Screen Gradient from starry GREEN background to normal background */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Three-layer background — mirrors the Workouts tab's signature gradient
+          stack, hue-shifted from athletic green to twilight blue so the
+          Progress screen reads as a sibling surface (same depth, different
+          identity). Source: app/(tabs)/workouts.tsx (Layers A/B/C). */}
       <LinearGradient
-        colors={[
-          'rgba(13, 50, 30, 0.95)', // Green starry background at top
-          'rgba(13, 50, 30, 0.9)',
-          'rgba(13, 50, 30, 0.7)',
-          'rgba(13, 50, 30, 0.5)',
-          'rgba(13, 50, 30, 0.3)', // Starting to fade
-          'rgba(10, 15, 22, 0.6)', // Transitioning to black
-          theme.colors.bg0, // Black background starts around divider
-          theme.colors.bg0, // Black continues
-          theme.colors.bg0, // Black all the way down
-        ]}
-        locations={[0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.8, 0.9, 1]}
-        style={StyleSheet.absoluteFill}
+        colors={["#0B1015", "#0F1F2E", "#0F2C3E", "#070A0E"]}
+        locations={[0, 0.3, 0.6, 1]}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+      />
+      <LinearGradient
+        colors={["rgba(0,0,0,0.4)", "transparent", "transparent", "rgba(0,0,0,0.5)"]}
+        locations={[0, 0.15, 0.85, 1]}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
         pointerEvents="none"
       />
-      
-      {/* Stars Layer - Fixed background */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {stars.map((star) => (
-          <View
-            key={star.id}
-            style={{
-              position: 'absolute',
-              left: star.x,
-              top: star.y,
-              width: star.size,
-              height: star.size,
-              borderRadius: star.size / 2,
-              backgroundColor: '#FFFFFF',
-              opacity: star.opacity,
-            }}
-          />
-        ))}
-      </View>
+      <View
+        style={{
+          position: "absolute",
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(255,255,255,0.02)",
+          opacity: 0.06,
+        }}
+        pointerEvents="none"
+      />
 
-      {/* Header - Back Button and Help Button */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+      {/* Header */}
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={22} color={theme.colors.textHi} />
         </Pressable>
-        <Pressable
-          onPress={() => setShowHelp(true)}
-          style={styles.helpButton}
-          hitSlop={10}
-        >
+        <Text style={styles.headerTitle}>Progress</Text>
+        {/* Help button — matches Skill Map / Consistency Score treatment */}
+        <Pressable onPress={() => setShowHelp(true)} hitSlop={10} style={styles.helpButton}>
           <View style={styles.helpButtonCircle}>
             <Ionicons name="help-circle" size={20} color="#FFFFFF" />
           </View>
         </Pressable>
       </View>
 
-      {/* Content */}
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 60 }}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={!isTouchingSearchResults}
       >
-        {/* Header Section - Heading centered, Search below */}
-        <View style={styles.topSection}>
-          {/* Sport Mode Dropdown - Centered */}
-          <Pressable
-            style={styles.floatingModeButton}
-            onPress={() => setShowModePicker(!showModePicker)}
+        {/* Views chip row */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Views</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
           >
-            <View style={styles.floatingModeTextContainer}>
-              <Text style={styles.floatingModeText}>
-                {selectedMode ? getModeLabel(selectedMode) : 'Select Mode'}
-              </Text>
-              <Ionicons 
-                name="chevron-down" 
-                size={20} 
-                color="rgba(255, 255, 255, 0.8)" 
-                style={styles.floatingModeArrow} 
-              />
+            <View ref={buildViewBtnRef} onLayout={measureBuildViewBtn} collapsable={false}>
+              <Pressable
+                onPress={() => router.push("/(tabs)/(home)/build-view")}
+                style={({ pressed }) => [styles.addChip, pressed && { opacity: 0.7 }]}
+              >
+                <Ionicons name="add" size={16} color="#22C55E" />
+                <Text style={styles.addChipText}>Build New View</Text>
+              </Pressable>
             </View>
-          </Pressable>
 
-          {/* Mode Picker Dropdown */}
-          {showModePicker && (
-            <View style={styles.extremeGlassPickerContainer}>
-              <BlurView
-                intensity={50}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)', 'rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
-                locations={[0, 0.3, 0.7, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.12)', 'transparent', 'transparent']}
-                locations={[0, 0.2, 1]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.pickerContent}>
-                {availableModes.map((mode) => {
-                  const iconConfig = getModeIcon(mode.key);
-                  return (
-                    <Pressable
-                      key={mode.key}
-                      onPress={() => {
-                        setSelectedMode(mode.key);
-                        setShowModePicker(false);
-                      }}
+            {views.map(v => {
+              const selected = v.id === selectedViewId;
+              return (
+                <Pressable
+                  key={v.id}
+                  onPress={() => setSelectedViewId(v.id)}
+                  style={({ pressed }) => [
+                    styles.viewChip,
+                    selected && styles.viewChipSelected,
+                    pressed && !selected && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text
+                    style={[styles.viewChipText, selected && styles.viewChipTextSelected]}
+                    numberOfLines={1}
+                  >
+                    {v.name}{" "}
+                    <Text
                       style={[
-                        styles.extremeGlassPickerItem,
-                        selectedMode === mode.key && styles.extremeGlassPickerItemSelected,
+                        styles.viewChipPresetText,
+                        selected && styles.viewChipPresetTextSelected,
                       ]}
                     >
-                      {iconConfig.lib === 'ion' ? (
-                        <Ionicons 
-                          name={iconConfig.name as any} 
-                          size={22} 
-                          color={selectedMode === mode.key ? "#FFFFFF" : "rgba(255, 255, 255, 0.9)"} 
-                        />
-                      ) : (
-                        <MaterialCommunityIcons 
-                          name={iconConfig.name as any} 
-                          size={22} 
-                          color={selectedMode === mode.key ? "#FFFFFF" : "rgba(255, 255, 255, 0.9)"} 
-                        />
-                      )}
-                      <Text style={[
-                        styles.extremeGlassPickerItemText,
-                        selectedMode === mode.key && styles.extremeGlassPickerItemTextSelected,
-                      ]}>
-                        {mode.label}
+                      ({v.presetName})
+                    </Text>
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Exercise chip row — pick ONE exercise logged under the selected
+            view's preset. The graph plots only this exercise's data, not the
+            whole preset. */}
+        {selectedView && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Exercise</Text>
+            {exercisesLoading ? (
+              <ActivityIndicator
+                color="#FFFFFF"
+                style={{ alignSelf: "flex-start", marginLeft: 4 }}
+              />
+            ) : availableExercises.length === 0 ? (
+              <Text style={styles.exerciseEmptyHint}>
+                No exercises logged under the "{selectedView.presetName}" preset yet.
+              </Text>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipRow}
+              >
+                {availableExercises.map(name => {
+                  const selected = name === selectedExercise;
+                  return (
+                    <Pressable
+                      key={name}
+                      onPress={() => setSelectedExercise(name)}
+                      style={({ pressed }) => [
+                        styles.viewChip,
+                        selected && styles.viewChipSelected,
+                        pressed && !selected && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.viewChipText, selected && styles.viewChipTextSelected]}
+                        numberOfLines={1}
+                      >
+                        {name}
                       </Text>
                     </Pressable>
                   );
                 })}
-              </View>
-            </View>
-          )}
-
-          {/* Exercise Search Bar - Below heading, exactly like skill map */}
-          <View style={styles.searchBarContainer}>
-            <BlurView
-              intensity={20}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.searchBarPill}>
-              <Ionicons name="search-outline" size={18} color="rgba(255,255,255,0.6)" style={{ marginRight: 8 }} />
-              <TextInput
-                value={exerciseSearchQuery}
-                onChangeText={(text) => {
-                  setExerciseSearchQuery(text);
-                  if (text.length > 0 && selectedView) {
-                    setShowExerciseSearch(true);
-                  }
-                }}
-                placeholder="Search exercises..."
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                style={styles.searchBarText}
-                autoCorrect={false}
-                autoCapitalize="none"
-                onFocus={() => {
-                  if (selectedView) {
-                    setShowExerciseSearch(true);
-                  }
-                }}
-              />
-              {exerciseSearchQuery.length > 0 && (
-                <Pressable
-                  onPress={() => {
-                    setExerciseSearchQuery("");
-                    setShowExerciseSearch(false);
-                  }}
-                  style={{ padding: 4 }}
-                >
-                  <Ionicons name="close-circle" size={18} color="rgba(255, 255, 255, 0.5)" />
-                </Pressable>
-              )}
-            </View>
+              </ScrollView>
+            )}
           </View>
+        )}
 
-          {/* Exercise Search Results - Show when searching */}
-          {showExerciseSearch && selectedView && (
-            <View 
-              style={styles.searchResultsContainer}
-              onTouchStart={() => setIsTouchingSearchResults(true)}
-              onTouchEnd={() => setIsTouchingSearchResults(false)}
-              onTouchCancel={() => setIsTouchingSearchResults(false)}
-            >
-              <BlurView
-                intensity={25}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)', 'rgba(255, 255, 255, 0.02)']}
-                locations={[0, 0.5, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-              {loadingExercises ? (
-                <View style={styles.searchLoadingContainer}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text style={styles.searchLoadingText}>Loading exercises...</Text>
-                </View>
-              ) : (
-                <ScrollView 
-                  style={styles.searchResults}
-                  contentContainerStyle={styles.searchResultsContent}
-                  keyboardShouldPersistTaps="handled"
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={true}
-                  bounces={true}
-                  scrollEventThrottle={16}
-                  onScrollBeginDrag={() => setIsTouchingSearchResults(true)}
-                  onScrollEndDrag={() => setIsTouchingSearchResults(false)}
-                  onMomentumScrollEnd={() => setIsTouchingSearchResults(false)}
-                >
-                  {filteredExercises.length === 0 ? (
-                    <View style={styles.noResultsContainer}>
-                      <Ionicons name="search-outline" size={32} color="rgba(255, 255, 255, 0.3)" />
-                      <Text style={styles.noResultsText}>
-                        {exerciseSearchQuery.trim() 
-                          ? `No exercises found for "${exerciseSearchQuery}"`
-                          : "No exercises available"}
-                      </Text>
-                    </View>
-                  ) : (
-                    filteredExercises.map((exercise) => {
-                      const queryLower = exerciseSearchQuery.toLowerCase();
-                      const exerciseLower = exercise.toLowerCase();
-                      const matchIndex = exerciseLower.indexOf(queryLower);
-                      const isSelected = selectedExercise === exercise;
-                      
-                      return (
-                        <Pressable
-                          key={exercise}
-                          style={styles.searchResultItem}
-                          onPress={() => {
-                            setSelectedExercise(exercise);
-                            setExerciseSearchQuery(exercise);
-                            setShowExerciseSearch(false);
-                          }}
-                        >
-                          <Text style={styles.searchResultText}>
-                            {matchIndex >= 0 && queryLower ? (
-                              <>
-                                {exercise.substring(0, matchIndex)}
-                                <Text style={styles.searchResultHighlight}>
-                                  {exercise.substring(matchIndex, matchIndex + queryLower.length)}
-                                </Text>
-                                {exercise.substring(matchIndex + queryLower.length)}
-                              </>
-                            ) : (
-                              exercise
-                            )}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons 
-                              name="checkmark-circle" 
-                              size={20} 
-                              color="#17D67F" 
-                              style={styles.actionIcon}
-                            />
-                          )}
-                        </Pressable>
-                      );
-                    })
-                  )}
-                </ScrollView>
-              )}
-            </View>
-          )}
-        </View>
-
-        {/* Progress Graph - Main part, not in a box */}
-        <View 
+        {/* Graph area — moved ABOVE the timeframe bar (the timeframe now sits
+            UNDER the chart, like a finder/zoom strip controlling the view). */}
+        <View
           style={styles.graphSection}
-          onLayout={(e) => setGraphWidth(e.nativeEvent.layout.width - 40)}
+          onLayout={e => setGraphWidth(e.nativeEvent.layout.width)}
         >
-          {loadingData ? (
-            <View style={styles.graphLoadingContainer}>
-              <Animated.View style={starAnimatedStyle}>
-                <Image
-                  source={require("../../../assets/star.png")}
-                  style={styles.loadingStar}
-                  resizeMode="contain"
-                />
-              </Animated.View>
-              <Text style={styles.graphLoadingText}>Loading data...</Text>
-            </View>
-          ) : dataError ? (
-            <View style={styles.graphErrorContainer}>
-              <Ionicons name="alert-circle" size={32} color="#FF5A5A" />
-              <Text style={styles.graphErrorText}>Error loading data</Text>
-              <Text style={styles.graphErrorSubtext}>{dataError.message || "Unknown error"}</Text>
-            </View>
+          {viewsLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : hasAnyPresets === false ? (
+            <EmptyState
+              title="Build a preset first"
+              body="Views graph the stats you defined in your presets. Build a preset from the Home tab, log a workout with it, then come back to build a view."
+            />
+          ) : views.length === 0 ? (
+            <EmptyState
+              title="No views yet"
+              body="Tap +Build New View to choose a preset, pick which of its stats to plot, and how to combine them."
+            />
           ) : !selectedView ? (
-            <View style={styles.graphEmptyContainer}>
-              <Text style={styles.graphPlaceholderText}>Select a view to see progress</Text>
-            </View>
-          ) : graphData.length === 0 || (minValue === null && maxValue === null) ? (
-            <View style={styles.graphEmptyContainer}>
-              <Text style={styles.graphPlaceholderText}>No data available</Text>
-              <Text style={styles.graphPlaceholderSubtext}>
-                {exerciseFilter ? `No data found for "${exerciseFilter}"` : "Select or search for an exercise to see progress"}
-              </Text>
-            </View>
+            <EmptyState title="Pick a view above" body="" />
+          ) : exercisesLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : availableExercises.length === 0 ? (
+            <EmptyState
+              title="No exercises yet"
+              body={`Log a workout under the "${selectedView.presetName}" preset, then pick an exercise to graph.`}
+            />
+          ) : !selectedExercise ? (
+            <EmptyState title="Pick an exercise above" body="" />
+          ) : graphLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : graphError ? (
+            <EmptyState title="Couldn't load data" body={graphError} />
+          ) : !hasAnyDataPoints ? (
+            <EmptyState
+              title="No data in this timeframe"
+              body={`No "${selectedExercise}" data in the last ${days} days. Log it under the "${selectedView.presetName}" preset, then come back.`}
+            />
           ) : (
             <GraphDisplay
               data={graphData}
-              minValue={minValue}
-              maxValue={maxValue}
               width={graphWidth}
-              timeInterval={timeInterval}
+              viewName={selectedView.name}
+              presetName={selectedView.presetName}
+              exerciseName={selectedExercise}
             />
           )}
         </View>
 
-        {/* Divider - Under x-axis */}
-        <View style={styles.dividerContainer}>
-          <View style={styles.dividerLine} />
+        {/* Timeframe segmented control — sliding animated indicator.
+            Below the graph (was above) so it reads as a "zoom" control. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Timeframe</Text>
+          <TimeframeSegment
+            options={VIEW_DAYS_OPTIONS}
+            value={days}
+            onChange={setDays}
+          />
         </View>
-
-        {/* Time Interval Bar */}
-        <View style={styles.timeIntervalBarContainer}>
-          <View 
-            style={styles.timeIntervalBar}
-            onLayout={(event) => {
-              const { width } = event.nativeEvent.layout;
-              barWidth.value = width;
-            }}
-          >
-            <Animated.View style={[styles.timeIntervalMarker, markerAnimatedStyle]} />
-            
-            {timeIntervalOptions.map((option) => (
-              <Pressable
-                key={option.value}
-                style={styles.timeIntervalOption}
-                onPress={() => setTimeInterval(option.value as TimeInterval)}
-              >
-                <Text
-                  style={[
-                    styles.timeIntervalOptionText,
-                    timeInterval === option.value && styles.timeIntervalOptionTextActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        {/* View Selection Section */}
-        <View style={styles.controlsSection}>
-          <Text style={styles.selectViewHeading}>Select View</Text>
-          
-          {availableViews.length > 0 && (
-            <View style={styles.viewListContainer}>
-              {availableViews.map((view) => (
-                <Pressable
-                  key={view.name}
-                  style={styles.viewListItem}
-                  onPress={() => {
-                    setSelectedView(view.name);
-                    setSelectedExercise("");
-                  }}
-                >
-                  <View style={styles.viewCircleContainer}>
-                    {selectedView === view.name ? (
-                      <View style={styles.viewCircleFilled} />
-                    ) : (
-                      <View style={styles.viewCircleEmpty} />
-                    )}
-                  </View>
-                  
-                  <Text style={[
-                    styles.viewListItemText,
-                    selectedView === view.name && styles.viewListItemTextSelected,
-                  ]}>
-                    {getViewDisplayName(sportMode, view.name)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
-
       </ScrollView>
 
-      {/* Help Overlay */}
+      {/* Help overlay — same pattern as Skill Map / Consistency Score */}
       <HelpOverlay
         visible={showHelp}
         onClose={() => setShowHelp(false)}
-        title="Progress Graphs Guide"
+        title="Progress Graph Guide"
       >
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>How Progress Graphs Work</Text>
+          <Text style={helpStyles.heading}>What This Screen Shows</Text>
           <Text style={helpStyles.text}>
-            Progress Graphs visualize how your performance changes over time. First, select your sport mode (like Basketball or Lifting). Then choose a view type that matches what you want to track. Finally, search for and select a specific exercise to see your progress displayed as a line graph.
+            The Progress Graph plots <Text style={helpStyles.bold}>one exercise</Text> as a line over time, so you can see how it's trending. It graphs only the exercise you pick — e.g. just "Sprint drill" — never the whole preset blended together.
+          </Text>
+          <Text style={helpStyles.text}>
+            Each point on the line is a <Text style={helpStyles.bold}>time bucket</Text> — a slice of your timeframe. The chart always shows six buckets, oldest on the left, newest on the right, so the spacing stays consistent.
           </Text>
         </View>
 
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>Understanding View Calculations</Text>
+          <Text style={helpStyles.heading}>The Building Blocks</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Preset:</Text> a template you built (e.g. "Exercise"). It defines the stat names you fill in when logging.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Exercise:</Text> a single thing you log under a preset, named by you (e.g. "Sprint drill"). Every set you ever log with that name is the same exercise. One preset holds many exercises.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>View:</Text> a way to turn a preset's stats into one number — a formula plus an aggregation (see below). The same preset can have many views.</Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>How To Use It</Text>
+          <Text style={helpStyles.bullet}>1. <Text style={helpStyles.bold}>Pick a view</Text> from the chip row (or tap "+Build New View"). Each chip shows its preset in parentheses.</Text>
+          <Text style={helpStyles.bullet}>2. <Text style={helpStyles.bold}>Pick an exercise</Text> in the Exercise row — the list is the exercises logged under that view's preset. The graph plots just this one.</Text>
+          <Text style={helpStyles.bullet}>3. <Text style={helpStyles.bold}>Pick a timeframe</Text> at the bottom (30 / 90 / 180 / 360 days).</Text>
           <Text style={helpStyles.text}>
-            Each view type calculates your data differently based on what you're tracking:
-          </Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Peak Set:</Text> Shows your highest single set performance. Calculated as reps × weight for that one best set.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Volume:</Text> Shows your average total work. Calculated as the average of (reps × weight × sets) across all your exercise squares.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Shooting %:</Text> Shows your average shooting percentage. Calculated as the average percentage across all your shooting sets.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Total Shots/Reps:</Text> Shows the total number of attempts. Calculated as the sum of all shots or reps across all sets.</Text>
-          <Text style={helpStyles.text}>
-            The view you choose determines which calculation method is used to process your logged data.
+            The header above the chart names what you're looking at: the exercise, then the view (e.g. "SPRINT DRILL · Peak Reps × Weight").
           </Text>
         </View>
 
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>How Time Intervals Work</Text>
+          <Text style={helpStyles.heading}>What A View Measures</Text>
           <Text style={helpStyles.text}>
-            Time intervals divide your selected time period into 6 equal buckets. Each bucket represents a portion of time, and the graph shows one data point per bucket:
+            A View is a small formula you build once and reuse. It has these pieces:
           </Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>30 Days:</Text> Divides the last 30 days into 6 buckets of 5 days each. Shows 6 data points.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>90 Days:</Text> Divides the last 90 days into 6 buckets of 15 days each. Shows 6 data points.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>180 Days:</Text> Divides the last 180 days into 6 buckets of 30 days each. Shows 6 data points.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>360 Days:</Text> Divides the last 360 days into 6 buckets of 60 days each. Shows 6 data points.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Stats:</Text> one or more of the stat names from the preset (e.g. "Reps", "Weight").</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Operation:</Text> how to combine those stats inside each set — multiply (e.g. Reps × Weight) or divide (e.g. Makes ÷ Attempts).</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Aggregation:</Text> how to collapse all of a bucket's set-values into the one number that gets plotted — Highest, Total, or Average.</Text>
           <Text style={helpStyles.text}>
-            Each point on the graph represents the calculated view value for that specific time bucket. The leftmost point is the oldest data, and the rightmost point is your most recent data.
+            So a view like "Peak Reps × Weight" plots, for each bucket, the single best Reps × Weight set the chosen exercise had in that window.
           </Text>
         </View>
 
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>Reading the Graph</Text>
+          <Text style={helpStyles.heading}>Reading the Chart</Text>
           <Text style={helpStyles.text}>
-            The graph displays your progress visually:
+            Above the chart, a big number shows the value of the <Text style={helpStyles.bold}>most recent bucket</Text> — your latest window in the timeframe. Next to it, a small pill shows the delta vs. the previous bucket: green up arrow if you improved, red down arrow if you didn't, neutral dash if it's the same.
           </Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Line:</Text> Connects all 6 data points to show your performance trend over time.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Y-Axis:</Text> Shows the value range. Automatically scales from your minimum to maximum values so you can see the full range of your performance.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>X-Axis:</Text> Shows time progression. The left side is the oldest data, and the right side is your most recent data.</Text>
           <Text style={helpStyles.text}>
-            An upward trend means you're improving, while a downward trend may indicate you need to adjust your training.
-        </Text>
-      </View>
+            On the chart itself:
+          </Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>The line</Text> is smoothed between points so the trend reads at a glance.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>The shaded area</Text> beneath the line uses your accent color fading to transparent — visual weight, not extra data.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Each dot</Text> is one bucket's value. The newest dot gets a soft halo to mark it as "live."</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>The X-axis labels</Text> show the end date of each bucket (e.g. 5/8, 5/15).</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>The Y-axis labels</Text> on the right show the value range — the chart auto-scales to fit your data, so a flat line at 100 is the same shape as a flat line at 0.01.</Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>Timeframes</Text>
+          <Text style={helpStyles.text}>
+            The 30 / 90 / 180 / 360 bar at the bottom controls how far back the chart looks. The window is always split evenly into 6 buckets:
+          </Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>30d:</Text> 6 buckets of ~5 days each — short-range, week-to-week trend.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>90d:</Text> 6 buckets of ~15 days each — month-to-month trend.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>180d:</Text> 6 buckets of ~30 days each — quarter-by-quarter trend.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>360d:</Text> 6 buckets of ~60 days each — long-range, season-over-season trend.</Text>
+          <Text style={helpStyles.text}>
+            Switching timeframes redraws the whole chart from scratch — same view, different lens. If your data is sparse, longer timeframes let each bucket cover more workouts and smooth out the line.
+          </Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>Shared with Skill Map</Text>
+          <Text style={helpStyles.text}>
+            Every View you build on this screen also shows up on the Skill Map screen, and vice versa. The Progress Graph plots one exercise over time as a line; the Skill Map takes up to six exercises and compares them against each other on a radar chart. Same views, same exercises — two ways to look at them.
+          </Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>Empty Chart? Here's Why</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>No presets yet:</Text> Views need a preset to pull from. Build one from the Home tab, log a workout with it, then come back.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Presets but no views:</Text> Tap <Text style={helpStyles.bold}>+ Build New View</Text> at the top to define a metric on one of your presets.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>No exercises to pick:</Text> You haven't logged any exercise under that view's preset yet. Log one, then it'll appear in the Exercise row.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Exercise picked but no data:</Text> That exercise has no sets inside the selected timeframe. Try a longer timeframe, or log a session.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Some buckets blank:</Text> Sparse data — those buckets had no qualifying sets. The line skips them and connects the dots that exist.</Text>
+        </View>
       </HelpOverlay>
     </View>
   );
 }
 
+/**
+ * Sliding segmented control for the timeframe row.
+ * A single Animated.View indicator slides between option positions via
+ * spring physics (Apple-style snappy preset). Keeps the
+ * "track + pills" container visual but adds real motion.
+ */
+function TimeframeSegment({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly ViewDays[];
+  value: ViewDays;
+  onChange: (d: ViewDays) => void;
+}) {
+  const [trackWidth, setTrackWidth] = useState(0);
+  const TRACK_PADDING = 4;
+  const tabWidth = trackWidth > 0 ? (trackWidth - TRACK_PADDING * 2) / options.length : 0;
+  const selectedIndex = Math.max(0, options.indexOf(value));
+
+  const indicatorX = useSharedValue(0);
+
+  useEffect(() => {
+    indicatorX.value = withSpring(selectedIndex * tabWidth, theme.spring.snappy);
+  }, [selectedIndex, tabWidth]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: indicatorX.value }],
+    width: tabWidth,
+  }));
+
+  return (
+    <View
+      style={styles.timeframeRow}
+      onLayout={e => setTrackWidth(e.nativeEvent.layout.width)}
+    >
+      {trackWidth > 0 && (
+        <Animated.View style={[styles.timeframeIndicator, indicatorStyle]} />
+      )}
+      {options.map(opt => {
+        const selected = opt === value;
+        return (
+          <Pressable
+            key={opt}
+            onPress={() => onChange(opt)}
+            style={({ pressed }) => [
+              styles.timeframeBtn,
+              pressed && !selected && { opacity: 0.6 },
+            ]}
+          >
+            <Text style={[styles.timeframeText, selected && styles.timeframeTextSelected]}>
+              {opt}d
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <View style={styles.emptyWrap}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      {body ? <Text style={styles.emptyBody}>{body}</Text> : null}
+    </View>
+  );
+}
+
+// ============================================================================
+//  Styles
+// ============================================================================
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0D1B2F',
-  },
+  container: { flex: 1, backgroundColor: theme.colors.bg0 },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    position: 'relative',
-    zIndex: 10,
-  },
-  backButton: {
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topSection: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
-    gap: 16,
-  },
-  floatingModeButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  floatingModeTextContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  floatingModeText: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-  },
-  floatingModeArrow: {
-    marginLeft: 10,
-  },
-  extremeGlassPickerContainer: {
-    marginTop: 12,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.5,
-        shadowRadius: 25,
-        shadowOffset: { width: 0, height: 10 },
-      },
-      android: {
-        elevation: 15,
-      },
-    }),
-  },
-  pickerContent: {
-    paddingVertical: 8,
-  },
-  extremeGlassPickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    gap: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  extremeGlassPickerItemSelected: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  extremeGlassPickerItemText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
-    letterSpacing: 0.3,
-  },
-  extremeGlassPickerItemTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  searchBarContainer: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.25,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: 10 },
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
-  },
-  searchBarPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    justifyContent: "space-between",
     paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
   },
-  searchBarText: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  searchResultsContainer: {
-    marginTop: 8,
-    maxHeight: 300,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.4,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-      },
-      android: {
-        elevation: 12,
-      },
-    }),
-  },
-  searchResults: {
-    maxHeight: 300,
-  },
-  searchResultsContent: {
-    flexGrow: 0,
-  },
-  searchLoadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    gap: 12,
-  },
-  searchLoadingText: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.6)",
-  },
-  noResultsContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  noResultsText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.5)',
-    textAlign: 'center',
-  },
-  searchResultItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
-  },
-  searchResultText: {
-    flex: 1,
-    fontSize: 16,
-    color: "#FFFFFF",
-  },
-  searchResultHighlight: {
-    backgroundColor: "rgba(74, 158, 255, 0.3)",
-    fontWeight: "600",
-  },
-  actionIcon: {
-    marginLeft: 8,
-  },
-  graphSection: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 340,
-  },
-  graphLoadingContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 40,
-  },
-  loadingStar: {
-    width: 72,
-    height: 72,
-  },
-  graphLoadingText: {
-    marginTop: -2,
-    fontSize: 14,
-    color: "#9E9E9E",
-  },
-  graphErrorContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 40,
-  },
-  graphErrorText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FF5A5A",
-  },
-  graphErrorSubtext: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#9E9E9E",
-    textAlign: "center",
-  },
-  graphEmptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 40,
-  },
-  graphPlaceholderText: {
+  backBtn: {},
+  headerTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginBottom: 8,
-    textAlign: "center",
+    fontWeight: "700",
+    color: theme.colors.textHi,
   },
-  graphPlaceholderSubtext: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.5)",
-    textAlign: "center",
-  },
-  dividerContainer: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  dividerLine: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  timeIntervalBarContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  timeIntervalBar: {
-    flexDirection: 'row',
-    backgroundColor: '#0F1419',
-    borderRadius: 12,
-    padding: 4,
-    position: 'relative',
-    gap: 0,
-  },
-  timeIntervalMarker: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 8,
-  },
-  timeIntervalOption: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  timeIntervalOptionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  timeIntervalOptionTextActive: {
-    color: '#FFFFFF',
-  },
-  controlsSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  selectViewHeading: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 20,
-    marginTop: 6,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  viewListContainer: {
-    gap: 12,
-  },
-  viewListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
-  },
-  viewCircleContainer: {
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  viewCircleEmpty: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  viewCircleFilled: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  viewListItemText: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontWeight: '500',
-  },
-  viewListItemTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
+  // Help button — same circular ghost-glass treatment as Skill Map /
+  // Consistency Score so all three Progress sub-screens share one language.
   helpButton: {
-    position: 'absolute',
-    right: 20,
-    top: 54,
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   helpButtonCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+
+  section: { paddingHorizontal: 16, paddingTop: 16 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.5)",
+    letterSpacing: 1.4,
+    marginBottom: 12,
+    textTransform: "uppercase",
+  },
+  exerciseEmptyHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "rgba(255, 255, 255, 0.55)",
+    paddingHorizontal: 4,
+  },
+
+  // Build New View = SECONDARY action (ghost / dashed) so the
+  // selected View chip is the only solid-accent element in the row.
+  // Pre-redesign both were solid green and visually collided.
+  chipRow: { flexDirection: "row", gap: 8, paddingRight: 16 },
+  addChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#74C69D",
+  },
+  addChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.85)",
+    letterSpacing: -0.1,
+  },
+  viewChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.09)",
+    maxWidth: SCREEN_WIDTH - 80,
+  },
+  viewChipSelected: {
+    backgroundColor: "#22C55E",
+    borderColor: "#22C55E",
+    shadowColor: "#22C55E",
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  viewChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.92)",
+    letterSpacing: -0.1,
+  },
+  viewChipTextSelected: { color: "#06090C", fontWeight: "700" },
+  viewChipPresetText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.45)",
+  },
+  viewChipPresetTextSelected: { color: "rgba(6, 9, 12, 0.55)" },
+
+  // Timeframe = segmented control with a SLIDING indicator (the green pill
+  // animates between positions on selection, instead of just flashing
+  // background colors on/off).
+  timeframeRow: {
+    flexDirection: "row",
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    position: "relative",
+  },
+  timeframeIndicator: {
+    position: "absolute",
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 999,
+    backgroundColor: "#22C55E",
+    shadowColor: "#22C55E",
+    shadowOpacity: 0.30,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  timeframeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: "center",
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    zIndex: 1,
+  },
+  timeframeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.75)",
+    letterSpacing: 0.1,
+    fontVariant: ["tabular-nums"],
+  },
+  timeframeTextSelected: { color: "#06090C", fontWeight: "700" },
+
+  graphSection: {
+    paddingHorizontal: 8,
+    paddingTop: 24,
+    minHeight: 340,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  emptyWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: theme.colors.textHi,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptyBody: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    lineHeight: 20,
   },
 });
 
+// Help overlay typography — mirrors helpStyles in Skill Map / Consistency
+// Score so the three Progress sub-screens read with one voice.
 const helpStyles = StyleSheet.create({
-  section: {
-    gap: 12,
-  },
+  section: { gap: 12 },
   heading: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: "700",
+    color: "#FFFFFF",
     marginBottom: 4,
   },
   text: {
     fontSize: 15,
     lineHeight: 22,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: "rgba(255, 255, 255, 0.9)",
   },
   bullet: {
     fontSize: 15,
     lineHeight: 22,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
     marginLeft: 8,
     marginTop: 4,
   },
   bold: {
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
 });

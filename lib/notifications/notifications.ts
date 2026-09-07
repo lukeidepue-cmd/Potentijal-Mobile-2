@@ -5,7 +5,6 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getScheduleWithStatus, getCurrentWeekStart } from '../api/schedule';
-import { SportMode } from '../types';
 import { getMyProfile } from '../api/profile';
 import { getUserPreferences } from '../api/settings';
 
@@ -82,46 +81,36 @@ export async function cancelAllNotifications(): Promise<void> {
 }
 
 /**
- * Schedule workout notifications for all days in the current week that have scheduled workouts
+ * Schedule workout notifications for any day in the current week that has a scheduled workout.
+ * Sport-agnostic: there is now one schedule.
  */
-export async function scheduleWorkoutNotification(mode: SportMode | string): Promise<void> {
+export async function scheduleWorkoutNotification(): Promise<void> {
   try {
-    // Check if workout reminders are enabled in user preferences
     const { data: preferences } = await getUserPreferences();
     if (!preferences?.notification_preferences?.workout_reminders) {
-      // Cancel any existing workout notifications for this mode
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
-      const modeIdentifier = `${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${mode}`;
       for (const notification of allScheduled) {
-        if (notification.identifier.startsWith(modeIdentifier)) {
+        if (notification.identifier.startsWith(NOTIFICATION_IDS.SCHEDULED_WORKOUT)) {
           await cancelNotification(notification.identifier);
         }
       }
       return;
     }
 
-    // Request permissions first
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
       return;
     }
 
-    // Cancel all existing scheduled workout notifications for this mode
-    // We'll reschedule all of them
     const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
-    const modeIdentifier = `${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${mode}`;
     for (const notification of allScheduled) {
-      if (notification.identifier.startsWith(modeIdentifier)) {
+      if (notification.identifier.startsWith(NOTIFICATION_IDS.SCHEDULED_WORKOUT)) {
         await cancelNotification(notification.identifier);
       }
     }
 
-    // Get current week start
     const weekStart = getCurrentWeekStart();
-    
-    // Get schedule with status
     const { data: schedule, error } = await getScheduleWithStatus({
-      mode,
       weekStartDate: weekStart,
     });
 
@@ -168,7 +157,7 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
     const monthStr = String(today.getMonth() + 1).padStart(2, '0');
     const dayStr = String(today.getDate()).padStart(2, '0');
     const dateStr = `${yearStr}-${monthStr}-${dayStr}`;
-    const identifier = `${modeIdentifier}-${dateStr}`;
+    const identifier = `${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${dateStr}`;
     
     const allScheduledCheck = await Notifications.getAllScheduledNotificationsAsync();
     const existingNotification = allScheduledCheck.find(n => n.identifier === identifier);
@@ -211,13 +200,12 @@ export async function scheduleWorkoutNotification(mode: SportMode | string): Pro
 }
 
 /**
- * Schedule workout notifications for all modes that have scheduled workouts today
+ * Schedule workout notifications. Kept as a named export so existing callers
+ * (root layout, settings) keep working; now just calls the single sport-agnostic
+ * scheduler.
  */
 export async function scheduleAllWorkoutNotifications(): Promise<void> {
-  const modes: SportMode[] = ['workout', 'basketball', 'football', 'baseball', 'soccer', 'hockey', 'tennis'];
-  
-  // Schedule for all modes (each will check if there's a workout for today)
-  await Promise.all(modes.map(mode => scheduleWorkoutNotification(mode)));
+  await scheduleWorkoutNotification();
 }
 
 /**
@@ -344,27 +332,23 @@ export async function trackWorkoutAndScheduleAITrainerReminder(): Promise<void> 
 }
 
 /**
- * Cancel today's workout notification for a specific mode
- * Called when a user logs a workout before 11:21 PM (TESTING - will revert to 12:00 PM)
+ * Cancel today's workout notification. Called when a user logs a workout
+ * before the scheduled reminder fires.
  */
-export async function cancelTodaysWorkoutNotification(mode: SportMode | string): Promise<void> {
+export async function cancelTodaysWorkoutNotification(): Promise<void> {
   try {
     const today = new Date();
     const now = new Date();
-    
-    // Only cancel if it's before 11:21 PM today (TESTING - will revert to 12:00 PM)
+
     if (now.getHours() > 23 || (now.getHours() === 23 && now.getMinutes() >= 21)) {
-      return; // Too late, notification may have already been sent
+      return;
     }
 
-    // Get today's date string (YYYY-MM-DD)
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
-
-    const modeIdentifier = `${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${mode}`;
-    const identifier = `${modeIdentifier}-${dateStr}`;
+    const identifier = `${NOTIFICATION_IDS.SCHEDULED_WORKOUT}-${dateStr}`;
 
     await cancelNotification(identifier);
   } catch {

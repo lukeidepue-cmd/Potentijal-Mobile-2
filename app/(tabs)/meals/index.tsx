@@ -30,6 +30,7 @@ import { Modal } from "react-native";
 import AITrainerChat from "../../../components/AITrainerChat";
 import { getAITrainerSettings } from "@/lib/api/settings";
 import { useFeatures } from "@/hooks/useFeatures";
+import { useTutorial } from "../../../providers/TutorialContext";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -110,7 +111,7 @@ const AnimatedCard = ({
   const isDisabled = isPremiumCard && !isPremium;
 
   // Gradient border colors for cards 2, 3, 4
-  const gradientColors = 
+  const gradientColors =
     index === 2 ? ["#98FB98", "#87CEEB", "#DDA0DD"] : // minty green, light blue, light purple
     index === 3 ? ["#98FB98", "#87CEEB", "#DDA0DD"] :
     index === 4 ? ["#98FB98", "#87CEEB", "#DDA0DD"] :
@@ -306,6 +307,34 @@ export default function ProgressScreen() {
     }, [loadAITrainerSetting])
   );
 
+  // Tutorial: arriving on the Progress tab advances to spotlighting the
+  // Progress Graph card. Measure that card and report it as the content hole.
+  const { step: tutorialStep, setStep: setTutorialStep, setContentRect } = useTutorial();
+  const [graphCardRect, setGraphCardRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const graphCardWrapRef = useRef<View>(null);
+  const measureGraphCard = useCallback(() => {
+    graphCardWrapRef.current?.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) setGraphCardRect({ x, y, width, height });
+    });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (tutorialStep === "workouts_progress_tab") {
+        setTutorialStep("progress_graph_button");
+      }
+      const t = setTimeout(measureGraphCard, 350);
+      return () => {
+        clearTimeout(t);
+        setContentRect(null);
+      };
+    }, [tutorialStep, setTutorialStep, setContentRect, measureGraphCard])
+  );
+
+  useEffect(() => {
+    setContentRect(tutorialStep === "progress_graph_button" ? graphCardRect : null);
+  }, [tutorialStep, graphCardRect, setContentRect]);
+
   // Animation values for AI Trainer button
   const aiButtonScale = useSharedValue(1);
   const aiButtonTranslateY = useSharedValue(0);
@@ -341,12 +370,12 @@ export default function ProgressScreen() {
   const handleCardPress = (cardIndex: number) => {
     // Card indices: 0 = Progress Graphs (free), 1 = Skill Map (premium), 2 = Consistency Score (premium), 3 = Training Statistics (premium)
     const premiumCards = [1, 2, 3]; // Skill Map, Consistency Score, Training Statistics
-    
+
     if (premiumCards.includes(cardIndex) && !isPremium) {
       router.push("/(tabs)/purchase-premium");
       return;
     }
-    
+
     const routes = [
       "/meals/progress-graphs",
       "/meals/skill-map",
@@ -359,10 +388,10 @@ export default function ProgressScreen() {
   // Don't block rendering on fonts - they'll load asynchronously
 
   const cards = [
-    { index: 1, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
-    { index: 2, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
-    { index: 3, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
-    { index: 4, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Blank
+    { index: 1, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Progress Graph
+    { index: 2, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Skill Map
+    { index: 3, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Consistency Score
+    { index: 4, colors: ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.08)", "rgba(255, 255, 255, 0.06)"] }, // Training Stats
   ];
 
   return (
@@ -381,19 +410,29 @@ export default function ProgressScreen() {
         snapToInterval={cardTotalWidth}
         decelerationRate="fast"
       >
-        {cards.map(({ index, colors }, cardIndex) => (
-          <AnimatedCard
-            key={index}
-            index={index}
-            colors={colors}
-            scrollX={scrollX}
-            cardIndex={cardIndex}
-            cardWidth={cardWidth}
-            cardGap={cardGap}
-            onPress={() => handleCardPress(cardIndex)}
-            isPremium={isPremium}
-          />
-        ))}
+        {cards.map(({ index, colors }, cardIndex) => {
+          const card = (
+            <AnimatedCard
+              index={index}
+              colors={colors}
+              scrollX={scrollX}
+              cardIndex={cardIndex}
+              cardWidth={cardWidth}
+              cardGap={cardGap}
+              onPress={() => handleCardPress(cardIndex)}
+              isPremium={isPremium}
+            />
+          );
+          // Wrap the first (Progress Graph) card so the tutorial can measure it.
+          if (cardIndex === 0) {
+            return (
+              <View key={index} ref={graphCardWrapRef} onLayout={measureGraphCard} collapsable={false}>
+                {card}
+              </View>
+            );
+          }
+          return <React.Fragment key={index}>{card}</React.Fragment>;
+        })}
       </Animated.ScrollView>
 
       {/* AI Trainer Button - Bottom of screen */}
@@ -616,19 +655,19 @@ const styles = StyleSheet.create({
     color: "#666666",
   },
   sparkleTexture: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.12)",
     opacity: 0.5,
     // Create sparkle texture with noise pattern
   },
   sparkleTexture2: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.08)",
     opacity: 0.4,
     // Additional texture layer
   },
   sparkleTexture3: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.06)",
     opacity: 0.3,
     // Third texture layer for more depth

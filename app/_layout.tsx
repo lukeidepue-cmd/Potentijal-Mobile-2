@@ -24,10 +24,12 @@ import { FeaturesProvider } from '../providers/FeaturesContext';
 import { SettingsProvider } from '../providers/SettingsContext';
 import { PostHogProvider } from '../providers/PostHogProvider';
 import { OnboardingDataProvider } from '../providers/OnboardingDataContext';
+import { TutorialProvider } from '../providers/TutorialContext';
 import { usePostHogUserTracking } from '../lib/posthog/user-tracking';
 import { usePostHog } from 'posthog-react-native';
 import { setupDeepLinkListener } from '../lib/deep-links';
 import { scheduleAllWorkoutNotifications, scheduleConsistencyScoreNotification } from '../lib/notifications/notifications';
+import { isExpoGo } from '../lib/expo-env';
 import Constants from 'expo-constants';
 
 // Keep splash screen visible while we check auth/onboarding status
@@ -44,7 +46,9 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
   // Steps 18–19: RevenueCat — configure at launch (extra or .env so dev builds work).
+  // Skipped in Expo Go: the native module isn't bundled, so any Purchases.* call throws.
   useEffect(() => {
+    if (isExpoGo()) return;
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
     const apiKey = (extra?.revenueCatPublicApiKey ?? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) as string | undefined;
     if (!apiKey?.trim()) return;
@@ -55,13 +59,16 @@ function RootLayoutNav() {
   }, []);
 
   useEffect(() => {
+    if (isExpoGo()) return;
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
     const apiKey = (extra?.revenueCatPublicApiKey ?? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) as string | undefined;
     if (!apiKey?.trim()) return;
     try {
       const Purchases = require('react-native-purchases').default;
-      if (user?.id) Purchases.logIn(user.id);
-      else Purchases.logOut();
+      // .catch on the returned promise: without it a rejection bubbles up as
+      // "Uncaught (in promise)" even though we're wrapped in try/catch.
+      if (user?.id) Purchases.logIn(user.id).catch(() => {});
+      else Purchases.logOut().catch(() => {});
     } catch (_e) {}
   }, [user?.id]);
 
@@ -155,6 +162,12 @@ function RootLayoutNav() {
       subscription.remove();
     };
   }, []);
+
+  // The post-onboarding tutorial is armed exactly once, the moment onboarding
+  // completes (see app/onboarding/name-entry.tsx, which sets the 'build_preset'
+  // step before routing into the tabs). We deliberately do NOT re-arm it on
+  // subsequent logins or app launches — a returning, already-onboarded user
+  // should never see the tutorial again.
 
   useEffect(() => {
     // Wait for auth and onboarding status to load
@@ -250,7 +263,9 @@ export default function RootLayout() {
             <ProfileRefreshProvider>
               <FeaturesProvider>
                 <ModeProvider>
-                  <RootLayoutNav />
+                  <TutorialProvider>
+                    <RootLayoutNav />
+                  </TutorialProvider>
                 </ModeProvider>
               </FeaturesProvider>
             </ProfileRefreshProvider>
@@ -273,7 +288,7 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   loadingScreenWrapper: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#0B1513',
   },
   loadingBackground: {

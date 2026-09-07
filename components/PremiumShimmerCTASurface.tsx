@@ -61,17 +61,17 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   sparkle1: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.12)",
     opacity: 0.5,
   },
   sparkle2: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.08)",
     opacity: 0.4,
   },
   sparkle3: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.06)",
     opacity: 0.3,
   },

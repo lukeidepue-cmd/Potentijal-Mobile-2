@@ -11,8 +11,6 @@ export default function OnboardingLayout() {
     >
       <Stack.Screen name="identity" />
       <Stack.Screen name="sport-selection" />
-      <Stack.Screen name="first-win" />
-      <Stack.Screen name="visualization" />
       <Stack.Screen name="email-entry" />
       <Stack.Screen name="email-verification" />
       <Stack.Screen name="name-entry" />

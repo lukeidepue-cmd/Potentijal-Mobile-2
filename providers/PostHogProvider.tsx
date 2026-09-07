@@ -20,8 +20,8 @@ export function PostHogProvider({ children, apiKey, host }: PostHogProviderProps
         captureApplicationLifecycleEvents: true,
         captureDeepLinks: true,
         debug: __DEV__,
-        flushAt: 1, // Flush after 1 event for faster testing (change to 20 for production)
-        flushInterval: 10, // Flush every 10 seconds for faster testing (change to 30 for production)
+        flushAt: 20, // Batch events rather than one request per event
+        flushInterval: 30,
         maxBatchSize: 50,
         maxQueueSize: 1000,
       }}

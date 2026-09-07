@@ -27,13 +27,15 @@ import { BlurView } from 'expo-blur';
 import { theme } from '../../constants/theme';
 import { updateProfileFromOnboarding, completeOnboarding } from '../../lib/api/onboarding';
 import { useAuth } from '../../providers/AuthProvider';
+import { useTutorial } from '../../providers/TutorialContext';
 
-const TOTAL_STEPS = 7;
-const CURRENT_STEP = 7;
+const TOTAL_STEPS = 5;
+const CURRENT_STEP = 5;
 
 export default function NameEntryScreen() {
   const insets = useSafeAreaInsets();
   const { setOnboardingComplete } = useAuth();
+  const { setStep: setTutorialStep } = useTutorial();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -102,6 +104,10 @@ export default function NameEntryScreen() {
         setLoading(false);
         return;
       }
+
+      // Arm the post-onboarding in-app tutorial so Home forces the user to tap
+      // "Build New Preset" as their first action.
+      await setTutorialStep('build_preset');
 
       setOnboardingComplete();
       router.replace('/(tabs)');
@@ -212,7 +218,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#1C1C1E',
   },
   header: {
@@ -293,7 +299,7 @@ const styles = StyleSheet.create({
     }),
   },
   inputGlassBlur: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 16,
   },
   textInput: {

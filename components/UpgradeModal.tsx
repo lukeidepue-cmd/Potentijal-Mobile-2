@@ -75,11 +75,11 @@ export default function UpgradeModal({
           </View>
 
           {/* Title */}
-          <Text style={styles.title}>Premium Feature</Text>
+          <Text style={styles.title}>Pro Feature</Text>
 
           {/* Message */}
           <Text style={styles.message}>
-            Purchase Premium to unlock {featureName}
+            Purchase Pro to unlock {featureName}
           </Text>
 
           {/* Benefits List */}
@@ -118,7 +118,7 @@ export default function UpgradeModal({
                 end={{ x: 1, y: 1 }}
                 style={styles.upgradeGradient}
               >
-                <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+                <Text style={styles.upgradeButtonText}>Upgrade to Pro</Text>
               </LinearGradient>
             </Pressable>
           </View>

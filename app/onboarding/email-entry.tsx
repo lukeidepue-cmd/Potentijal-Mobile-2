@@ -30,8 +30,8 @@ import { BlurView } from 'expo-blur';
 import { useAuth } from '../../providers/AuthProvider';
 import { theme } from '../../constants/theme';
 
-const TOTAL_STEPS = 7;
-const CURRENT_STEP = 5;
+const TOTAL_STEPS = 5;
+const CURRENT_STEP = 3;
 
 export default function EmailEntryScreen() {
   const insets = useSafeAreaInsets();
@@ -188,7 +188,7 @@ export default function EmailEntryScreen() {
 
       {/* Content - same heading style as previous screens */}
       <View style={[styles.content, { zIndex: 10 }]}>
-        <Text style={styles.title}>Unlock your full Potentijal</Text>
+        <Text style={styles.title}>Unlock your full potential</Text>
         <Text style={styles.subtitle}>Create an account to start your training journey</Text>
 
         {/* Email input - liquid glass */}
@@ -224,7 +224,7 @@ export default function EmailEntryScreen() {
         </View>
       </View>
 
-      {/* Next button - same style as sport-selection / first-win */}
+      {/* Next button - same style as sport-selection */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 20, zIndex: 10 }]}>
         <TouchableOpacity
           style={[
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#1C1C1E',
   },
   header: {
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.danger,
   },
   inputGlassBlur: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 16,
   },
   input: {

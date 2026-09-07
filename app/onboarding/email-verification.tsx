@@ -23,8 +23,8 @@ import { updateOnboardingStep, updateProfileFromOnboarding } from '../../lib/api
 import { saveCompleteWorkout } from '../../lib/api/workouts';
 import { useOnboardingData } from '../../providers/OnboardingDataContext';
 
-const TOTAL_STEPS = 7;
-const CURRENT_STEP = 6;
+const TOTAL_STEPS = 5;
+const CURRENT_STEP = 4;
 
 export default function EmailVerificationScreen() {
   const insets = useSafeAreaInsets();
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#1C1C1E',
   },
   header: {

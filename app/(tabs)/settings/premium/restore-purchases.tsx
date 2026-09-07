@@ -11,6 +11,7 @@ import * as Haptics from "expo-haptics";
 import { theme } from "../../../../constants/theme";
 import { supabase } from "../../../../lib/supabase";
 import { useProfileRefresh } from "../../../../providers/ProfileRefreshContext";
+import { isExpoGo } from "../../../../lib/expo-env";
 import Purchases from "react-native-purchases";
 
 const FONT = { uiRegular: "Geist_400Regular", uiBold: "Geist_700Bold", uiSemi: "Geist_600SemiBold" };
@@ -24,6 +25,18 @@ export default function RestorePurchases() {
   const handleRestore = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setError(null);
+
+    // In Expo Go the RevenueCat native module isn't bundled — calling it crashes.
+    // Surface a clear message instead of trying.
+    if (isExpoGo()) {
+      Alert.alert(
+        "Not available in Expo Go",
+        "Restore Purchases requires the native RevenueCat module, which isn't included in Expo Go. Use a development build or TestFlight build to test purchases.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       await Purchases.restorePurchases();
@@ -35,7 +48,7 @@ export default function RestorePurchases() {
       refreshProfile?.();
       Alert.alert(
         "Purchases restored",
-        data?.is_premium ? "Your premium access has been restored." : "No active subscription was found. If you recently purchased, it may take a moment.",
+        data?.is_premium ? "Your Pro access has been restored." : "No active subscription was found. If you recently purchased, it may take a moment.",
         [{ text: "OK", onPress: () => router.back() }]
       );
     } catch (e: unknown) {

@@ -4,106 +4,23 @@ import { Stack } from "expo-router";
 export default function HomeStackLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {/* index.tsx is the Home screen */}
       <Stack.Screen name="index" />
-      {/* basketball sub-screens use their own headers or custom UI */}
-      <Stack.Screen name="basketball/weekly-goals" />
-      <Stack.Screen 
-        name="basketball/add-practice" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
+      {/* No stack animation for add-game / add-practice — the custom
+          shared-element animation in those screens handles the entire visual
+          transition. contentStyle: transparent removes the native stack's
+          opaque screen background, so the source screen stays visible through
+          the one-frame gap before the destination's animated image paints. */}
+      <Stack.Screen
+        name="add-game"
+        options={{ animation: "none", contentStyle: { backgroundColor: "transparent" } }}
       />
-      <Stack.Screen 
-        name="basketball/add-game" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
+      <Stack.Screen
+        name="add-practice"
+        options={{ animation: "none", contentStyle: { backgroundColor: "transparent" } }}
       />
-      {/* football sub-screens use their own headers or custom UI */}
-      <Stack.Screen 
-        name="football/add-practice" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      <Stack.Screen 
-        name="football/add-game" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      {/* baseball sub-screens use their own headers or custom UI */}
-      <Stack.Screen 
-        name="baseball/add-practice" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      <Stack.Screen 
-        name="baseball/add-game" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      {/* soccer sub-screens use their own headers or custom UI */}
-      <Stack.Screen 
-        name="soccer/add-practice" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      <Stack.Screen 
-        name="soccer/add-game" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      {/* hockey sub-screens use their own headers or custom UI */}
-      <Stack.Screen 
-        name="hockey/add-practice" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      <Stack.Screen 
-        name="hockey/add-game" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      {/* tennis sub-screens use their own headers or custom UI */}
-      <Stack.Screen 
-        name="tennis/add-practice" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      <Stack.Screen 
-        name="tennis/add-game" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-          // Don't use transparentModal - it hides the tab bar
-        }}
-      />
-      <Stack.Screen 
-        name="schedule-week" 
-        options={{
-          animation: 'fade', // Fade in quickly so our custom animation is visible
-        }}
-      />
-      <Stack.Screen name="add-weekly-goal" />
+      <Stack.Screen name="schedule-week" options={{ animation: "fade" }} />
+      <Stack.Screen name="build-preset" options={{ animation: "fade" }} />
+      <Stack.Screen name="build-view" options={{ animation: "fade" }} />
     </Stack>
   );
 }

@@ -7,20 +7,20 @@ export default function MealsStackLayout() {
       {/* index.tsx is the Progress main screen */}
       <Stack.Screen name="index" />
       {/* Progress sub-screens with fade animations */}
-      <Stack.Screen 
-        name="progress-graphs" 
+      <Stack.Screen
+        name="progress-graphs"
         options={{
           animation: 'fade',
         }}
       />
-      <Stack.Screen 
-        name="skill-map" 
+      <Stack.Screen
+        name="skill-map"
         options={{
           animation: 'fade',
         }}
       />
-      <Stack.Screen 
-        name="consistency-score" 
+      <Stack.Screen
+        name="consistency-score"
         options={{
           animation: 'fade',
         }}

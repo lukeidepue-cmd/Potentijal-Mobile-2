@@ -44,6 +44,7 @@ type EventType =
   | "REFUND_REVERSED"
   | "SUBSCRIPTION_PAUSED"
   | "TRANSFER"
+  | "TEST"
   | string;
 
 interface RevenueCatEvent {
@@ -73,7 +74,10 @@ const PREMIUM_EVENT_TYPES: EventType[] = [
   "SUBSCRIPTION_PAUSED",
 ];
 
-/** Allowlist of known RevenueCat event types (strict validation). */
+/** Allowlist of known RevenueCat event types (strict validation).
+ *  "TEST" is included so RC's dashboard "Send test webhook" button returns 200
+ *  (falls through to the "Unhandled event type" branch — no DB writes). Lets us
+ *  verify URL + auth + connectivity without needing a real purchase. */
 const ALLOWED_EVENT_TYPES: readonly string[] = [
   "INITIAL_PURCHASE",
   "RENEWAL",
@@ -87,6 +91,7 @@ const ALLOWED_EVENT_TYPES: readonly string[] = [
   "REFUND_REVERSED",
   "SUBSCRIPTION_PAUSED",
   "TRANSFER",
+  "TEST",
 ];
 
 Deno.serve(async (req) => {

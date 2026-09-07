@@ -6,6 +6,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card } from "../../../components/Card";
 import { theme } from "../../../constants/theme";
+import { getPresetColorTokens } from "../../../constants/preset-cosmetics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -154,8 +155,18 @@ const formatSetDisplay = (
   mode?: string,
   unitsWeight?: string
 ): string => {
+  // Preset-kind sets: use the user's stat names + values directly (preserves
+  // display order via stat_index on the DB side). When customStats is present
+  // it is the authoritative source — skip the legacy fixed-column branches.
+  if (set.customStats && set.customStats.length > 0) {
+    const parts = set.customStats.map(
+      (s: { name: string; value: number }) => `${s.name}: ${s.value}`
+    );
+    return parts.length > 0 ? parts.join(" • ") : "No data";
+  }
+
   const parts: string[] = [];
-  
+
   if (exerciseType === "exercise") {
     if (set.reps != null) parts.push(`Reps: ${set.reps}`);
     if (set.weight != null) parts.push(`Weight (${unitsWeight === 'kg' ? 'kg' : 'lb'}): ${set.weight}`);
@@ -198,7 +209,7 @@ function ExerciseBox({
   mode,
   unitsWeight,
 }: {
-  exercise: { id?: string; name: string; type: string; sets: any[] };
+  exercise: { id?: string; name: string; type: string; sets: any[]; presetColor?: string | null };
   mode?: string;
   unitsWeight?: string;
 }) {
@@ -207,7 +218,11 @@ function ExerciseBox({
   const height = useSharedValue(0);
   const opacity = useSharedValue(0);
 
-  const exerciseColor = getExerciseTypeColor(exercise.type, mode);
+  // Preset-logged exercises tint the box to their chosen preset color. Legacy
+  // fixed-kind exercises (no linked preset) fall back to the old type-based hue.
+  const exerciseColor = exercise.presetColor
+    ? getPresetColorTokens(exercise.presetColor).solid
+    : getExerciseTypeColor(exercise.type, mode);
   const exerciseIcon = getExerciseIcon(exercise.type);
   const setsCount = exercise.sets?.length || 0;
   const setsText = setsCount !== 1 ? "sets" : "set";
@@ -747,13 +762,7 @@ export default function HistoryDetail() {
         <Animated.View style={[styles.contentContainer, formAnimatedStyle]}>
           {loading ? (
             <View style={[styles.loadingContainer, { backgroundColor: theme.colors.bg0, paddingTop: 40 }]}>
-              <Animated.View style={starAnimatedStyle}>
-                <Image
-                  source={require("../../../assets/star.png")}
-                  style={styles.loadingStar}
-                  resizeMode="contain"
-                />
-              </Animated.View>
+              <ActivityIndicator size="large" color={theme.colors.accentMint} />
             </View>
           ) : error ? (
             <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16, paddingTop: 40 }}>
@@ -838,12 +847,10 @@ export default function HistoryDetail() {
       <View style={{ flexDirection: "row", alignItems: "center", padding: 16, gap: 8 }}>
         <Pressable
           onPress={() => {
-            // If from creator workouts, go back to creator workouts screen (only if profile features enabled)
-            if (params.fromCreator === "true" && PROFILE_FEATURES_ENABLED) {
-              router.replace("/(tabs)/profile/creator-workouts");
-            } else {
-              router.back();
-            }
+            // The creator-workouts screen lives in _disabled-features/ and is not
+            // routed while PROFILE_FEATURES_ENABLED is false. Restore the
+            // replace() to it when the profile system comes back.
+            router.back();
           }}
           hitSlop={10}
         >
@@ -874,13 +881,7 @@ export default function HistoryDetail() {
 
       {loading ? (
         <View style={[styles.loadingContainer, { backgroundColor: theme.color.bg }]}>
-          <Animated.View style={starAnimatedStyle}>
-            <Image
-              source={require("../../../assets/star.png")}
-              style={styles.loadingStar}
-              resizeMode="contain"
-            />
-          </Animated.View>
+          <ActivityIndicator size="large" color={theme.colors.accentMint} />
         </View>
       ) : error ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16 }}>

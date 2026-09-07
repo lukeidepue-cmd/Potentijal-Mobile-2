@@ -67,7 +67,7 @@ export default function PrivacyPolicy() {
         </Pressable>
 
         <Text style={styles.introText}>
-          This Privacy Policy explains how Potentijal ("we," "us," "our") collects, uses, discloses, and protects information when you use the Potentijal app and related services (the "Service"). By using the Service, you agree to this policy.
+          This Privacy Policy explains how AthleteCraft ("we," "us," "our") collects, uses, discloses, and protects information when you use the AthleteCraft app and related services (the "Service"). By using the Service, you agree to this policy.
         </Text>
 
         <Text style={styles.sectionTitle}>1. Information We Collect</Text>
@@ -78,9 +78,9 @@ export default function PrivacyPolicy() {
           • Sport modes you select (e.g., basketball, lifting, running){"\n"}
           • Training data: workouts, exercises, sets, reps, weight, shooting attempts/made, drill metrics, running distance/pace/time, notes{"\n"}
           • Scheduling and weekly goals{"\n"}
-          • Game and practice logs (Premium){"\n"}
-          • Data used for the Progress tab: workout and performance history used to generate Progress Graphs, Skill Map, Consistency Score, and Training Statistics{"\n"}
-          • AI Trainer messages and prompts (Premium)
+          • Game and practice logs (Pro){"\n"}
+          • Data used for the Progress tab: workout and performance history used to generate Progress Graphs, Consistency Score, and Training Statistics{"\n"}
+          • AI Trainer messages and prompts (Pro)
         </Text>
 
         <Text style={styles.subsectionTitle}>B) Information Collected Automatically</Text>
@@ -92,23 +92,23 @@ export default function PrivacyPolicy() {
         <Text style={styles.subsectionTitle}>C) Information From Third Parties</Text>
         <Text style={styles.contentText}>
           • Sign-in providers (e.g., Apple, Google) provide account identifiers needed to create and secure your account{"\n"}
-          • The app store and our subscription provider share purchase and subscription status so we can grant or remove Premium access{"\n"}
+          • The app store and our subscription provider share purchase and subscription status so we can grant or remove Pro access{"\n"}
           • AI Trainer responses are generated using third-party AI services; we send relevant context (e.g., your sport modes, workout summaries) solely to produce personalized guidance
         </Text>
 
         <Text style={styles.sectionTitle}>2. How We Use Information</Text>
         <Text style={styles.contentText}>We use information to:</Text>
         <Text style={styles.bulletPoint}>• Create and manage your account</Text>
-        <Text style={styles.bulletPoint}>• Provide sport modes, workout logging, and game/practice logging (Premium)</Text>
-        <Text style={styles.bulletPoint}>• Power the Progress tab: Progress Graphs, Skill Map, Consistency Score, and Training Statistics (using your logged workout and performance data)</Text>
+        <Text style={styles.bulletPoint}>• Provide sport modes, workout logging, and game/practice logging (Pro)</Text>
+        <Text style={styles.bulletPoint}>• Power the Progress tab: Progress Graphs, Consistency Score, and Training Statistics (using your logged workout and performance data)</Text>
         <Text style={styles.bulletPoint}>• Generate streaks, weekly goal tracking, and History</Text>
-        <Text style={styles.bulletPoint}>• Provide the AI Trainer (Premium) with context to give personalized guidance</Text>
+        <Text style={styles.bulletPoint}>• Provide the AI Trainer (Pro) with context to give personalized guidance</Text>
         <Text style={styles.bulletPoint}>• Maintain security, prevent abuse, and enforce our terms</Text>
         <Text style={styles.bulletPoint}>• Improve app performance, fix bugs, and develop new features</Text>
 
         <Text style={styles.sectionTitle}>3. AI Trainer and Data Use</Text>
         <Text style={styles.contentText}>
-          If you use the AI Trainer (Premium), we process relevant data—such as your sport modes, workouts, games, practices, notes, goals, and history—to generate personalized guidance. That data is sent to our AI service provider only to produce responses and is handled according to our and the provider's data practices. We do not use AI conversations for marketing or to train general-purpose models on your content.
+          If you use the AI Trainer (Pro), we process relevant data—such as your sport modes, workouts, games, practices, notes, goals, and history—to generate personalized guidance. That data is sent to our AI service provider only to produce responses and is handled according to our and the provider's data practices. We do not use AI conversations for marketing or to train general-purpose models on your content.
         </Text>
         <Text style={styles.contentText}>
           You should avoid sharing sensitive personal information (e.g., medical details) in AI chats. The AI Trainer is for informational and motivational use only and is not medical or professional advice.
@@ -127,7 +127,7 @@ export default function PrivacyPolicy() {
 
         <Text style={styles.sectionTitle}>5. Data Retention and Deletion</Text>
         <Text style={styles.contentText}>
-          We retain your information while your account is active and as needed to provide the Service, resolve disputes, and comply with legal obligations. Workout and training history are stored so you can use features such as Progress Graphs, Skill Map, Consistency Score, Training Statistics, and History.
+          We retain your information while your account is active and as needed to provide the Service, resolve disputes, and comply with legal obligations. Workout and training history are stored so you can use features such as Progress Graphs, Consistency Score, Training Statistics, and History.
         </Text>
         <Text style={styles.contentText}>
           You may request deletion of your account and associated personal data at any time through the app (e.g., Settings → Account) or by contacting us. After we process the request, we will delete or anonymize your data in line with our retention practices and applicable law, except where we must retain it for legal or safety reasons.
@@ -140,7 +140,7 @@ export default function PrivacyPolicy() {
 
         <Text style={styles.sectionTitle}>7. Children's Privacy</Text>
         <Text style={styles.contentText}>
-          Potentijal is not intended for children under 13. If we learn we collected personal information from a child under 13, we will delete it.
+          AthleteCraft is not intended for children under 13. If we learn we collected personal information from a child under 13, we will delete it.
         </Text>
 
         <Text style={styles.sectionTitle}>8. Your Rights and Choices</Text>
@@ -156,7 +156,7 @@ export default function PrivacyPolicy() {
 
         <Text style={styles.sectionTitle}>9. International Users</Text>
         <Text style={styles.contentText}>
-          The Service may be operated from and your data stored in the United States or other countries where our service providers operate. If you use Potentijal from outside that country, your information may be transferred to and processed in those jurisdictions, which may have different data protection laws. By using the Service, you consent to such transfer and processing.
+          The Service may be operated from and your data stored in the United States or other countries where our service providers operate. If you use AthleteCraft from outside that country, your information may be transferred to and processed in those jurisdictions, which may have different data protection laws. By using the Service, you consent to such transfer and processing.
         </Text>
 
         <Text style={styles.sectionTitle}>10. Changes to This Policy</Text>

@@ -24,7 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
 import { useOnboardingData } from '../../providers/OnboardingDataContext';
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 5;
 const CURRENT_STEP = 2;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -139,7 +139,7 @@ export default function SportSelectionScreen() {
     if (selectedSports.length === 0) return;
     const primarySport = selectedSports[0];
     setSports(selectedSports, primarySport);
-    router.push('/onboarding/first-win');
+    router.push('/onboarding/email-entry');
   };
 
   const isFormValid = selectedSports.length > 0;
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#1C1C1E',
   },
   header: {
@@ -322,11 +322,11 @@ const styles = StyleSheet.create({
     }),
   },
   cardBlur: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 20,
   },
   cardSelectedGlass: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 20,
     overflow: 'hidden',
   },

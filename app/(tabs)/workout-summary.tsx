@@ -107,6 +107,26 @@ export default function WorkoutSummaryScreen() {
     shadowOffset: { width: 0, height: buttonShadowOffset.value },
   }));
 
+  // Spinning star for the loading state, matching the loader used on the
+  // progress screens.
+  const starRotation = useSharedValue(0);
+
+  const starAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${starRotation.value}deg` }],
+  }));
+
+  useEffect(() => {
+    if (loading) {
+      starRotation.value = withRepeat(
+        withTiming(360, { duration: 2000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      starRotation.value = 0;
+    }
+  }, [loading]);
+
   useEffect(() => {
     // If workoutData is provided (from "Save Workout"), parse it and display
     // If workoutId is provided (from elsewhere), we'd load it (not used in current flow)
@@ -193,7 +213,7 @@ export default function WorkoutSummaryScreen() {
         
         // Cancel today's workout notification if workout was logged before 12PM
         const { cancelTodaysWorkoutNotification, trackWorkoutAndScheduleAITrainerReminder } = await import('../../lib/notifications/notifications');
-        cancelTodaysWorkoutNotification(workoutData.mode).catch(() => {});
+        cancelTodaysWorkoutNotification().catch(() => {});
         
         // Track workout count and schedule AI Trainer reminder if needed (every 7 workouts)
         trackWorkoutAndScheduleAITrainerReminder().catch(() => {});

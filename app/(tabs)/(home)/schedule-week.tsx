@@ -29,7 +29,6 @@ import {
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
 import { theme } from '../../../constants/theme';
-import { useMode } from '../../../providers/ModeContext';
 import {
   getWeeklySchedule,
   upsertWeeklySchedule,
@@ -65,8 +64,6 @@ function formatDate(date: Date): string {
 }
 
 export default function ScheduleWeekScreen() {
-  const { mode } = useMode();
-  const m = (mode || 'lifting').toLowerCase();
   const insets = useSafeAreaInsets();
   const [sgLoaded] = useSpaceGrotesk({ SpaceGrotesk_700Bold });
   const scrollRef = useRef<ScrollView>(null);
@@ -114,12 +111,12 @@ export default function ScheduleWeekScreen() {
 
   useEffect(() => {
     loadSchedules();
-  }, [m]);
+  }, []);
 
   const loadSchedules = async () => {
     setLoading(true);
     
-    const currentResult = await getWeeklySchedule({ mode: m, weekStartDate: currentWeekStart });
+    const currentResult = await getWeeklySchedule({ weekStartDate: currentWeekStart });
 
     if (currentResult.data) {
       setCurrentWeekSchedule(currentResult.data);
@@ -145,7 +142,6 @@ export default function ScheduleWeekScreen() {
     setSaving(true);
 
     const currentError = await upsertWeeklySchedule({
-      mode: m,
       weekStartDate: currentWeekStart,
       items: currentWeekSchedule,
     });
@@ -161,7 +157,7 @@ export default function ScheduleWeekScreen() {
 
     // Reschedule workout notifications after saving schedule
     const { scheduleWorkoutNotification } = await import('../../../lib/notifications/notifications');
-    scheduleWorkoutNotification(m).catch(() => {});
+    scheduleWorkoutNotification().catch(() => {});
 
     setShowSuccess(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
