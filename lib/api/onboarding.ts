@@ -55,7 +55,7 @@ export async function getOnboardingState(): Promise<{
         .from('onboarding_data')
         .insert({
           user_id: user.id,
-          current_step: 'welcome',
+          current_step: 'identity',
           completed_steps: [],
           completed: false,
         })

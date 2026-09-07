@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.bg0,
   },
   grainOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255,255,255,0.02)',
     opacity: 0.06,
   },

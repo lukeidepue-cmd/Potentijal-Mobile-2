@@ -18,7 +18,7 @@ export interface GameData {
  * Create a game entry
  */
 export async function createGame(params: {
-  mode: SportMode | string;
+  mode?: SportMode | string;
   playedAt: string; // ISO date string (YYYY-MM-DD)
   title?: string;
   stats: Record<string, number | string>;
@@ -30,9 +30,10 @@ export async function createGame(params: {
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const sportMode = typeof params.mode === 'string' 
-      ? mapModeKeyToSportMode(params.mode) 
-      : params.mode;
+    // mode kept for DB compatibility (NOT NULL column); defaults to 'workout'.
+    const sportMode = params.mode
+      ? (typeof params.mode === 'string' ? mapModeKeyToSportMode(params.mode) : params.mode)
+      : 'workout';
 
     // Build insert data, handling optional title column gracefully
     const insertData: any = {

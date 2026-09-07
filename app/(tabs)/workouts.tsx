@@ -14,7 +14,8 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
-  Image,
+  Keyboard,
+  BackHandler,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -27,7 +28,6 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  runOnJS,
 } from "react-native-reanimated";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -36,12 +36,21 @@ import { useMode } from "../../providers/ModeContext";
 import { theme } from "../../constants/theme";
 import { router } from "expo-router";
 import { saveCompleteWorkout, getWorkoutWithDetails } from "../../lib/api/workouts";
+import { listPresets, deletePreset, type ExercisePreset } from "../../lib/api/presets";
+import { PresetCircleButton } from "../../components/PresetCircleButton";
+import {
+  getPresetColorTokens,
+  getPresetHeaderGradient,
+} from "../../constants/preset-cosmetics";
 import { useAuth } from "../../providers/AuthProvider";
 import { useSettings } from "../../providers/SettingsContext";
 import { mapModeKeyToSportMode, mapItemKindToExerciseType } from "../../lib/types";
 import { ErrorToast } from "../../components/ErrorToast";
+import { PremiumShimmerCTASurface } from "../../components/PremiumShimmerCTASurface";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Swipeable } from "react-native-gesture-handler";
+import { useTutorial } from "../../providers/TutorialContext";
+import type { Rect } from "../../lib/tutorial";
 
 /* ---------------- Fonts (match Home pages) ---------------- */
 import {
@@ -69,27 +78,33 @@ type ModeKey =
   | "tennis";
 
 type ItemKind =
+  // User-defined preset (the new way). Stat names live on the item itself.
+  | "preset"
+  // Legacy sport-mode types — kept so historical workouts still load/render.
   | "exercise"
-  // basketball
   | "bb_shot"
-  // football
   | "fb_drill"
   | "fb_sprint"
-  // soccer
   | "sc_drill"
   | "sc_shoot"
-  // baseball
   | "bs_hit"
   | "bs_field"
-  // hockey
   | "hk_drill"
   | "hk_shoot"
-  // tennis
   | "tn_drill"
   | "tn_rally";
 
 type SetRecord = Record<string, string>;
-type AnyItem = { id: string; kind: ItemKind; name: string; sets: SetRecord[] };
+type AnyItem = {
+  id: string;
+  kind: ItemKind;
+  name: string;
+  sets: SetRecord[];
+  /** Only populated when kind === 'preset'. Display order of stat-name labels. */
+  statNames?: string[];
+  /** Only populated when kind === 'preset'. The preset row this item came from. */
+  presetId?: string;
+};
 type DraftTuple = readonly [AnyItem[], React.Dispatch<React.SetStateAction<AnyItem[]>>];
 
 /* ---------------- Helpers ---------------- */
@@ -163,7 +178,32 @@ const FIELD_SETS: Record<ItemKind, { key: string; label: string; numeric?: boole
     { key: "points", label: "Points", numeric: true },
     { key: "time", label: "Time (min)", numeric: true },
   ],
+  // User-defined presets resolve their fields at runtime from item.statNames.
+  // FIELD_SETS['preset'] is intentionally empty; use fieldsForItem(item) instead.
+  preset: [],
 };
+
+/**
+ * Resolve the input field templates for a given item. Preset items have
+ * arbitrary user-defined stat names; legacy items fall back to FIELD_SETS.
+ */
+function fieldsForItem(item: AnyItem): { key: string; label: string; numeric?: boolean }[] {
+  if (item.kind === "preset" && item.statNames) {
+    return item.statNames.map((name, idx) => ({
+      key: `stat_${idx}`,
+      label: name,
+      numeric: true,
+    }));
+  }
+  return FIELD_SETS[item.kind];
+}
+
+/** Build the empty SetRecord for a new set, given any item (preset-aware). */
+function emptySetForItem(item: AnyItem): SetRecord {
+  const empty: SetRecord = {};
+  fieldsForItem(item).forEach((f) => (empty[f.key] = ""));
+  return empty;
+}
 
 
 /* ---------------- Fonts map ---------------- */
@@ -187,10 +227,9 @@ export default function WorkoutsScreen() {
   const params = useLocalSearchParams<{ workoutId?: string }>();
   const m = (mode || "lifting").toLowerCase() as ModeKey;
 
-  // Redirect to onboarding/welcome if not signed in
   useEffect(() => {
     if (!user) {
-      router.replace('/onboarding/welcome');
+      router.replace('/onboarding/identity');
     }
   }, [user]);
 
@@ -210,7 +249,144 @@ export default function WorkoutsScreen() {
 
   /* ---------- top meta ---------- */
   const [isCreating, setIsCreating] = useState(false);
-  
+
+  // User-defined exercise presets (replaces the old sport-mode preset buttons).
+  // Refetched whenever the tab regains focus so newly-created presets appear immediately.
+  const [presets, setPresets] = useState<ExercisePreset[]>([]);
+  useFocusEffect(
+    React.useCallback(() => {
+      let active = true;
+      listPresets().then(({ data }) => {
+        if (active && data) setPresets(data);
+      });
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  // Which preset chip is currently showing its swipe-up delete button. Only one
+  // at a time, so the row can't fill up with trash buttons.
+  const [revealedPresetId, setRevealedPresetId] = useState<string | null>(null);
+
+  const confirmDeletePreset = React.useCallback((preset: ExercisePreset) => {
+    // Deleting a preset is destructive well beyond the chip itself:
+    //   - views.preset_id is ON DELETE CASCADE, so every View built on this
+    //     preset is deleted with it.
+    //   - workout_exercises.preset_id is ON DELETE SET NULL, so previously
+    //     logged exercises lose their preset link and stop appearing in the
+    //     Progress Graph and Skill Map. Rebuilding a preset with the same name
+    //     does NOT relink them.
+    // The logged sets themselves survive and still render in History, because
+    // stat names/values live on workout_set_stats rather than on the preset.
+    Alert.alert(
+      `Delete “${preset.name}”?`,
+      "Any Views built on this preset will be deleted too, and exercises you already logged with it will stop showing up in your Progress Graph and Skill Map.\n\nYour workout history keeps all of its sets. This can't be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const { error } = await deletePreset(preset.id);
+            if (error) {
+              Alert.alert("Couldn't delete preset", error.message ?? "Please try again.");
+              return;
+            }
+            setPresets(prev => prev.filter(p => p.id !== preset.id));
+            setRevealedPresetId(null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          },
+        },
+      ]
+    );
+  }, []);
+
+
+  // ---- Tutorial wiring (Workouts steps) -----------------------------------
+  const { step: tutorialStep, setStep: setTutorialStep, setContentRect } = useTutorial();
+
+  // Measured window-space rects of the two spotlight targets.
+  const presetRowRef = useRef<View>(null);
+  const [presetRowRect, setPresetRowRect] = useState<Rect | null>(null);
+  const [cardRect, setCardRect] = useState<Rect | null>(null);
+
+  // The set currently being edited. Everything the editor needs (field
+  // templates, label, initial values) is CAPTURED here at open time rather than
+  // re-derived from `list` on every render. That keeps the editor mounted even
+  // if the draft list briefly churns (autosave/focus resets), so the Modal can't
+  // flicker-unmount mid-edit and drop the keyboard.
+  const [editingSet, setEditingSet] = useState<{
+    itemId: string;
+    setIdx: number;
+    fields: { key: string; label: string; numeric?: boolean }[];
+    contextLabel: string;
+    initialSet: SetRecord;
+  } | null>(null);
+
+  const measurePresetRow = useCallback(() => {
+    presetRowRef.current?.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) setPresetRowRect({ x, y, width, height });
+    });
+  }, []);
+
+  // Drive the app-level overlay's content hole from the current step.
+  useEffect(() => {
+    if (tutorialStep === "workouts_preset") {
+      setContentRect(presetRowRect);
+    } else if (
+      tutorialStep === "workouts_exercise_box" ||
+      tutorialStep === "workouts_progress_tab"
+    ) {
+      setContentRect(cardRect);
+    } else {
+      setContentRect(null);
+    }
+  }, [tutorialStep, presetRowRect, cardRect, setContentRect]);
+
+  // Clear the content hole when leaving the Workouts screen.
+  useEffect(() => () => setContentRect(null), [setContentRect]);
+
+  // Block Android hardware back during the Workouts tutorial steps.
+  useEffect(() => {
+    const active =
+      tutorialStep === "workouts_preset" ||
+      tutorialStep === "workouts_exercise_box" ||
+      tutorialStep === "workouts_progress_tab";
+    if (!active) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => sub.remove();
+  }, [tutorialStep]);
+
+  // On focus: arrive from the Home→Workouts step and auto-start a workout so the
+  // preset row is visible to spotlight. Re-measure the preset row once it settles.
+  useFocusEffect(
+    React.useCallback(() => {
+      const inWorkoutsStep =
+        tutorialStep === "workouts_preset" ||
+        tutorialStep === "workouts_exercise_box" ||
+        tutorialStep === "workouts_progress_tab";
+
+      if (tutorialStep === "home_workout_tab") {
+        setIsCreating(true);
+        setWorkoutName("");
+        setTutorialStep("workouts_preset");
+      } else if (inWorkoutsStep) {
+        setIsCreating((cur) => {
+          if (!cur) setWorkoutName("");
+          return true;
+        });
+      }
+
+      // The preset row slides in on isCreating; measure after it settles.
+      const timers = [
+        setTimeout(measurePresetRow, 350),
+        setTimeout(measurePresetRow, 700),
+      ];
+      return () => timers.forEach(clearTimeout);
+    }, [tutorialStep, setTutorialStep, measurePresetRow])
+  );
+
   // Animation for Start Workout button
   const startWorkoutScale = useSharedValue(1);
   const startWorkoutAnimatedStyle = useAnimatedStyle(() => ({
@@ -315,9 +491,38 @@ export default function WorkoutsScreen() {
         const nameWithoutCopied = workout.name.replace(' (Copied)', '');
         setWorkoutName(nameWithoutCopied);
         
-        // Convert workout exercises to the format expected by the workouts tab
+        // Convert workout exercises to the format expected by the workouts tab.
+        // Preset-kind exercises (those with customStats on any set) are
+        // reconstructed as kind='preset' with statNames from presetStatNames.
         const convertedItems: AnyItem[] = workout.exercises.map((exercise) => {
-          // Map exercise type to item kind
+          // Preset path: any exercise the API tagged with presetStatNames.
+          if (exercise.presetStatNames && exercise.presetStatNames.length > 0) {
+            const statNames = exercise.presetStatNames;
+            const sets: SetRecord[] = exercise.sets.map((set) => {
+              const setRecord: SetRecord = {};
+              statNames.forEach((_, i) => { setRecord[`stat_${i}`] = ""; });
+              (set.customStats || []).forEach((cs) => {
+                const idx = statNames.indexOf(cs.name);
+                if (idx !== -1) setRecord[`stat_${idx}`] = String(cs.value);
+              });
+              return setRecord;
+            });
+
+            const stub: AnyItem = {
+              id: uid(),
+              kind: "preset",
+              name: exercise.name,
+              sets,
+              statNames,
+              presetId: exercise.presetId,
+            };
+            if (sets.length === 0) {
+              sets.push(emptySetForItem(stub));
+            }
+            return stub;
+          }
+
+          // Legacy path: map the stored exercise_type back to an ItemKind.
           const typeToKind: Record<string, ItemKind> = {
             'exercise': 'exercise',
             'shooting': 'bb_shot',
@@ -327,10 +532,9 @@ export default function WorkoutsScreen() {
             'fielding': 'bs_field',
             'rally': 'tn_rally',
           };
-          
+
           const kind = typeToKind[exercise.type] || 'exercise';
-          
-          // Convert sets to SetRecord format
+
           const sets: SetRecord[] = exercise.sets.map((set) => {
             const setRecord: SetRecord = {};
             if (set.reps !== undefined) setRecord.reps = String(set.reps);
@@ -344,14 +548,13 @@ export default function WorkoutsScreen() {
             if (set.points !== undefined) setRecord.points = String(set.points);
             return setRecord;
           });
-          
-          // If no sets, add one empty set
+
           if (sets.length === 0) {
             const empty: SetRecord = {};
             FIELD_SETS[kind].forEach((f) => (empty[f.key] = ""));
             sets.push(empty);
           }
-          
+
           return {
             id: uid(),
             kind,
@@ -561,9 +764,38 @@ export default function WorkoutsScreen() {
         const nameWithoutCopied = workout.name.replace(' (Copied)', '');
         setWorkoutName(nameWithoutCopied);
         
-        // Convert workout exercises to the format expected by the workouts tab
+        // Convert workout exercises to the format expected by the workouts tab.
+        // Preset-kind exercises (those with customStats on any set) are
+        // reconstructed as kind='preset' with statNames from presetStatNames.
         const convertedItems: AnyItem[] = workout.exercises.map((exercise) => {
-          // Map exercise type to item kind
+          // Preset path: any exercise the API tagged with presetStatNames.
+          if (exercise.presetStatNames && exercise.presetStatNames.length > 0) {
+            const statNames = exercise.presetStatNames;
+            const sets: SetRecord[] = exercise.sets.map((set) => {
+              const setRecord: SetRecord = {};
+              statNames.forEach((_, i) => { setRecord[`stat_${i}`] = ""; });
+              (set.customStats || []).forEach((cs) => {
+                const idx = statNames.indexOf(cs.name);
+                if (idx !== -1) setRecord[`stat_${idx}`] = String(cs.value);
+              });
+              return setRecord;
+            });
+
+            const stub: AnyItem = {
+              id: uid(),
+              kind: "preset",
+              name: exercise.name,
+              sets,
+              statNames,
+              presetId: exercise.presetId,
+            };
+            if (sets.length === 0) {
+              sets.push(emptySetForItem(stub));
+            }
+            return stub;
+          }
+
+          // Legacy path: map the stored exercise_type back to an ItemKind.
           const typeToKind: Record<string, ItemKind> = {
             'exercise': 'exercise',
             'shooting': 'bb_shot',
@@ -573,10 +805,9 @@ export default function WorkoutsScreen() {
             'fielding': 'bs_field',
             'rally': 'tn_rally',
           };
-          
+
           const kind = typeToKind[exercise.type] || 'exercise';
-          
-          // Convert sets to SetRecord format
+
           const sets: SetRecord[] = exercise.sets.map((set) => {
             const setRecord: SetRecord = {};
             if (set.reps !== undefined) setRecord.reps = String(set.reps);
@@ -590,14 +821,13 @@ export default function WorkoutsScreen() {
             if (set.points !== undefined) setRecord.points = String(set.points);
             return setRecord;
           });
-          
-          // If no sets, add one empty set
+
           if (sets.length === 0) {
             const empty: SetRecord = {};
             FIELD_SETS[kind].forEach((f) => (empty[f.key] = ""));
             sets.push(empty);
           }
-          
+
           return {
             id: uid(),
             kind,
@@ -636,22 +866,50 @@ export default function WorkoutsScreen() {
   }, [params.workoutId, user, setMode, setLiftDraft, setBbDraft, setFbDraft, setBsDraft, setScDraft, setHkDraft, setTnDraft]);
 
   /* ---------- actions ---------- */
+  /**
+   * Add a new exercise card to the current workout.
+   * - addItem("exercise") — legacy fixed-shape add (kept for any non-preset entry points)
+   * - addItemFromPreset(preset) — adds a preset-kind card pre-populated with the
+   *   preset's name and stat-name labels
+   */
   const addItem = (kind: ItemKind) => {
-    const empty: SetRecord = {};
-    FIELD_SETS[kind].forEach((f) => (empty[f.key] = ""));
-    setList((cur) => [...cur, { id: uid(), kind, name: "", sets: [{ ...empty }] }]);
+    const stub: AnyItem = { id: uid(), kind, name: "", sets: [], statNames: undefined };
+    const empty = emptySetForItem(stub);
+    setList((cur) => [...cur, { ...stub, sets: [{ ...empty }] }]);
   };
 
-  const updateName = (id: string, name: string) =>
+  const addItemFromPreset = (preset: { id: string; name: string; statNames: string[] }) => {
+    // Name intentionally LEFT BLANK — the user fills in the actual exercise
+    // name (e.g. "Free Throw" preset → user types "Game-day Free Throws").
+    // The preset name lives on as `presetId`-linked metadata via statNames.
+    const stub: AnyItem = {
+      id: uid(),
+      kind: "preset",
+      name: "",
+      sets: [],
+      statNames: preset.statNames,
+      presetId: preset.id,
+    };
+    const empty = emptySetForItem(stub);
+    setList((cur) => [...cur, { ...stub, sets: [{ ...empty }] }]);
+  };
+
+  const updateName = (id: string, name: string) => {
     setList((cur) => cur.map((x) => (x.id === id ? { ...x, name } : x)));
+    // Tutorial: typing an exercise name unlocks the Progress tab. Dismiss the
+    // keyboard so the (now-highlighted) Progress tab isn't hidden behind it.
+    if (tutorialStep === "workouts_exercise_box" && name.trim().length > 0) {
+      setTutorialStep("workouts_progress_tab");
+      Keyboard.dismiss();
+    }
+  };
 
   const removeItem = (id: string) => setList((cur) => cur.filter((x) => x.id !== id));
 
   const addSet = (id: string) => {
     const item = list.find((x) => x.id === id);
     if (!item) return;
-    const empty: SetRecord = {};
-    FIELD_SETS[item.kind].forEach((f) => (empty[f.key] = ""));
+    const empty = emptySetForItem(item);
     setList((cur) => cur.map((x) => (x.id === id ? { ...x, sets: [...x.sets, { ...empty }] } : x)));
   };
 
@@ -718,6 +976,11 @@ export default function WorkoutsScreen() {
         kind: item.kind,
         name: item.name,
         sets: item.sets,
+        // statNames + presetId are only meaningful for preset-kind items;
+        // passed through so the save flow can write workout_set_stats and
+        // tag workout_exercises.preset_id for Views queries.
+        statNames: item.statNames,
+        presetId: item.presetId,
       })),
     };
 
@@ -760,70 +1023,6 @@ export default function WorkoutsScreen() {
     );
   };
 
-  /* ---------- toolbar (name + "green boxes") ---------- */
-  const Toolbar = () => {
-
-    if (!isCreating) {
-      return (
-        <Pressable
-          onPress={() => {
-            setIsCreating(true);
-            setWorkoutName("");
-          }}
-          style={styles.addWorkoutBtn}
-        >
-          <Text style={[styles.addWorkoutText, { fontFamily: FONT.displayBold }]}>+ Add Workout</Text>
-        </Pressable>
-      );
-    }
-
-    const Button = ({ label, onPress, flex = 1 }: { label: string; onPress: () => void; flex?: number }) => (
-      <Pressable onPress={onPress} style={[styles.topBtn, { flex }]}>
-        <Text style={[styles.topBtnText, { fontFamily: FONT.uiSemi }]} numberOfLines={1}>
-          {label}
-        </Text>
-      </Pressable>
-    );
-
-    // first row: workout name full width - will be rendered outside Toolbar
-    const nameRow = null;
-
-    // second row: per-mode green boxes
-    const rowBtns: React.ReactNode[] = [];
-    if (m === "lifting") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-    } else if (m === "basketball") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-      rowBtns.push(<Button key="+shot" label="+ Shooting" onPress={() => addItem("bb_shot")} />);
-      rowBtns.push(<Button key="+drill" label="+ Drill" onPress={() => addItem("sc_drill")} />);
-    } else if (m === "football") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-      rowBtns.push(<Button key="+drill" label="+ Drill" onPress={() => addItem("fb_drill")} />);
-      rowBtns.push(<Button key="+spr" label="+ Sprints" onPress={() => addItem("fb_sprint")} />);
-    } else if (m === "soccer") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-      rowBtns.push(<Button key="+drill" label="+ Drill" onPress={() => addItem("sc_drill")} />);
-      rowBtns.push(<Button key="+shoot" label="+ Shooting" onPress={() => addItem("sc_shoot")} />);
-    } else if (m === "baseball") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-      rowBtns.push(<Button key="+hit" label="+ Hitting" onPress={() => addItem("bs_hit")} />);
-      rowBtns.push(<Button key="+field" label="+ Fielding" onPress={() => addItem("bs_field")} />);
-    } else if (m === "hockey") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-      rowBtns.push(<Button key="+drill" label="+ Drill" onPress={() => addItem("hk_drill")} />);
-      rowBtns.push(<Button key="+shoot" label="+ Shooting" onPress={() => addItem("hk_shoot")} />);
-    } else if (m === "tennis") {
-      rowBtns.push(<Button key="+ex" label="+ Exercise" onPress={() => addItem("exercise")} />);
-      rowBtns.push(<Button key="+drill" label="+ Drill" onPress={() => addItem("tn_drill")} />);
-      rowBtns.push(<Button key="+rally" label="+ Rally" onPress={() => addItem("tn_rally")} />);
-    }
-
-    // Don't render nameRow here - it's rendered outside Toolbar
-    return (
-      <View style={[styles.row, { marginTop: 8 }]}>{rowBtns}</View>
-    );
-  };
-
   if (!fontsReady) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.bg0, alignItems: "center", justifyContent: "center" }}>
@@ -833,6 +1032,7 @@ export default function WorkoutsScreen() {
   }
 
   return (
+    <>
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: "padding", android: undefined })}
       style={{ flex: 1 }}
@@ -913,197 +1113,95 @@ export default function WorkoutsScreen() {
           </View>
         </BlurView>
 
-        {/* Revolut-style action buttons with labels - animated */}
+        {/* Action buttons — user-defined presets. The first button opens the
+            preset builder; the rest are the user's saved presets. */}
         {isCreating && (
-          <Animated.View style={[styles.actionRow, actionButtonsAnimatedStyle]}>
-              {/* Exercise button */}
+          // Static wrapper holds the layout slot so the tutorial spotlight can
+          // measure the row's resting position regardless of the slide-in anim.
+          <View ref={presetRowRef} onLayout={measurePresetRow}>
+          <Animated.View style={actionButtonsAnimatedStyle}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.actionRow}
+            >
               <ActionButton
-                icon={<MaterialCommunityIcons name="dumbbell" size={20} color="#FFFFFF" />}
-                label="Exercise"
+                icon={<Ionicons name="add" size={22} color={theme.semantic.accent.solid} />}
+                label="Add Preset"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  addItem("exercise");
+                  router.push("/(tabs)/(home)/build-preset");
                 }}
+                variant="primary"
+                // During the tutorial's preset step, only a preset chip is tappable.
+                disabled={tutorialStep === "workouts_preset"}
               />
-
-              {/* Mode-specific buttons */}
-              {m === "basketball" && (
-                <>
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="target" size={20} color="#FFFFFF" />}
-                    label="Shooting"
+              {presets.map((preset) => {
+                const IconCmp = preset.iconSet === "ion" ? Ionicons : MaterialCommunityIcons;
+                const tokens = getPresetColorTokens(preset.color);
+                return (
+                  <PresetCircleButton
+                    key={preset.id}
+                    icon={<IconCmp name={preset.iconName as any} size={20} color={tokens.solid} />}
+                    label={preset.name}
+                    tint={{ backgroundColor: tokens.subtle, borderColor: tokens.border }}
+                    revealed={revealedPresetId === preset.id}
+                    onRequestReveal={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setRevealedPresetId(preset.id);
+                    }}
+                    onRequestHide={() => setRevealedPresetId(null)}
+                    onDelete={() => confirmDeletePreset(preset)}
+                    // Don't let the delete gesture interrupt the tutorial step
+                    // whose whole job is getting the user to tap a preset.
+                    deleteDisabled={tutorialStep === "workouts_preset"}
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("bb_shot");
+                      addItemFromPreset(preset);
+                      // Tutorial: adding an exercise box advances to the box step.
+                      if (tutorialStep === "workouts_preset") {
+                        setTutorialStep("workouts_exercise_box");
+                      }
                     }}
                   />
-                  <ActionButton
-                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
-                    label="Drill"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("sc_drill");
-                    }}
-                  />
-                </>
-              )}
-              
-              {m === "football" && (
-                <>
-                  <ActionButton
-                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
-                    label="Drill"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("fb_drill");
-                    }}
-                  />
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="run-fast" size={20} color="#FFFFFF" />}
-                    label="Sprints"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("fb_sprint");
-                    }}
-                  />
-                </>
-              )}
-
-              {m === "soccer" && (
-                <>
-                  <ActionButton
-                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
-                    label="Drill"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("sc_drill");
-                    }}
-                  />
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="target" size={20} color="#FFFFFF" />}
-                    label="Shooting"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("sc_shoot");
-                    }}
-                  />
-                </>
-              )}
-
-              {m === "baseball" && (
-                <>
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="baseball-bat" size={20} color="#FFFFFF" />}
-                    label="Hitting"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("bs_hit");
-                    }}
-                  />
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="baseball" size={20} color="#FFFFFF" />}
-                    label="Fielding"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("bs_field");
-                    }}
-                  />
-                </>
-              )}
-
-              {m === "hockey" && (
-                <>
-                  <ActionButton
-                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
-                    label="Drill"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("hk_drill");
-                    }}
-                  />
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="target" size={20} color="#FFFFFF" />}
-                    label="Shooting"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("hk_shoot");
-                    }}
-                  />
-                </>
-              )}
-
-              {m === "tennis" && (
-                <>
-                  <ActionButton
-                    icon={<Ionicons name="time-outline" size={20} color="#FFFFFF" />}
-                    label="Drill"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("tn_drill");
-                    }}
-                  />
-                  <ActionButton
-                    icon={<MaterialCommunityIcons name="grid" size={20} color="#FFFFFF" />}
-                    label="Rally"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      addItem("tn_rally");
-                    }}
-                  />
-                </>
-              )}
-
-              {/* Finish Workout button */}
+                );
+              })}
               <ActionButton
-                icon={<MaterialCommunityIcons name="hexagon" size={20} color="#FFFFFF" />}
+                icon={<Ionicons name="checkmark" size={22} color="#FFFFFF" />}
                 label="Finish"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   saveWorkout();
                 }}
                 variant="finish"
-                disabled={saving}
+                disabled={saving || tutorialStep === "workouts_preset"}
               />
+            </ScrollView>
           </Animated.View>
+          </View>
         )}
 
         {/* Empty state with circles and hero button */}
         {!isCreating && (
           <View style={styles.emptyStateContainer}>
-            {/* Mascot star */}
-            <View style={styles.mascotCircles}>
-              <Image 
-                source={require("../../assets/star.png")} 
-                style={styles.starImage}
-                resizeMode="contain"
-              />
-            </View>
-            
-            {/* Hero button */}
             <AnimatedPressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                // Reset scale before state change to ensure animation works next time
                 startWorkoutScale.value = 1;
                 setIsCreating(true);
                 setWorkoutName("");
               }}
               onPressIn={() => {
-                startWorkoutScale.value = withSpring(0.88, { damping: 8, stiffness: 100 });
+                startWorkoutScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
               }}
               onPressOut={() => {
-                startWorkoutScale.value = withSpring(1, { damping: 8, stiffness: 100 });
+                startWorkoutScale.value = withSpring(1, { damping: 15, stiffness: 300 });
               }}
-              style={[styles.startWorkoutButton, startWorkoutAnimatedStyle]}
+              style={[styles.startWorkoutPressable, startWorkoutAnimatedStyle]}
             >
-              <LinearGradient
-                colors={[theme.colors.primary600, theme.colors.primary500]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.startWorkoutGradient}
-              >
-                <Text style={styles.startWorkoutText}>Start Workout</Text>
-              </LinearGradient>
+              <PremiumShimmerCTASurface style={styles.startWorkoutPremiumSurface}>
+                <Text style={styles.startWorkoutPremiumText}>Start Workout</Text>
+              </PremiumShimmerCTASurface>
             </AnimatedPressable>
           </View>
         )}
@@ -1124,17 +1222,67 @@ export default function WorkoutsScreen() {
               <FullWidthCard
                 key={item.id}
                 item={item}
+                presets={presets}
                 onRemove={() => removeItem(item.id)}
                 onName={(v) => updateName(item.id, v)}
                 onAddSet={() => addSet(item.id)}
-                onChange={(setIdx, key, v) => updateSet(item.id, setIdx, key, v)}
                 onRemoveSet={(setIdx) => removeSet(item.id, setIdx)}
+                onEditSet={(setIdx) =>
+                  setEditingSet({
+                    itemId: item.id,
+                    setIdx,
+                    fields: fieldsForItem(item).map((f) =>
+                      f.key === "weight"
+                        ? { ...f, label: `Weight (${unitsWeight === "kg" ? "kg" : "lb"})` }
+                        : f,
+                    ),
+                    contextLabel: item.name?.trim() || getTypeLabel(item.kind),
+                    initialSet: { ...item.sets[setIdx] },
+                  })
+                }
+                // Report the box's position so the tutorial overlay can spotlight it.
+                // ONLY wired during the tutorial steps that need it — otherwise the
+                // card's onLayout → measureInWindow → setCardRect chain fires on
+                // every frame of the keyboard's show animation, re-rendering the
+                // whole screen mid-presentation and knocking the set-editor input
+                // out of focus (the "keyboard flashes then disappears" bug).
+                onMeasure={
+                  tutorialStep === "workouts_exercise_box" ||
+                  tutorialStep === "workouts_progress_tab"
+                    ? setCardRect
+                    : undefined
+                }
+                // Lock the remove (x) button while the tutorial is teaching the box.
+                disableRemove={
+                  tutorialStep === "workouts_exercise_box" ||
+                  tutorialStep === "workouts_progress_tab"
+                }
               />
             ))}
           </ScrollView>
         )}
       </View>
     </KeyboardAvoidingView>
+
+    {/* Set editor — hoisted OUT of the KeyboardAvoidingView/ScrollView, and fed
+        entirely from captured state so it stays mounted through any list churn. */}
+    {editingSet && (
+      <SetEditorBottomSheet
+        key={`${editingSet.itemId}:${editingSet.setIdx}`}
+        set={editingSet.initialSet}
+        fields={editingSet.fields}
+        contextLabel={editingSet.contextLabel}
+        setNumber={editingSet.setIdx + 1}
+        onSave={(updatedSet) => {
+          editingSet.fields.forEach((f) =>
+            updateSet(editingSet.itemId, editingSet.setIdx, f.key, updatedSet[f.key] || ""),
+          );
+          setEditingSet(null);
+        }}
+        onClose={() => setEditingSet(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -1145,12 +1293,16 @@ function ActionButton({
   onPress,
   variant = "default",
   disabled = false,
+  tint,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
-  variant?: "default" | "finish";
+  variant?: "default" | "primary" | "finish";
   disabled?: boolean;
+  /** Optional tint overrides for the default-variant background + border —
+   *  used by preset chips to show the user's chosen preset color. */
+  tint?: { backgroundColor: string; borderColor: string };
 }) {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
@@ -1181,7 +1333,14 @@ function ActionButton({
       <Animated.View
         style={[
           styles.actionButton,
+          variant === "primary" && styles.actionButtonPrimary,
           variant === "finish" && styles.actionButtonFinish,
+          // Tint overrides come last so preset chips win over the default fill.
+          variant === "default" && tint && {
+            backgroundColor: tint.backgroundColor,
+            borderColor: tint.borderColor,
+            borderWidth: 1.5,
+          },
           animatedStyle,
         ]}
       >
@@ -1196,53 +1355,85 @@ function ActionButton({
   );
 }
 
+/* Maps an item kind to its human-readable type label. Module-level so both the
+   card and the screen-level set editor can resolve a fallback context label. */
+function getTypeLabel(kind: ItemKind): string {
+  if (kind === "preset") return "Preset";
+  if (kind === "exercise") return "Exercise";
+  if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") return "Shooting";
+  if (kind === "fb_sprint") return "Sprints";
+  if (kind === "bs_hit") return "Hitting";
+  if (kind === "bs_field") return "Fielding";
+  if (kind === "tn_rally") return "Rally";
+  if (kind.endsWith("_drill")) return "Drill";
+  return "Exercise";
+}
+
 /* ================= Card (square) ================= */
 function FullWidthCard({
   item,
+  presets,
   onRemove,
   onName,
   onAddSet,
-  onChange,
   onRemoveSet,
+  onEditSet,
+  onMeasure,
+  disableRemove,
 }: {
   item: AnyItem;
+  /** Full preset list — used to resolve the preset color for the header
+   *  gradient when item.kind === 'preset'. Lookup by presetId. */
+  presets: ExercisePreset[];
   onRemove: () => void;
   onName: (v: string) => void;
   onAddSet: () => void;
-  onChange: (setIdx: number, key: string, value: string) => void;
   onRemoveSet: (setIdx: number) => void;
+  /** Opens the screen-level set editor for the given set index. */
+  onEditSet: (setIdx: number) => void;
+  /** Reports this card's window-space rect (used by the tutorial spotlight). */
+  onMeasure?: (rect: Rect) => void;
+  /** When true, the card's remove (x) button is inert — used during the tutorial
+   *  so the user can't delete the exercise box they're being taught about. */
+  disableRemove?: boolean;
 }) {
   const { unitsWeight } = useSettings();
-  const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
+  const cardWrapRef = useRef<View>(null);
+  const reportMeasure = useCallback(() => {
+    if (!onMeasure) return;
+    cardWrapRef.current?.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) onMeasure({ x, y, width, height });
+    });
+  }, [onMeasure]);
   // Store refs for each Swipeable component (one per set)
   const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
   
-  const fields = FIELD_SETS[item.kind].map(f => {
-    // Update weight label based on user preference
+  const fields = fieldsForItem(item).map(f => {
+    // Update weight label based on user preference (legacy 'exercise' kind only).
     if (f.key === 'weight') {
       return { ...f, label: `Weight (${unitsWeight === 'kg' ? 'kg' : 'lb'})` };
     }
     return f;
   });
 
-  // Get the type label (Exercise, Shooting, Drill, Sprints, Hitting, Fielding, Rally)
-  const getTypeLabel = (kind: ItemKind): string => {
-    if (kind === "exercise") return "Exercise";
-    if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") return "Shooting";
-    if (kind === "fb_sprint") return "Sprints";
-    if (kind === "bs_hit") return "Hitting";
-    if (kind === "bs_field") return "Fielding";
-    if (kind === "tn_rally") return "Rally";
-    if (kind.endsWith("_drill")) return "Drill";
-    return "Exercise";
-  };
-
-  const typeLabel = getTypeLabel(item.kind);
+  // Resolve preset color from the presets list (when this is a preset-kind
+  // item). Falls back to undefined for legacy kinds, which still pick a color
+  // from getHeaderGradientColors below.
+  const linkedPreset = useMemo(
+    () => (item.kind === "preset" && item.presetId
+      ? presets.find(p => p.id === item.presetId)
+      : undefined),
+    [item.kind, item.presetId, presets],
+  );
 
   // Get gradient colors based on exercise type
   const getHeaderGradientColors = (kind: ItemKind): string[] => {
-    if (kind === "exercise") {
-      // Blue for exercises
+    if (kind === "preset") {
+      // User-chosen color from the preset. If we can't find the preset (e.g.
+      // it was deleted), fall back to the default green wash.
+      return getPresetHeaderGradient(linkedPreset?.color);
+    } else if (kind === "exercise") {
+      // Legacy 'exercise' kind keeps blue for back-compat.
       return ["rgba(90, 166, 255, 0.3)", "rgba(90, 166, 255, 0.1)", "transparent"];
     } else if (kind === "bb_shot" || kind === "sc_shoot" || kind === "hk_shoot") {
       // Light green for shooting
@@ -1288,6 +1479,7 @@ function FullWidthCard({
 
   return (
     <>
+      <View ref={cardWrapRef} onLayout={reportMeasure} collapsable={false}>
       <Animated.View style={[styles.card, cardAnimatedStyle]}>
         {/* Top strip header with gradient accent */}
         <LinearGradient
@@ -1300,7 +1492,7 @@ function FullWidthCard({
             <TextInput
               value={item.name}
               onChangeText={onName}
-              placeholder={typeLabel}
+              placeholder="Name"
               placeholderTextColor="rgba(255, 255, 255, 0.6)"
               style={styles.cardHeaderText}
             />
@@ -1318,10 +1510,12 @@ function FullWidthCard({
             </Pressable>
             <Pressable
               onPress={() => {
+                if (disableRemove) return;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onRemove();
               }}
-              style={styles.cardActionButton}
+              disabled={disableRemove}
+              style={[styles.cardActionButton, disableRemove && { opacity: 0.3 }]}
               hitSlop={8}
             >
               <Ionicons name="close" size={18} color="rgba(255, 255, 255, 0.9)" />
@@ -1369,39 +1563,61 @@ function FullWidthCard({
                 <Pressable
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setEditingSetIndex(idx);
+                    onEditSet(idx);
                   }}
                   style={({ pressed }) => [
                     styles.setRow,
-                    pressed && { opacity: 0.7 },
+                    pressed && styles.setRowPressed,
                   ]}
                 >
-                  <View style={styles.setRowContent}>
-                    <Text style={styles.setRowLabel}>Set {idx + 1}</Text>
-                    <Text style={styles.setRowValue}>{formatSetDisplay(s)}</Text>
+                  {/* Numbered set badge — matches the preset stat-index visual language */}
+                  <View style={styles.setBadge}>
+                    <Text style={styles.setBadgeText}>{idx + 1}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.4)" />
+
+                  {/* Content area — either an empty-state affordance or filled stat chips */}
+                  {(() => {
+                    const filled = fields.filter(f => (s[f.key] ?? "").trim().length > 0);
+                    if (filled.length === 0) {
+                      return (
+                        <View style={styles.setRowContent}>
+                          <Text style={styles.setEmptyText}>Tap to log set</Text>
+                          <Text style={styles.setEmptyHint} numberOfLines={1}>
+                            {fields.map(f => f.label).join(" · ")}
+                          </Text>
+                        </View>
+                      );
+                    }
+                    return (
+                      <View style={styles.setChipRow}>
+                        {filled.map(f => (
+                          <View key={f.key} style={styles.setChip}>
+                            <Text style={styles.setChipLabel}>{f.label}</Text>
+                            <Text style={styles.setChipValue}>{s[f.key]}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })()}
+
+                  {/* Right affordance: plus when empty (invitation), chevron when filled (edit) */}
+                  {(() => {
+                    const hasAny = fields.some(f => (s[f.key] ?? "").trim().length > 0);
+                    return hasAny ? (
+                      <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.35)" />
+                    ) : (
+                      <View style={styles.setAddPill}>
+                        <Ionicons name="add" size={14} color="#22C55E" />
+                      </View>
+                    );
+                  })()}
                 </Pressable>
               </Swipeable>
             );
           })}
         </View>
       </Animated.View>
-
-      {/* Bottom sheet for editing set */}
-      {editingSetIndex !== null && (
-        <SetEditorBottomSheet
-          set={item.sets[editingSetIndex]}
-          fields={fields}
-          onSave={(updatedSet) => {
-            fields.forEach(f => {
-              onChange(editingSetIndex, f.key, updatedSet[f.key] || "");
-            });
-            setEditingSetIndex(null);
-          }}
-          onClose={() => setEditingSetIndex(null)}
-        />
-      )}
+      </View>
     </>
   );
 }
@@ -1410,96 +1626,110 @@ function FullWidthCard({
 function SetEditorBottomSheet({
   set,
   fields,
+  contextLabel,
+  setNumber,
   onSave,
   onClose,
 }: {
   set: SetRecord;
   fields: { key: string; label: string; numeric?: boolean }[];
+  contextLabel: string;
+  setNumber: number;
   onSave: (updatedSet: SetRecord) => void;
   onClose: () => void;
 }) {
   const [localSet, setLocalSet] = useState<SetRecord>({ ...set });
   const insets = useSafeAreaInsets();
-  const sheetY = useSharedValue(600);
 
-  useEffect(() => {
-    sheetY.value = withSpring(0, { damping: 25, stiffness: 100 });
-  }, []);
+  // Has-content flag drives the Save button state. Empty sets can still be
+  // saved, but a subtle accent dim hints "you haven't typed anything."
+  const hasAnyValue = fields.some(f => (localSet[f.key] ?? "").trim().length > 0);
 
-  const sheetAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheetY.value }],
-  }));
-
-  const handleSave = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    sheetY.value = withTiming(600, { duration: 200 }, (finished) => {
-      if (finished) {
-        runOnJS(onSave)(localSet);
-      }
-    });
-  };
-
-  const handleClose = () => {
-    sheetY.value = withTiming(600, { duration: 200 }, (finished) => {
-      if (finished) {
-        runOnJS(onClose)();
-      }
-    });
-  };
-
+  // Deliberately minimal: native Modal slide animation + native
+  // KeyboardAvoidingView, with NO reanimated transforms and NO manual keyboard
+  // listeners. On the New Architecture, animating a Modal's content position
+  // while one of its TextInputs is focused resigns the input's first responder
+  // mid-animation — that was the "keyboard flashes open then immediately closes"
+  // bug. A plain, static sheet that the OS keyboard simply pushes up keeps focus.
   return (
-    <Modal visible={true} transparent animationType="none" onRequestClose={handleClose}>
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.bottomSheetOverlay}
       >
-        <View style={styles.bottomSheetOverlay}>
-          <Pressable style={styles.bottomSheetBackdrop} onPress={handleClose} />
-          <Animated.View style={[styles.bottomSheet, sheetAnimatedStyle]}>
-            <View style={styles.bottomSheetHandle} />
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Edit Set</Text>
-              <Pressable onPress={handleClose}>
-                <Ionicons name="close" size={24} color={theme.colors.textHi} />
-              </Pressable>
+        {/* Backdrop sits BEHIND the sheet as a sibling — tapping it dismisses,
+            taps inside the sheet never reach it. */}
+        <Pressable style={styles.bottomSheetBackdrop} onPress={onClose} />
+
+        <View style={styles.bottomSheet}>
+          <View style={styles.bottomSheetHandle} />
+
+          {/* Context kicker + title row. */}
+          <View style={styles.bottomSheetHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bottomSheetKicker} numberOfLines={1}>
+                {contextLabel.toUpperCase()} <Text style={styles.bottomSheetKickerDim}>· SET {setNumber}</Text>
+              </Text>
+              <Text style={styles.bottomSheetTitle}>Edit set</Text>
             </View>
-            
-            <ScrollView
-              style={styles.bottomSheetScrollView}
-              contentContainerStyle={styles.bottomSheetContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled={true}
-            >
-              {fields.length > 0 ? (
-                fields.map((f) => (
+            <Pressable onPress={onClose} hitSlop={12} style={styles.bottomSheetCloseBtn}>
+              <Ionicons name="close" size={18} color="rgba(255,255,255,0.85)" />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={styles.bottomSheetScrollView}
+            contentContainerStyle={styles.bottomSheetContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {fields.length > 0 ? (
+              fields.map((f) => {
+                const value = localSet[f.key] ?? "";
+                return (
                   <View key={f.key} style={styles.bottomSheetField}>
                     <Text style={styles.bottomSheetFieldLabel}>{f.label}</Text>
-                    <TextInput
-                      value={localSet[f.key] ?? ""}
-                      onChangeText={(t) => {
-                        setLocalSet({ ...localSet, [f.key]: f.numeric ? t.replace(/[^\d.]/g, "") : t });
-                      }}
-                      placeholder={`Enter ${f.label.toLowerCase()}`}
-                      placeholderTextColor={theme.colors.textLo}
-                      keyboardType={f.numeric ? "numeric" : "default"}
-                      style={styles.bottomSheetInput}
-                    />
+                    <View style={styles.bottomSheetInputWrap}>
+                      <TextInput
+                        value={value}
+                        onChangeText={(t) =>
+                          setLocalSet((cur) => ({
+                            ...cur,
+                            [f.key]: f.numeric ? t.replace(/[^\d.]/g, "") : t,
+                          }))
+                        }
+                        placeholder="0"
+                        placeholderTextColor="rgba(255,255,255,0.22)"
+                        keyboardType={f.numeric ? "numeric" : "default"}
+                        style={styles.bottomSheetInput}
+                        selectionColor="#22C55E"
+                      />
+                    </View>
                   </View>
-                ))
-              ) : (
-                <Text style={{ color: theme.colors.textLo, textAlign: "center", padding: 20 }}>
-                  No fields available
-                </Text>
-              )}
-            </ScrollView>
+                );
+              })
+            ) : (
+              <Text style={{ color: theme.colors.textLo, textAlign: "center", padding: 20 }}>
+                No fields available
+              </Text>
+            )}
+          </ScrollView>
 
-            <View style={[styles.bottomSheetFooter, { paddingBottom: insets.bottom }]}>
-              <Pressable onPress={handleSave} style={styles.bottomSheetSaveButton}>
-                <Text style={styles.bottomSheetSaveText}>Save</Text>
-              </Pressable>
-            </View>
-          </Animated.View>
+          <View style={[styles.bottomSheetFooter, { paddingBottom: insets.bottom + 8 }]}>
+            <Pressable
+              onPress={() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                onSave(localSet);
+              }}
+              style={[
+                styles.bottomSheetSaveButton,
+                !hasAnyValue && styles.bottomSheetSaveButtonDim,
+              ]}
+            >
+              <Text style={styles.bottomSheetSaveText}>Save set</Text>
+              <Ionicons name="checkmark" size={18} color="#06090C" />
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -1607,9 +1837,23 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  actionButtonPrimary: {
+    backgroundColor: theme.semantic.accent.subtle,
+    borderColor: theme.semantic.accent.solid,
+    borderWidth: 1.5,
+    shadowColor: theme.semantic.accent.solid,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
   actionButtonFinish: {
-    backgroundColor: "rgba(255, 90, 90, 0.25)",
-    borderColor: "rgba(255, 90, 90, 0.3)",
+    backgroundColor: theme.semantic.accent.solid,
+    borderColor: theme.semantic.accent.solid,
+    borderWidth: 0,
+    shadowColor: theme.semantic.accent.solid,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
   },
   actionLabel: {
     color: "rgba(255, 255, 255, 0.8)",
@@ -1619,58 +1863,36 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  /* Empty state */
+  /* Empty state — CTA matches Settings Upgrade / Progress AI Trainer */
   emptyStateContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: theme.layout.xl,
-    paddingTop: 60,
   },
-  mascotCircles: {
-    width: 262,
-    height: 262,
+  startWorkoutPressable: {
+    width: "100%",
+    maxWidth: 268,
+    alignSelf: "center",
     alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    marginBottom: -32,
-    marginTop: -176,
   },
-  starImage: {
-    width: 262,
-    height: 262,
+  startWorkoutPremiumSurface: {
+    width: "100%",
+    maxWidth: 228,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
   },
-  startWorkoutButton: {
-    borderRadius: 20,
-    overflow: "hidden",
-    marginTop: -4,
-    ...Platform.select({
-      ios: {
-        shadowColor: theme.colors.primary600,
-        shadowOpacity: 0.4,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 10 },
-      },
-      android: {
-        elevation: 12,
-      },
-    }),
-  },
-  startWorkoutButtonPressed: {
-    opacity: 0.9,
-  },
-  startWorkoutGradient: {
-    paddingVertical: 18,
-    paddingHorizontal: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  startWorkoutText: {
-    color: "#052d1b",
-    fontSize: 18,
-    fontFamily: "Geist_700Bold",
-    fontWeight: "700",
-    letterSpacing: 0.5,
+  startWorkoutPremiumText: {
+    color: "#000000",
+    fontSize: 17,
+    fontFamily: "Geist_600SemiBold",
+    fontWeight: "600",
+    letterSpacing: 0.15,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.25)",
+    textShadowOffset: { width: 0, height: 1.2 },
+    textShadowRadius: 2.5,
   },
   nameInputContainer: {
     marginTop: 26,
@@ -1729,33 +1951,101 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  /* Sets list */
+  /* Sets list — flat rows inside the parent exercise card.
+     No per-row box (the card is already a box). Hairline divider between rows
+     keeps separation. */
   setsListContainer: {
-    padding: 16,
-    gap: 0,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   setRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(255, 255, 255, 0.06)",
   },
+  setRowPressed: {
+    opacity: 0.6,
+  },
+  setBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(34, 197, 94, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.32)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  setBadgeText: {
+    color: "#22C55E",
+    fontSize: 12,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   setRowContent: {
     flex: 1,
-    gap: 4,
+    minWidth: 0,
+    gap: 2,
   },
-  setRowLabel: {
-    color: "rgba(255, 255, 255, 0.5)",
-    fontSize: 12,
-    fontFamily: "Geist_500Medium",
-  },
-  setRowValue: {
-    color: theme.colors.textHi,
-    fontSize: 15,
+  // Empty: "Tap to log set" reads as accent-tinted to invite action (Fitts's
+  // affordance) with the field labels as a single hint line below.
+  setEmptyText: {
+    color: "rgba(34, 197, 94, 0.92)",
+    fontSize: 14,
     fontFamily: "Geist_600SemiBold",
+    fontWeight: "600",
+    letterSpacing: -0.1,
+  },
+  setEmptyHint: {
+    color: "rgba(255, 255, 255, 0.36)",
+    fontSize: 11,
+    fontFamily: "Geist_500Medium",
+    letterSpacing: 0.1,
+  },
+  // Filled: render each field as a label/value pair so users can see the
+  // structure (Whoop-style "stat label above number").
+  setChipRow: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+    minWidth: 0,
+  },
+  setChip: {
+    minWidth: 0,
+  },
+  setChipLabel: {
+    color: "rgba(255, 255, 255, 0.42)",
+    fontSize: 10,
+    fontFamily: "Geist_600SemiBold",
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 1,
+  },
+  setChipValue: {
+    color: "rgba(255, 255, 255, 0.96)",
+    fontSize: 15,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.2,
+  },
+  setAddPill: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(34, 197, 94, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.32)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   swipeDeleteContainer: {
     flex: 1,
@@ -1773,98 +2063,159 @@ const styles = StyleSheet.create({
   },
 
   /* Bottom sheet */
+  /* Edit-set sheet — premium redesign.
+     Kicker line tells the user WHICH set; refined inputs have focused-state
+     accent borders; Save button is the same accent green pill used across the
+     redesign (instead of the chunky bright primary600). */
   bottomSheetOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
   bottomSheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
   },
   bottomSheet: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: "#11171F",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingTop: 12,
+    paddingTop: 10,
     paddingHorizontal: 20,
     maxHeight: "85%",
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.45,
+        shadowRadius: 30,
+        shadowOffset: { width: 0, height: -10 },
       },
-      android: {
-        elevation: 20,
-      },
+      android: { elevation: 24 },
     }),
   },
   bottomSheetScrollView: {
-    maxHeight: 400,
+    maxHeight: 420,
   },
   bottomSheetFooter: {
-    paddingTop: 16,
+    paddingTop: 14,
     paddingHorizontal: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
   },
   bottomSheetHandle: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 18,
   },
   bottomSheetHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 20,
+    gap: 12,
   },
-  bottomSheetTitle: {
-    color: theme.colors.textHi,
-    fontSize: 22,
+  bottomSheetKicker: {
+    fontSize: 10,
     fontFamily: "Geist_700Bold",
     fontWeight: "700",
+    color: "#22C55E",
+    letterSpacing: 1.4,
+    marginBottom: 4,
+  },
+  bottomSheetKickerDim: {
+    color: "rgba(34,197,94,0.55)",
+    fontWeight: "600",
+  },
+  bottomSheetTitle: {
+    color: "rgba(255,255,255,0.96)",
+    fontSize: 24,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+    letterSpacing: -0.5,
+  },
+  bottomSheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   bottomSheetContent: {
-    gap: 20,
-    paddingBottom: 24,
-    paddingTop: 8,
+    gap: 16,
+    paddingBottom: 20,
+    paddingTop: 4,
   },
   bottomSheetField: {
     gap: 8,
   },
+  // Field label is now an UPPERCASE kicker, dimmed when unfocused, accent
+  // when the input is focused — gives a "selected channel" cue.
   bottomSheetFieldLabel: {
-    color: theme.colors.textLo,
-    fontSize: 13,
-    fontFamily: "Geist_500Medium",
+    color: "rgba(255,255,255,0.42)",
+    fontSize: 11,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    paddingHorizontal: 2,
   },
-  bottomSheetInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+  bottomSheetFieldLabelFocused: {
+    color: "#22C55E",
+  },
+  // The input is now wrapped in a styled View so we can animate the border
+  // independently. Larger numeric-feel typography and accent focus border.
+  bottomSheetInputWrap: {
+    backgroundColor: "rgba(255, 255, 255, 0.035)",
     borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    color: theme.colors.textHi,
-    fontSize: 16,
-    fontFamily: "Geist_500Medium",
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
   },
+  bottomSheetInputWrapFocused: {
+    backgroundColor: "rgba(34, 197, 94, 0.05)",
+    borderColor: "#22C55E",
+    shadowColor: "#22C55E",
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  bottomSheetInput: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    color: "rgba(255,255,255,0.96)",
+    fontSize: 20,
+    fontFamily: "Geist_700Bold",
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.3,
+  },
   bottomSheetSaveButton: {
-    backgroundColor: theme.colors.primary600,
-    borderRadius: 16,
-    paddingVertical: 16,
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#22C55E",
+    borderRadius: 16,
+    height: 52,
+    shadowColor: "#22C55E",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.40,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  bottomSheetSaveButtonDim: {
+    opacity: 0.45,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   bottomSheetSaveText: {
-    color: "#052d1b",
+    color: "#06090C",
     fontSize: 16,
     fontFamily: "Geist_700Bold",
     fontWeight: "700",
+    letterSpacing: -0.1,
   },
 });
 

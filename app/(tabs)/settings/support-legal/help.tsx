@@ -54,7 +54,7 @@ export default function Help() {
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <Text style={styles.introText}>
-          Welcome to Potentijal.
+          Welcome to AthleteCraft.
         </Text>
         <Text style={styles.contentText}>
           This guide explains how the app works, why things behave the way they do, and how to get the most out of your training data.
@@ -65,17 +65,17 @@ export default function Help() {
 
         <Text style={styles.sectionTitle}>Getting Started</Text>
 
-        <Text style={styles.subsectionTitle}>What is Potentijal?</Text>
+        <Text style={styles.subsectionTitle}>What is AthleteCraft?</Text>
         <Text style={styles.contentText}>
-          Potentijal is a multi-sport athlete development app designed to help athletes see, measure, and trust their progress.
+          AthleteCraft is a multi-sport athlete development app designed to help athletes see, measure, and trust their progress.
         </Text>
         <Text style={styles.contentText}>
-          Progress in sports often feels invisible. Potentijal turns your training, games, and practices into structured data and visual trends so you can see whether your work is paying off and what to adjust next.
+          Progress in sports often feels invisible. AthleteCraft turns your training, games, and practices into structured data and visual trends so you can see whether your work is paying off and what to adjust next.
         </Text>
 
         <Text style={styles.subsectionTitle}>How sport modes work</Text>
         <Text style={styles.contentText}>
-          When you sign up, you choose up to two sport modes (more are available with Premium).
+          When you sign up, you choose up to two sport modes (more are available with Pro).
         </Text>
         <Text style={styles.contentText}>Each sport mode:</Text>
         <Text style={styles.bulletPoint}>• Has its own Home tab</Text>
@@ -133,26 +133,25 @@ export default function Help() {
 
         <Text style={styles.subsectionTitle}>What the Progress tab includes</Text>
         <Text style={styles.contentText}>
-          The Progress tab gives you four ways to view your training data:
+          The Progress tab gives you three ways to view your training data:
         </Text>
         <Text style={styles.bulletPoint}>• Progress Graph — View performance trends over time. Select your sport mode, choose a view type, then search for an exercise. The graph shows averages over time so you can see trends. (Available to all users.)</Text>
-        <Text style={styles.bulletPoint}>• Skill Map — Visualize skills or metrics across your sport. (Premium.)</Text>
-        <Text style={styles.bulletPoint}>• Consistency Score — See how consistent your training has been. (Premium.)</Text>
-        <Text style={styles.bulletPoint}>• Training Stats — Dive into detailed training statistics and summaries. (Premium.)</Text>
+        <Text style={styles.bulletPoint}>• Consistency Score — See how consistent your training has been. (Pro.)</Text>
+        <Text style={styles.bulletPoint}>• Training Stats — Dive into detailed training statistics and summaries. (Pro.)</Text>
         <Text style={styles.contentText}>
           All of these use the workout and performance data you log. Data is separated by sport mode, so each view only uses data from the mode you select.
         </Text>
 
         <Text style={styles.subsectionTitle}>Why a graph or view might look empty</Text>
         <Text style={styles.contentText}>
-          Usually because you haven't logged that exercise or metric in the selected time range, or you're in the wrong sport mode. Try a longer time range, confirm you're in the correct sport mode, or search a different exercise name. Potentijal uses fuzzy matching (e.g., "Bench Press" and "bench press" connect), so small spelling differences are usually fine.
+          Usually because you haven't logged that exercise or metric in the selected time range, or you're in the wrong sport mode. Try a longer time range, confirm you're in the correct sport mode, or search a different exercise name. AthleteCraft uses fuzzy matching (e.g., "Bench Press" and "bench press" connect), so small spelling differences are usually fine.
         </Text>
 
         <Text style={styles.sectionTitle}>History Tab</Text>
 
         <Text style={styles.subsectionTitle}>What appears in History</Text>
         <Text style={styles.contentText}>
-          History stores workouts, practices (Premium), and games (Premium). You can search, filter by category, and view full details. Nothing in History can be edited — it's a record of what happened.
+          History stores workouts, practices (Pro), and games (Pro). You can search, filter by category, and view full details. Nothing in History can be edited — it's a record of what happened.
         </Text>
 
         <Text style={styles.subsectionTitle}>Streaks & totals</Text>
@@ -160,7 +159,7 @@ export default function Help() {
           Streaks are based on consecutive days with logged activity (and wins for game win streaks). Displayed numbers may be capped for clarity, but your data keeps tracking.
         </Text>
 
-        <Text style={styles.sectionTitle}>AI Trainer (Premium)</Text>
+        <Text style={styles.sectionTitle}>AI Trainer (Pro)</Text>
 
         <Text style={styles.subsectionTitle}>What the AI Trainer does</Text>
         <Text style={styles.contentText}>
@@ -181,15 +180,15 @@ export default function Help() {
           Always use judgment when applying suggestions.
         </Text>
 
-        <Text style={styles.sectionTitle}>Premium Features</Text>
+        <Text style={styles.sectionTitle}>Pro Features</Text>
 
         <Text style={styles.contentText}>
-          Premium (Potentijal Premium) unlocks: AI Trainer, game and practice logging, Skill Map, Consistency Score, Training Statistics, and expanded sport access. Locked features appear grayed out with a lock icon.
+          Pro (AthleteCraft Pro) unlocks: AI Trainer, game and practice logging, Consistency Score, Training Statistics, and expanded sport access. Locked features appear grayed out with a lock icon.
         </Text>
 
         <Text style={styles.subsectionTitle}>Subscriptions & billing</Text>
         <Text style={styles.contentText}>
-          Premium is purchased in the app via the App Store or Google Play. Subscriptions automatically renew at the end of each period (monthly or yearly) unless you cancel. You can manage or cancel in your device's App Store or Play Store subscription settings. To restore a purchase (e.g., after reinstall), use Settings → Restore Purchases.
+          Pro is purchased in the app via the App Store or Google Play. Subscriptions automatically renew at the end of each period (monthly or yearly) unless you cancel. You can manage or cancel in your device's App Store or Play Store subscription settings. To restore a purchase (e.g., after reinstall), use Settings → Restore Purchases.
         </Text>
 
         <Text style={styles.sectionTitle}>Account & Troubleshooting</Text>
@@ -216,7 +215,7 @@ export default function Help() {
 
         <Text style={styles.sectionTitle}>Final note</Text>
         <Text style={styles.contentText}>
-          Potentijal is built to grow with you.
+          AthleteCraft is built to grow with you.
         </Text>
         <Text style={styles.contentText}>
           The more consistently you log, the clearer your progress becomes.

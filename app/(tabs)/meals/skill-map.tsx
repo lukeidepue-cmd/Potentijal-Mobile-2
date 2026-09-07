@@ -1,26 +1,32 @@
 // app/(tabs)/meals/skill-map.tsx
 // Skill Map Screen
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Platform, Dimensions, Image } from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Platform, Dimensions, Image } from "react-native";
+import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withRepeat, withTiming, Easing, runOnJS } from "react-native-reanimated";
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withRepeat, withTiming, Easing } from "react-native-reanimated";
 import Svg, { G, Line as SvgLine, Path, Circle, Text as SvgText, Polygon } from "react-native-svg";
 import { theme } from "@/constants/theme";
-import { useMode } from "@/providers/ModeContext";
-import { useAvailableModes } from "@/hooks/useAvailableModes";
-import { getAvailableViewsForMode, getViewConfig, getCalculationTypeForView, ViewCalculationType } from "@/lib/api/progress-views";
-import { mapModeKeyToSportMode, SportMode } from "@/lib/types";
-import { TimeInterval, getTimeIntervalLabel, getAvailableTimeIntervals } from "@/lib/utils/time-intervals";
-import { useSkillMapData, SkillMapExerciseData } from "@/hooks/useSkillMapData";
-import { getAvailableExercisesForView, searchExercisesForView } from "@/lib/api/exercise-filtering";
+import { SportMode } from "@/lib/types";
+import { TimeInterval } from "@/lib/utils/time-intervals";
+// getViewConfig / getCalculationTypeForView are referenced by getMetricLabelAndUnit
+// (still used inside SkillMapVisualization). For user-defined views these return
+// null and the helper falls back to "{ label: viewName, unit: null }" — which
+// is the correct behavior since user views don't have a built-in unit.
+import { getViewConfig, getCalculationTypeForView, ViewCalculationType } from "@/lib/api/progress-views";
+import { SkillMapExerciseData } from "@/hooks/useSkillMapData";
+import {
+  listViews,
+  listPresetExerciseNames,
+  getViewExerciseComparison,
+  type ExerciseView,
+  type ViewExerciseValue,
+  type ViewDays,
+} from "@/lib/api/views";
 import { HelpOverlay } from "@/components/HelpOverlay";
-
-const MAX_EXERCISES = 6;
 
 // Screen dimensions for star positioning
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -701,286 +707,269 @@ function SkillMapVisualization({
 export default function SkillMapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentMode, modeLoading } = useMode();
-  const { availableModes } = useAvailableModes();
 
-  // State management - Default to null to show "Select Mode"
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
-  
-  // Update selectedMode when currentMode loads (user's primary sport)
-  // Wait for modeLoading to complete to ensure we get the correct primary sport
-  useEffect(() => {
-    if (!modeLoading && currentMode) {
-      setSelectedMode(currentMode);
-    }
-  }, [currentMode, modeLoading]);
-  const [selectedView, setSelectedView] = useState<string | null>(null);
-  const [selectedExercises, setSelectedExercises] = useState<string[]>([]);
+  // -------- State --------
+  const [views, setViews] = useState<ExerciseView[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [timeInterval, setTimeInterval] = useState<TimeInterval>(90);
-  const [exerciseSearchQuery, setExerciseSearchQuery] = useState("");
-  const [showModePicker, setShowModePicker] = useState(false);
-  const [showTimeIntervalPicker, setShowTimeIntervalPicker] = useState(false);
-  const [showExerciseSearch, setShowExerciseSearch] = useState(false);
-  const [isTouchingSearchResults, setIsTouchingSearchResults] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Get available views for selected mode
-  const sportMode = useMemo(() => 
-    selectedMode ? mapModeKeyToSportMode(selectedMode) : 'workout',
-    [selectedMode]
-  );
-  const availableViews = useMemo(() => 
-    getAvailableViewsForMode(sportMode),
-    [sportMode]
-  );
-
-  // Track previous mode and view to detect changes
-  const prevModeRef = useRef<string | null>(selectedMode);
-  const prevViewRef = useRef<string | null>(selectedView);
-
-  // Load first view when mode changes (only if mode is selected)
-  useEffect(() => {
-    if (selectedMode && availableViews.length > 0 && (!selectedView || !availableViews.find(v => v.name === selectedView))) {
-      setSelectedView(availableViews[0].name);
-      // Clear selected exercises when mode changes (exercise pool changes)
-      setSelectedExercises([]);
-      setShowExerciseSearch(false);
-    } else if (!selectedMode) {
-      // Clear view if no mode selected
-      setSelectedView(null);
-      setSelectedExercises([]);
-      setShowExerciseSearch(false);
-    }
-  }, [availableViews, selectedView, selectedMode]);
-
-  // Clear exercises when mode or view changes (since exercise pool changes)
-  useEffect(() => {
-    const modeChanged = prevModeRef.current !== selectedMode;
-    const viewChanged = prevViewRef.current !== selectedView && prevViewRef.current !== null;
-
-    if (modeChanged || viewChanged) {
-      setSelectedExercises([]);
-      setShowExerciseSearch(false);
-    }
-
-    prevModeRef.current = selectedMode;
-    prevViewRef.current = selectedView;
-  }, [selectedMode, selectedView]);
-  
-  // Clear exercises when mode is deselected
-  useEffect(() => {
-    if (!selectedMode) {
-      setSelectedExercises([]);
-      setSelectedView(null);
-      setShowExerciseSearch(false);
-    }
-  }, [selectedMode]);
-
-  // Load available exercises when view changes
+  // Exercise selection — the user picks up to 6 exercise names logged under the
+  // selected preset; the radar compares them against each other.
+  const MAX_EXERCISES = 6;
   const [availableExercises, setAvailableExercises] = useState<string[]>([]);
-  const [loadingExercises, setLoadingExercises] = useState(false);
+  const [exercisesLoading, setExercisesLoading] = useState(false);
+  const [selectedExercises, setSelectedExercises] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!selectedView || !selectedMode) {
-      setAvailableExercises([]);
-      return;
-    }
+  // Comparison data — one value per selected exercise (same formula/aggregation
+  // as the chosen view, grouped by exercise instead of by time bucket).
+  const [comparisonData, setComparisonData] = useState<ViewExerciseValue[]>([]);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
 
-    setLoadingExercises(true);
-    getAvailableExercisesForView(sportMode, selectedView, timeInterval)
-      .then(({ data, error }) => {
-        if (error) {
-          setAvailableExercises([]);
-        } else {
-          setAvailableExercises(data || []);
-        }
-        setLoadingExercises(false);
-      })
-      .catch(() => {
-        setAvailableExercises([]);
-        setLoadingExercises(false);
-      });
-  }, [sportMode, selectedView, timeInterval]);
-
-  // Filter exercises by search query
-  const filteredExercises = useMemo(() => {
-    if (!exerciseSearchQuery.trim()) {
-      return availableExercises;
-    }
-    return availableExercises.filter(ex => {
-      const nameLower = ex.toLowerCase();
-      const queryLower = exerciseSearchQuery.toLowerCase();
-      return nameLower.includes(queryLower) || queryLower.includes(nameLower);
-    });
-  }, [availableExercises, exerciseSearchQuery]);
-
-  // Connect to data hook
-  const { data: skillMapData, highestValue, loading: loadingData, error: dataError } = useSkillMapData({
-    mode: sportMode,
-    view: selectedView || '',
-    exercises: selectedExercises,
-    timeInterval,
-  });
-
-  // Spinning star animation for loading state
-  const starRotation = useSharedValue(0);
-  
-  useEffect(() => {
-    if (loadingData && selectedExercises.length > 0) {
-      starRotation.value = withRepeat(
-        withTiming(360, {
-          duration: 800,
-          easing: Easing.linear,
-        }),
-        -1,
-        false
-      );
-    } else {
-      starRotation.value = 0;
-    }
-  }, [loadingData, selectedExercises.length]);
-
-  const starAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${starRotation.value}deg` }],
-  }));
-
-  // Add exercise handler
-  const handleAddExercise = (exerciseName: string) => {
-    if (selectedExercises.length >= MAX_EXERCISES) {
-      // Already at max - this should be prevented by UI, but handle gracefully
-      return;
-    }
-    if (selectedExercises.includes(exerciseName)) {
-      // Already added - prevent duplicates
-      return;
-    }
-    setSelectedExercises([...selectedExercises, exerciseName]);
-    setExerciseSearchQuery("");
-    setShowExerciseSearch(false);
-  };
-
-  // Remove exercise handler
-  const handleRemoveExercise = (exerciseName: string) => {
-    setSelectedExercises(selectedExercises.filter(ex => ex !== exerciseName));
-  };
-
-  // Get mode label
-  const getModeLabel = (modeKey: string) => {
-    const mode = availableModes.find(m => m.key === modeKey);
-    return mode?.label || modeKey;
-  };
-
-  // Get mode icon (returns library and name)
-  const getModeIcon = (modeKey: string): { lib: 'ion' | 'mci'; name: string } => {
-    const iconMap: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
-      "lifting": { lib: 'mci', name: 'dumbbell' },
-      "basketball": { lib: 'ion', name: 'basketball-outline' },
-      "football": { lib: 'ion', name: 'american-football-outline' },
-      "baseball": { lib: 'mci', name: 'baseball' },
-      "soccer": { lib: 'ion', name: 'football-outline' },
-      "hockey": { lib: 'mci', name: 'hockey-sticks' },
-      "tennis": { lib: 'ion', name: 'tennisball-outline' },
-    };
-    return iconMap[modeKey] || { lib: 'mci', name: 'dumbbell' };
-  };
-
-  // Generate stars for background
+  // Stars background (kept from the original visual treatment)
   const [stars] = useState(() => generateStars(150));
 
-  // Animation for time interval selection marker
+  // -------- Time interval bar (animated marker) --------
   const timeIntervalOptions = [
-    { value: 30, label: '1M' },
-    { value: 90, label: '3M' },
-    { value: 180, label: '6M' },
-    { value: 360, label: '1Y' },
+    { value: 30, label: "1M" },
+    { value: 90, label: "3M" },
+    { value: 180, label: "6M" },
+    { value: 360, label: "1Y" },
   ];
   const selectedIndex = timeIntervalOptions.findIndex(opt => opt.value === timeInterval);
   const markerPosition = useSharedValue(selectedIndex >= 0 ? selectedIndex : 0);
   const barWidth = useSharedValue(0);
-  
-  // Update marker position when time interval changes
+
   useEffect(() => {
     const newIndex = timeIntervalOptions.findIndex(opt => opt.value === timeInterval);
     if (newIndex !== -1) {
-      markerPosition.value = withSpring(newIndex, {
-        damping: 40, // Increased damping for less bounce
-        stiffness: 200, // Increased stiffness for faster animation
-      });
+      markerPosition.value = withSpring(newIndex, { damping: 40, stiffness: 200 });
     }
   }, [timeInterval]);
 
-  // Calculate marker width and position using pixel values
   const markerAnimatedStyle = useAnimatedStyle(() => {
-    if (barWidth.value === 0) {
-      return { opacity: 0 };
-    }
-    // Bar has padding: 4, so subtract 8 (4 on each side)
+    if (barWidth.value === 0) return { opacity: 0 };
     const availableWidth = barWidth.value - 8;
     const optionWidth = availableWidth / timeIntervalOptions.length;
-    const leftPosition = markerPosition.value * optionWidth + 4; // Add left padding offset
+    const leftPosition = markerPosition.value * optionWidth + 4;
     return {
-      position: 'absolute',
+      position: "absolute" as const,
       left: leftPosition,
       width: optionWidth,
-      top: 4, // Match bar top padding
-      bottom: 4, // Match bar bottom padding
+      top: 4,
+      bottom: 4,
       opacity: 1,
     };
   });
 
+  // Bumped on every focus so dependent loaders (exercise names) re-run and pick
+  // up data logged since the last visit, without wiping the user's selections.
+  const [focusNonce, setFocusNonce] = useState(0);
+
+  // -------- Load views (refresh on focus so newly-built views show up) --------
+  // All views are shown together now — there's no preset picker. The selected
+  // view's own preset drives the exercise list (same model as the Progress Graph).
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true);
+    setFocusNonce(n => n + 1);
+    listViews().then((v) => {
+      if (!active) return;
+      if (v.data) setViews(v.data);
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, []));
+
+  // Keep selectedViewId valid as the views list changes; default to the first
+  // view so the screen shows something useful on first visit.
+  useEffect(() => {
+    if (views.length === 0) {
+      setSelectedViewId(null);
+    } else if (!views.find(v => v.id === selectedViewId)) {
+      setSelectedViewId(views[0].id);
+    }
+  }, [views, selectedViewId]);
+
+  const selectedView = useMemo(
+    () => views.find(v => v.id === selectedViewId) ?? null,
+    [views, selectedViewId],
+  );
+
+  // The preset is whatever the selected view belongs to — no separate picker.
+  const selectedPresetId = selectedView?.presetId ?? null;
+
+  // -------- Load the exercise names logged under the selected preset --------
+  // Re-runs when the preset changes AND on every screen focus (focusNonce), so
+  // exercises logged since the last visit show up. On a preset change we default
+  // to the first few names; on a focus refresh we keep the user's selection
+  // (pruned to names that still exist).
+  const selectionPresetRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedPresetId) {
+      setAvailableExercises([]);
+      setSelectedExercises([]);
+      selectionPresetRef.current = null;
+      return;
+    }
+    let active = true;
+    setExercisesLoading(true);
+    listPresetExerciseNames({ presetId: selectedPresetId }).then(({ data }) => {
+      if (!active) return;
+      const names = data || [];
+      const isNewPreset = selectionPresetRef.current !== selectedPresetId;
+      selectionPresetRef.current = selectedPresetId;
+      setAvailableExercises(names);
+      setSelectedExercises(prev => {
+        // New preset → start blank; the user chooses which exercises to map.
+        if (isNewPreset) return [];
+        // Focus refresh → keep what the user picked, dropping anything that no
+        // longer exists. Stay blank if nothing was selected.
+        return prev.filter(n => names.includes(n));
+      });
+      setExercisesLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedPresetId, focusNonce]);
+
+  const toggleExercise = useCallback((name: string) => {
+    setSelectedExercises(prev => {
+      if (prev.includes(name)) return prev.filter(n => n !== name);
+      if (prev.length >= MAX_EXERCISES) return prev; // cap at 6
+      return [...prev, name];
+    });
+  }, []);
+
+  // -------- Fetch per-exercise comparison data --------
+  useEffect(() => {
+    if (!selectedView || selectedExercises.length === 0) {
+      setComparisonData([]);
+      setComparisonError(null);
+      return;
+    }
+    let active = true;
+    setComparisonLoading(true);
+    setComparisonError(null);
+    getViewExerciseComparison({
+      view: selectedView,
+      days: timeInterval as ViewDays,
+      exerciseNames: selectedExercises,
+    }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) {
+        setComparisonError(error.message || "Failed to load data");
+        setComparisonData([]);
+      } else {
+        setComparisonData(data || []);
+      }
+      setComparisonLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedView, selectedExercises, timeInterval]);
+
+  // -------- Transform per-exercise values to SkillMapExerciseData --------
+  // One axis per selected exercise; percentage is each exercise's value relative
+  // to the highest among the selected set (the existing % mechanism).
+  const { skillMapData, highestValue, hasAnyData } = useMemo(() => {
+    if (comparisonData.length === 0) {
+      return {
+        skillMapData: [] as SkillMapExerciseData[],
+        highestValue: null as number | null,
+        hasAnyData: false,
+      };
+    }
+    const values = comparisonData.map(p => p.value ?? 0);
+    const max = Math.max(0, ...values);
+    const hasAny = comparisonData.some(p => p.value !== null && p.value > 0);
+
+    const data: SkillMapExerciseData[] = comparisonData.map(p => {
+      const v = p.value ?? 0;
+      const pct = max > 0 ? (v / max) * 100 : 0;
+      return {
+        exerciseName: p.exerciseName,
+        rawValue: v,
+        percentage: pct,
+        isHighest: v === max && max > 0,
+      };
+    });
+
+    return {
+      skillMapData: data,
+      highestValue: max > 0 ? max : null,
+      hasAnyData: hasAny,
+    };
+  }, [comparisonData]);
+
+  // -------- Spinning loading star --------
+  const starRotation = useSharedValue(0);
+  useEffect(() => {
+    if (comparisonLoading) {
+      starRotation.value = withRepeat(
+        withTiming(360, { duration: 800, easing: Easing.linear }),
+        -1,
+        false,
+      );
+    } else {
+      starRotation.value = 0;
+    }
+  }, [comparisonLoading]);
+  const starAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${starRotation.value}deg` }],
+  }));
+
+  // -------- Render --------
+  // The "view name" passed to the visualization is used as the metric label
+  // on the radar chart. With the new system, this becomes the view name.
+  const viewNameForChart = selectedView?.name ?? "";
+
   return (
     <View style={styles.container}>
-      {/* Full Screen Gradient from starry background to normal background - Fixed to viewport */}
+      {/* Full Screen Gradient - same atmospheric blue to black as the original */}
       <LinearGradient
         colors={[
-          'rgba(13, 27, 43, 0.95)', // Starry background at top
-          'rgba(13, 27, 43, 0.9)',
-          'rgba(13, 27, 43, 0.7)',
-          'rgba(13, 27, 43, 0.5)',
-          'rgba(13, 27, 43, 0.3)', // Starting to fade
-          'rgba(10, 15, 22, 0.6)', // Transitioning to black
-          theme.colors.bg0, // Black background starts around divider
-          theme.colors.bg0, // Black continues
-          theme.colors.bg0, // Black all the way down
+          "rgba(13, 27, 43, 0.95)",
+          "rgba(13, 27, 43, 0.9)",
+          "rgba(13, 27, 43, 0.7)",
+          "rgba(13, 27, 43, 0.5)",
+          "rgba(13, 27, 43, 0.3)",
+          "rgba(10, 15, 22, 0.6)",
+          theme.colors.bg0,
+          theme.colors.bg0,
+          theme.colors.bg0,
         ]}
-        locations={[0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.8, 0.9, 1]} // Main fade around 0.6-0.8 (divider area), then solid black
+        locations={[0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.8, 0.9, 1]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      
-      {/* Stars Layer - Fixed background */}
+
+      {/* Stars background */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {stars.map((star) => (
           <View
             key={star.id}
             style={{
-              position: 'absolute',
+              position: "absolute",
               left: star.x,
               top: star.y,
               width: star.size,
               height: star.size,
               borderRadius: star.size / 2,
-              backgroundColor: '#FFFFFF',
+              backgroundColor: "#FFFFFF",
               opacity: star.opacity,
             }}
           />
         ))}
       </View>
 
-      {/* Header - Back Button and Help Button */}
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
+        <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={10}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </Pressable>
-        <Pressable
-          onPress={() => setShowHelp(true)}
-          style={styles.helpButton}
-          hitSlop={10}
-        >
+        <Pressable onPress={() => setShowHelp(true)} style={styles.helpButton} hitSlop={10}>
           <View style={styles.helpButtonCircle}>
             <Ionicons name="help-circle" size={20} color="#FFFFFF" />
           </View>
@@ -988,264 +977,29 @@ export default function SkillMapScreen() {
       </View>
 
       {/* Content */}
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={!isTouchingSearchResults}
       >
-        {/* Sport Mode Dropdown - Floating Text with Arrow */}
-        <View style={styles.topSection}>
-          <Pressable
-            style={styles.floatingModeButton}
-            onPress={() => setShowModePicker(!showModePicker)}
-          >
-            <View style={styles.floatingModeTextContainer}>
-              <Text style={styles.floatingModeText}>
-                {selectedMode ? getModeLabel(selectedMode) : 'Select Mode'}
-              </Text>
-              <Ionicons 
-                name="chevron-down" 
-                size={20} 
-                color="rgba(255, 255, 255, 0.8)" 
-                style={styles.floatingModeArrow} 
-              />
-            </View>
-          </Pressable>
-
-          {/* Mode Picker Dropdown - Extreme Glassmorphism */}
-          {showModePicker && (
-            <View style={styles.extremeGlassPickerContainer}>
-              <BlurView
-                intensity={50}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
-              {/* Multiple gradient layers for extreme glassmorphism */}
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)', 'rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
-                locations={[0, 0.3, 0.7, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-              {/* Additional highlight layer */}
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.12)', 'transparent', 'transparent']}
-                locations={[0, 0.2, 1]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.pickerContent}>
-                {availableModes.map((mode) => (
-                  <Pressable
-                    key={mode.key}
-                    style={[
-                      styles.extremeGlassPickerItem,
-                      selectedMode === mode.key && styles.extremeGlassPickerItemSelected,
-                    ]}
-                    onPress={() => {
-                      setSelectedMode(mode.key);
-                      setShowModePicker(false);
-                    }}
-                  >
-                    {getModeIcon(mode.key).lib === 'ion' ? (
-                      <Ionicons 
-                        name={getModeIcon(mode.key).name as any} 
-                        size={22} 
-                        color={selectedMode === mode.key ? "#FFFFFF" : "rgba(255, 255, 255, 0.9)"} 
-                      />
-                    ) : (
-                      <MaterialCommunityIcons 
-                        name={getModeIcon(mode.key).name as any} 
-                        size={22} 
-                        color={selectedMode === mode.key ? "#FFFFFF" : "rgba(255, 255, 255, 0.9)"} 
-                      />
-                    )}
-                    <Text style={[
-                      styles.extremeGlassPickerItemText,
-                      selectedMode === mode.key && styles.extremeGlassPickerItemTextSelected,
-                    ]}>
-                      {mode.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Exercise Search Bar - Styled like workout name text box */}
-          <View style={styles.searchBarContainer}>
-            <BlurView
-              intensity={20}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.searchBarPill}>
-              <Ionicons name="search-outline" size={18} color="rgba(255,255,255,0.6)" style={{ marginRight: 8 }} />
-              <TextInput
-                value={exerciseSearchQuery}
-                onChangeText={(text) => {
-                  setExerciseSearchQuery(text);
-                  if (text.length > 0 && selectedView) {
-                    setShowExerciseSearch(true);
-                  }
-                }}
-                placeholder="Search exercises..."
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                style={styles.searchBarText}
-                autoCorrect={false}
-                autoCapitalize="none"
-                onFocus={() => {
-                  if (selectedView) {
-                    setShowExerciseSearch(true);
-                  }
-                }}
-              />
-              {exerciseSearchQuery.length > 0 && (
-                <Pressable
-                  onPress={() => {
-                    setExerciseSearchQuery("");
-                    setShowExerciseSearch(false);
-                  }}
-                  style={{ padding: 4 }}
-                >
-                  <Ionicons name="close-circle" size={18} color="rgba(255, 255, 255, 0.5)" />
-                </Pressable>
-              )}
-            </View>
-          </View>
-
-          {/* Exercise Search Results - Show when searching */}
-          {showExerciseSearch && selectedView && (
-            <View 
-              style={styles.searchResultsContainer}
-              onTouchStart={() => setIsTouchingSearchResults(true)}
-              onTouchEnd={() => setIsTouchingSearchResults(false)}
-              onTouchCancel={() => setIsTouchingSearchResults(false)}
-            >
-              <BlurView
-                intensity={25}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)', 'rgba(255, 255, 255, 0.02)']}
-                locations={[0, 0.5, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-              {loadingExercises ? (
-                <View style={styles.searchLoadingContainer}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text style={styles.searchLoadingText}>Loading exercises...</Text>
-                </View>
-              ) : (
-                <ScrollView 
-                  style={styles.searchResults}
-                  contentContainerStyle={styles.searchResultsContent}
-                  keyboardShouldPersistTaps="handled"
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={true}
-                  bounces={true}
-                  scrollEventThrottle={16}
-                  onScrollBeginDrag={() => setIsTouchingSearchResults(true)}
-                  onScrollEndDrag={() => setIsTouchingSearchResults(false)}
-                  onMomentumScrollEnd={() => setIsTouchingSearchResults(false)}
-                >
-                  {filteredExercises.length === 0 ? (
-                    <View style={styles.noResultsContainer}>
-                      <Ionicons name="search-outline" size={32} color="rgba(255, 255, 255, 0.3)" />
-                      <Text style={styles.noResultsText}>
-                        {exerciseSearchQuery.trim() 
-                          ? `No exercises found for "${exerciseSearchQuery}"`
-                          : "No exercises available"}
-                      </Text>
-                    </View>
-                  ) : (
-                    filteredExercises
-                      .map((exercise) => {
-                        const queryLower = exerciseSearchQuery.toLowerCase();
-                        const exerciseLower = exercise.toLowerCase();
-                        const matchIndex = exerciseLower.indexOf(queryLower);
-                        const isSelected = selectedExercises.includes(exercise);
-                        const canAdd = !isSelected && selectedExercises.length < MAX_EXERCISES;
-                        
-                        return (
-                          <Pressable
-                            key={exercise}
-                            style={styles.searchResultItem}
-                            onPress={() => {
-                              if (isSelected) {
-                                handleRemoveExercise(exercise);
-                              } else if (canAdd) {
-                                handleAddExercise(exercise);
-                              }
-                            }}
-                            disabled={!isSelected && !canAdd}
-                          >
-                            <Text style={[
-                              styles.searchResultText,
-                              !canAdd && !isSelected && styles.searchResultTextDisabled
-                            ]}>
-                              {matchIndex >= 0 && queryLower ? (
-                                <>
-                                  {exercise.substring(0, matchIndex)}
-                                  <Text style={styles.searchResultHighlight}>
-                                    {exercise.substring(matchIndex, matchIndex + queryLower.length)}
-                                  </Text>
-                                  {exercise.substring(matchIndex + queryLower.length)}
-                                </>
-                              ) : (
-                                exercise
-                              )}
-                            </Text>
-                            {isSelected ? (
-                              <Ionicons 
-                                name="close-circle" 
-                                size={20} 
-                                color="#FF5A5A" 
-                                style={styles.actionIcon}
-                              />
-                            ) : (
-                              <Ionicons 
-                                name="add-circle-outline" 
-                                size={20} 
-                                color={canAdd ? "#17D67F" : "rgba(255, 255, 255, 0.3)"} 
-                                style={styles.actionIcon}
-                              />
-                            )}
-                          </Pressable>
-                        );
-                      })
-                  )}
-                </ScrollView>
-              )}
-            </View>
-          )}
-        </View>
-
-
-        {/* Skill Map Skeleton - FIRST thing after search bar, always visible */}
+        {/* Skill Map Skeleton + Visualization */}
         <View style={styles.visualizationSection}>
           <View style={styles.skillMapWithSkeleton}>
-            {/* Always show skeleton behind everything - ALWAYS 6 axes, never changes */}
             <SkillMapSkeleton />
-            
-            {/* Data overlays on top when available - skeleton stays visible behind */}
-            {/* Positioned to match skeleton's container padding exactly */}
-            {selectedExercises.length > 0 && skillMapData && skillMapData.length > 0 && !loadingData && !dataError && (
+
+            {selectedView && hasAnyData && skillMapData.length > 0 && !comparisonLoading && !comparisonError && (
               <View style={styles.dataOverlay}>
                 <SkillMapVisualization
                   data={skillMapData}
                   highestValue={highestValue}
-                  viewName={selectedView || ""}
-                  mode={sportMode}
-                  exerciseCount={selectedExercises.length}
+                  viewName={viewNameForChart}
+                  mode={"workout" as SportMode}
+                  exerciseCount={skillMapData.length}
                 />
               </View>
             )}
-            
-            {/* Loading state - skeleton still visible behind */}
-            {loadingData && selectedExercises.length > 0 && (
+
+            {comparisonLoading && (
               <View style={styles.loadingOverlay}>
                 <Animated.View style={starAnimatedStyle}>
                   <Image
@@ -1257,30 +1011,25 @@ export default function SkillMapScreen() {
                 <Text style={styles.loadingText}>Calculating...</Text>
               </View>
             )}
-            {/* Error state - skeleton still visible behind */}
-            {dataError && selectedExercises.length > 0 && (
+
+            {comparisonError && (
               <View style={styles.errorOverlay}>
-                <Text style={styles.errorText}>Error: {dataError.message || 'Failed to load data'}</Text>
+                <Text style={styles.errorText}>Error: {comparisonError}</Text>
               </View>
             )}
           </View>
-          
         </View>
 
-        {/* Time Interval Bar - First thing under skill map, styled like reference image */}
+        {/* Time Interval Bar */}
         <View style={styles.timeIntervalBarContainer}>
-          <View 
+          <View
             style={styles.timeIntervalBar}
             onLayout={(event) => {
               const { width } = event.nativeEvent.layout;
-              // Update shared value directly (this is on JS thread, so it's safe)
               barWidth.value = width;
             }}
           >
-            {/* Animated selection marker */}
             <Animated.View style={[styles.timeIntervalMarker, markerAnimatedStyle]} />
-            
-            {/* Time interval options */}
             {timeIntervalOptions.map((option) => (
               <Pressable
                 key={option.value}
@@ -1300,51 +1049,131 @@ export default function SkillMapScreen() {
           </View>
         </View>
 
-        {/* Divider - gradient is handled by full screen gradient above */}
+        {/* Divider */}
         <View style={styles.dividerContainer}>
           <View style={styles.dividerLine} />
         </View>
-        
-        {/* View Selection Section - Below divider */}
+
+        {/* Views Section - replaces the old radio list with chips + Build New View.
+            Shared with Progress Graph (same `views` table); a view created on
+            either screen shows up on both. */}
         <View style={styles.controlsSection}>
-          {/* Centered "Select View" Heading */}
           <Text style={styles.selectViewHeading}>Select View</Text>
-          
-          {/* View Options List */}
-          {availableViews.length > 0 && (
-            <View style={styles.viewListContainer}>
-              {availableViews.map((view) => (
+
+          <View style={styles.viewChipRow}>
+            {/* + Build New View - sits first, same affordance as the Progress Graph */}
+            <Pressable
+              onPress={() => router.push("/(tabs)/(home)/build-view?from=skill-map" as any)}
+              style={({ pressed }) => [styles.addViewChip, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="add" size={16} color="#22C55E" />
+              <Text style={styles.addViewChipText}>Build New View</Text>
+            </Pressable>
+
+            {views.map((v) => {
+              const selected = v.id === selectedViewId;
+              return (
                 <Pressable
-                  key={view.name}
-                  style={styles.viewListItem}
-                  onPress={() => {
-                    setSelectedView(view.name);
-                    // Exercises will be cleared by useEffect when view changes
-                  }}
+                  key={v.id}
+                  onPress={() => setSelectedViewId(v.id)}
+                  style={({ pressed }) => [
+                    styles.viewChip,
+                    selected && styles.viewChipSelected,
+                    pressed && !selected && { opacity: 0.7 },
+                  ]}
                 >
-                  {/* Circle indicator */}
-                  <View style={styles.viewCircleContainer}>
-                    {selectedView === view.name ? (
-                      <View style={styles.viewCircleFilled} />
-                    ) : (
-                      <View style={styles.viewCircleEmpty} />
-                    )}
-                  </View>
-                  
-                  {/* View name */}
-                  <Text style={[
-                    styles.viewListItemText,
-                    selectedView === view.name && styles.viewListItemTextSelected,
-                  ]}>
-                    {getViewDisplayName(sportMode, view.name)}
+                  <Text
+                    style={[styles.viewChipText, selected && styles.viewChipTextSelected]}
+                    numberOfLines={1}
+                  >
+                    {v.name}{" "}
+                    <Text
+                      style={[
+                        styles.viewChipPresetText,
+                        selected && styles.viewChipPresetTextSelected,
+                      ]}
+                    >
+                      ({v.presetName})
+                    </Text>
                   </Text>
                 </Pressable>
-              ))}
+              );
+            })}
+          </View>
+
+          {/* Helper line - match the "what to do next" tone of the Progress Graph empty states */}
+          {!loading && views.length === 0 && (
+            <Text style={styles.viewHelperText}>
+              No views yet. Build a preset on the Home tab and log a workout with it, then tap +Build New View.
+            </Text>
+          )}
+
+          {/* Exercise selection — pick up to 6 exercises logged under this preset
+              to compare on the map. Only meaningful once a view exists. */}
+          {selectedView && (
+            <View style={styles.exerciseSelectBlock}>
+              <View style={styles.exerciseSelectHeader}>
+                <Text style={styles.selectExercisesHeading}>Select Exercises</Text>
+                <Text style={styles.exerciseSelectCount}>
+                  {selectedExercises.length}/{MAX_EXERCISES}
+                </Text>
+              </View>
+
+              {exercisesLoading ? (
+                <Text style={styles.viewHelperText}>Loading exercises…</Text>
+              ) : availableExercises.length === 0 ? (
+                <Text style={styles.viewHelperText}>
+                  No exercises logged under this preset yet. Log a workout using it, then come back.
+                </Text>
+              ) : (
+                <View style={styles.viewChipRow}>
+                  {availableExercises.map((name) => {
+                    const selected = selectedExercises.includes(name);
+                    const atMax = selectedExercises.length >= MAX_EXERCISES;
+                    const disabled = !selected && atMax;
+                    return (
+                      <Pressable
+                        key={name}
+                        onPress={() => toggleExercise(name)}
+                        disabled={disabled}
+                        style={({ pressed }) => [
+                          styles.viewChip,
+                          selected && styles.viewChipSelected,
+                          disabled && { opacity: 0.4 },
+                          pressed && !selected && !disabled && { opacity: 0.7 },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.viewChipText, selected && styles.viewChipTextSelected]}
+                          numberOfLines={1}
+                        >
+                          {name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              {selectedExercises.length >= MAX_EXERCISES && (
+                <Text style={styles.viewHelperText}>
+                  Maximum of {MAX_EXERCISES} exercises. Deselect one to swap.
+                </Text>
+              )}
             </View>
           )}
+
+          {selectedView && selectedExercises.length === 0 && availableExercises.length > 0 && !exercisesLoading && (
+            <Text style={styles.viewHelperText}>
+              Select at least one exercise to build the map.
+            </Text>
+          )}
+          {selectedView && selectedExercises.length > 0 && !comparisonLoading && !hasAnyData && (
+            <Text style={styles.viewHelperText}>
+              No data in this timeframe for the selected exercises. Try a longer timeframe or log a workout.
+            </Text>
+          )}
         </View>
-
-
       </ScrollView>
 
       {/* Help Overlay */}
@@ -1354,55 +1183,64 @@ export default function SkillMapScreen() {
         title="Skill Map Guide"
       >
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>How Skill Map Works</Text>
+          <Text style={helpStyles.heading}>What Skill Map Does</Text>
           <Text style={helpStyles.text}>
-            Skill Map compares up to 6 exercises side-by-side using a radar chart. First, select your sport mode. Then choose a view type that determines how your data is calculated. Finally, search for and add exercises (up to 6) to see how they compare to each other visually on the radar chart.
+            Skill Map puts up to six of your exercises side by side on a radar (spider) chart and shows how they stack up against each other. Where the Progress Graph tracks one exercise over time, Skill Map is about <Text style={helpStyles.bold}>comparison</Text> — which exercises are strong, which are lagging, and how balanced you are across them.
           </Text>
         </View>
 
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>Understanding Map Percentages</Text>
+          <Text style={helpStyles.heading}>First, The Building Blocks</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Preset:</Text> a template you built (e.g. "Exercise", "Shooting Drills"). It defines the stat names you fill in when logging.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Exercise:</Text> a single thing you log under a preset, named by you (e.g. "Bench Press", "Sprint drill"). Everything you ever log in a box with that name is the same exercise — its data adds up over time. One preset can hold many exercises.</Text>
+          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>View:</Text> a way to turn a preset's stats into one number. It has a formula (e.g. Reps × Weight) and an aggregation — Highest, Total, or Average. The same preset can have many views, each measuring something different.</Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>How To Build A Map</Text>
+          <Text style={helpStyles.bullet}>1. <Text style={helpStyles.bold}>Pick a preset</Text> from the dropdown at the top.</Text>
+          <Text style={helpStyles.bullet}>2. <Text style={helpStyles.bold}>Pick a view</Text> from the chips (or tap "+Build New View" to make one). The view decides how every exercise on the map is scored.</Text>
+          <Text style={helpStyles.bullet}>3. <Text style={helpStyles.bold}>Select up to six exercises</Text> from the Select Exercises list. Each one you tap becomes a spoke. Tap again to remove it; the counter shows how many of the six slots you've used.</Text>
           <Text style={helpStyles.text}>
-            Each exercise appears as a point on the radar chart. The percentage shown next to each exercise represents how that exercise compares to the exercise with the highest value:
-          </Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>100%:</Text> This exercise has the highest calculated value among all selected exercises for the chosen view.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Lower percentages (e.g., 75%, 50%):</Text> Show how each exercise performs relative to the best one. For example, 75% means that exercise is performing at 75% of the best exercise's value.</Text>
-          <Text style={helpStyles.text}>
-            The filled colored area on the radar chart shows the overall shape of your performance across all selected exercises. A larger, more balanced shape indicates more consistent performance across exercises.
+            The map starts blank on purpose — nothing is drawn until you add at least one exercise.
           </Text>
         </View>
 
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>How View Calculations Work</Text>
+          <Text style={helpStyles.heading}>How Each Exercise Is Scored</Text>
           <Text style={helpStyles.text}>
-            Views calculate your data the same way as Progress Graphs. The view you choose determines which calculation method is used:
-          </Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Peak Set:</Text> Finds your highest single set performance. Calculated as reps × weight for that one best set across the entire time interval.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Volume:</Text> Calculates your average total work. Takes the average of (reps × weight × sets) across all your exercise squares within the time interval.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Shooting %:</Text> Calculates your average shooting percentage. Averages the percentage across all your shooting sets within the time interval.</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>Total Shots/Reps:</Text> Sums all attempts. Adds up the total number of shots or reps across all sets within the time interval.</Text>
-          <Text style={helpStyles.text}>
-            All calculations use all your logged data from the selected time interval, not just recent data. This gives you a comprehensive comparison of how each exercise performs.
+            For every exercise you select, Skill Map looks at all of its sets inside the timeframe, runs the view's formula on each set, then collapses them into one number using the view's aggregation. Example: a "Peak Reps × Weight" view gives each exercise its single best Reps × Weight set in the window.
           </Text>
         </View>
 
         <View style={helpStyles.section}>
-          <Text style={helpStyles.heading}>How Time Intervals Work</Text>
+          <Text style={helpStyles.heading}>Reading The Chart</Text>
           <Text style={helpStyles.text}>
-            Time intervals determine how far back the app looks when calculating values for comparison:
+            Each spoke is one selected exercise. The percentages are <Text style={helpStyles.bold}>relative</Text>: your strongest exercise in the group sits at 100% (its dot turns gold), and every other exercise is shown as a percentage of that best one. So 60% means that exercise is at 60% of your top performer for this view.
           </Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>30 Days:</Text> Uses all data from the last 30 days (1 month).</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>90 Days:</Text> Uses all data from the last 90 days (3 months).</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>180 Days:</Text> Uses all data from the last 180 days (6 months).</Text>
-          <Text style={helpStyles.bullet}>• <Text style={helpStyles.bold}>360 Days:</Text> Uses all data from the last 360 days (1 year).</Text>
           <Text style={helpStyles.text}>
-            All exercises are compared using data from the same time period. This ensures a fair comparison - if you select 30 days, all exercises use their last 30 days of data, not different time ranges.
+            Under each spoke you also see the real value the percentage came from. A large, even shape means your selected exercises are well-balanced. A spiky, lopsided shape points straight at the ones that are behind.
+          </Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>Timeframes</Text>
+          <Text style={helpStyles.text}>
+            The 1M / 3M / 6M / 1Y bar sets how far back each exercise's value is calculated from — only workouts inside that window count. Widen it to compare lifetime-ish strength; narrow it to compare recent form. Switching it recalculates every spoke instantly.
+          </Text>
+        </View>
+
+        <View style={helpStyles.section}>
+          <Text style={helpStyles.heading}>Shared With Progress Graph</Text>
+          <Text style={helpStyles.text}>
+            Views are shared between both screens — build one here or on the Progress Graph and it shows up in both. The Progress Graph plots a single exercise as a line over time; Skill Map compares several exercises at one glance. Same views, same exercises, two lenses.
           </Text>
         </View>
       </HelpOverlay>
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -1416,13 +1254,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     position: 'relative',
     zIndex: 10,
-  },
-  backButton: {
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   topSection: {
     paddingHorizontal: 20,
@@ -1669,6 +1500,110 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
   },
+
+  // === NEW: preset + view picker pieces ===
+  // Empty-state copy inside the preset dropdown when the user has no presets yet.
+  pickerEmptyText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    textAlign: "center",
+  },
+  // Row of view chips at the bottom (replaces the old radio list).
+  viewChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  // "+ Build New View" chip — dashed pill, accent + sign.
+  addViewChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#22C55E",
+  },
+  addViewChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.92)",
+    letterSpacing: -0.1,
+  },
+  // User-view chip — subtle by default, solid green when selected.
+  viewChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.09)",
+    maxWidth: 220,
+  },
+  viewChipSelected: {
+    backgroundColor: "#22C55E",
+    borderColor: "#22C55E",
+    shadowColor: "#22C55E",
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  viewChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.92)",
+    letterSpacing: -0.1,
+  },
+  viewChipTextSelected: {
+    color: "#06090C",
+    fontWeight: "700",
+  },
+  // Dimmed "(Preset Name)" suffix inside each view chip — shows which preset a
+  // view belongs to now that all presets' views are listed together.
+  viewChipPresetText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.45)",
+  },
+  viewChipPresetTextSelected: { color: "rgba(6, 9, 12, 0.55)" },
+  viewHelperText: {
+    color: "rgba(255, 255, 255, 0.55)",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+
+  // === Exercise selection (Skill Map) ===
+  exerciseSelectBlock: {
+    marginTop: 24,
+  },
+  exerciseSelectHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  selectExercisesHeading: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  exerciseSelectCount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.6)",
+    fontVariant: ["tabular-nums"],
+  },
+
   exerciseSection: {
     marginBottom: 24,
   },
@@ -1745,59 +1680,14 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  searchLoadingContainer: {
-    padding: 20,
-    alignItems: 'center',
-    gap: 8,
-  },
-  searchLoadingText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-  },
-  searchResults: {
-    maxHeight: 300,
-    flexGrow: 0,
-  },
   searchResultsContent: {
     flexGrow: 0,
-  },
-  searchResultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  addIcon: {
-    marginRight: 0,
   },
   actionIcon: {
     marginLeft: 8,
   },
-  searchResultText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '500',
-  },
   searchResultTextDisabled: {
     color: 'rgba(255, 255, 255, 0.4)',
-  },
-  searchResultHighlight: {
-    color: '#4A9EFF',
-    fontWeight: '700',
-  },
-  noResultsContainer: {
-    padding: 32,
-    alignItems: 'center',
-    gap: 8,
-  },
-  noResultsText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 14,
-    textAlign: 'center',
   },
   // Old search container (keeping for reference)
   oldSearchContainer: {
@@ -1938,11 +1828,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: "rgba(255, 255, 255, 0.7)",
-  },
-  emptyStateContainer: {
-    alignItems: "center",
-    paddingVertical: 32,
-    paddingHorizontal: 20,
   },
   emptyStateText: {
     fontSize: 14,

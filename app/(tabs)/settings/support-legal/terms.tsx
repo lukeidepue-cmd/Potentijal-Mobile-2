@@ -67,7 +67,7 @@ export default function Terms() {
         </Pressable>
 
         <Text style={styles.introText}>
-          These Terms of Service ("Terms") govern your access to and use of the Potentijal mobile application available on the Apple App Store and Google Play Store (the "App") and related services (collectively, the "Service"). The Service is operated by Potentijal ("we," "us," or "our"). By downloading, installing, or using the App, you accept and agree to these Terms. If you do not agree, do not use the Service. These Terms should be read alongside our Privacy Policy.
+          These Terms of Service ("Terms") govern your access to and use of the AthleteCraft mobile application available on the Apple App Store and Google Play Store (the "App") and related services (collectively, the "Service"). The Service is operated by AthleteCraft ("we," "us," or "our"). By downloading, installing, or using the App, you accept and agree to these Terms. If you do not agree, do not use the Service. These Terms should be read alongside our Privacy Policy.
         </Text>
 
         <Text style={styles.sectionTitle}>1. Eligibility</Text>
@@ -87,20 +87,20 @@ export default function Terms() {
 
         <Text style={styles.sectionTitle}>4. Third-Party Store Rules</Text>
         <Text style={styles.contentText}>
-          You agree to comply with the Apple Media Services Terms and Conditions or Google Play Terms of Service, as applicable. You acknowledge that: (a) these Terms are between you and Potentijal, not Apple or Google; (b) Apple and Google have no obligation to provide maintenance, support, or warranty for the App; and (c) Apple and Google are third-party beneficiaries of these Terms and may enforce them against you.
+          You agree to comply with the Apple Media Services Terms and Conditions or Google Play Terms of Service, as applicable. You acknowledge that: (a) these Terms are between you and AthleteCraft, not Apple or Google; (b) Apple and Google have no obligation to provide maintenance, support, or warranty for the App; and (c) Apple and Google are third-party beneficiaries of these Terms and may enforce them against you.
         </Text>
 
         <Text style={styles.sectionTitle}>5. The Service and Sport Modes</Text>
         <Text style={styles.contentText}>
-          Potentijal is a multi-sport athlete development app that helps you track training, games, practices, and performance. The Service includes sport modes (e.g., strength training, running, basketball, football, baseball, soccer, hockey, tennis). You can log workouts, view the Progress tab (Progress Graphs, Skill Map, Consistency Score, Training Statistics), manage weekly schedules and goals, and view History.
+          AthleteCraft is a multi-sport athlete development app that helps you track training, games, practices, and performance. The Service includes sport modes (e.g., strength training, running, basketball, football, baseball, soccer, hockey, tennis). You can log workouts, view the Progress tab (Progress Graphs, Consistency Score, Training Statistics), manage weekly schedules and goals, and view History.
         </Text>
         <Text style={styles.contentText}>
-          Some features require a Premium subscription, including (but not limited to): AI Trainer, game and practice logging, Skill Map, Consistency Score, Training Statistics, and expanded sport access.
+          Some features require a Pro subscription, including (but not limited to): AI Trainer, game and practice logging, Consistency Score, Training Statistics, and expanded sport access.
         </Text>
 
         <Text style={styles.sectionTitle}>6. Not Medical or Professional Advice</Text>
         <Text style={styles.contentText}>
-          The App and its content are for informational purposes only and are not a substitute for professional medical advice, diagnosis, or treatment, or for professional coaching or training advice. We do not provide medical or professional advice. You should seek the advice of your physician or other qualified health or fitness provider with any questions about a medical condition or training program. Do not disregard professional advice or delay seeking it because of something in the App. Your use of the Service does not create a doctor-patient or coach-athlete relationship between you and Potentijal. You assume full responsibility for your training and health decisions.
+          The App and its content are for informational purposes only and are not a substitute for professional medical advice, diagnosis, or treatment, or for professional coaching or training advice. We do not provide medical or professional advice. You should seek the advice of your physician or other qualified health or fitness provider with any questions about a medical condition or training program. Do not disregard professional advice or delay seeking it because of something in the App. Your use of the Service does not create a doctor-patient or coach-athlete relationship between you and AthleteCraft. You assume full responsibility for your training and health decisions.
         </Text>
 
         <Text style={styles.sectionTitle}>7. User Content</Text>
@@ -108,7 +108,7 @@ export default function Terms() {
           You may submit content such as workouts, exercises, sets, notes, game and practice entries, and scheduling data ("User Content").
         </Text>
         <Text style={styles.contentText}>
-          You retain ownership of your User Content. You grant Potentijal a worldwide, non-exclusive, royalty-free license to host, store, reproduce, display, and process your User Content to operate and provide the Service, including the Progress tab (Progress Graphs, Skill Map, Consistency Score, Training Statistics), streaks, goals, History, and AI Trainer responses.
+          You retain ownership of your User Content. You grant AthleteCraft a worldwide, non-exclusive, royalty-free license to host, store, reproduce, display, and process your User Content to operate and provide the Service, including the Progress tab (Progress Graphs, Consistency Score, Training Statistics), streaks, goals, History, and AI Trainer responses.
         </Text>
 
         <Text style={styles.sectionTitle}>8. Prohibited Conduct</Text>
@@ -122,9 +122,9 @@ export default function Terms() {
           We may remove content and/or suspend accounts that violate these Terms.
         </Text>
 
-        <Text style={styles.sectionTitle}>9. Premium Subscriptions and Billing</Text>
+        <Text style={styles.sectionTitle}>9. Pro Subscriptions and Billing</Text>
         <Text style={styles.contentText}>
-          Some features require a paid subscription ("Premium" or "Potentijal Premium"). Subscriptions are offered through the Apple App Store or Google Play (as applicable). Payment is charged to your Apple ID or Google account at confirmation of purchase. Subscriptions automatically renew at the end of each period (e.g., one month or one year) unless you cancel. You can manage your subscription, turn off auto-renewal, or request refunds through your device's App Store or Play Store settings; refunds are subject to Apple's or Google's policies.
+          Some features require a paid subscription ("Pro" or "AthleteCraft Pro"). Subscriptions are offered through the Apple App Store or Google Play (as applicable). Payment is charged to your Apple ID or Google account at confirmation of purchase. Subscriptions automatically renew at the end of each period (e.g., one month or one year) unless you cancel. You can manage your subscription, turn off auto-renewal, or request refunds through your device's App Store or Play Store settings; refunds are subject to Apple's or Google's policies.
         </Text>
         <Text style={styles.contentText}>
           We may offer promotional pricing (e.g., 20% off) via offer codes. If you have an offer code, you can redeem it via the redemption link we provide or through the App Store (e.g., Settings → App Store → Redeem). Promotional offer codes apply only to monthly subscriptions unless otherwise stated. Eligibility, availability, and terms of each offer are determined by us and the applicable store.
@@ -137,7 +137,7 @@ export default function Terms() {
 
         <Text style={styles.sectionTitle}>11. Intellectual Property</Text>
         <Text style={styles.contentText}>
-          The Service, including its design, software, logos, trademarks, and related materials, are owned by Potentijal or its licensors and are protected by intellectual property laws. You may not copy, modify, distribute, or create derivative works except as explicitly permitted.
+          The Service, including its design, software, logos, trademarks, and related materials, are owned by AthleteCraft or its licensors and are protected by intellectual property laws. You may not copy, modify, distribute, or create derivative works except as explicitly permitted.
         </Text>
 
         <Text style={styles.sectionTitle}>12. Service Availability and Changes</Text>
@@ -152,15 +152,15 @@ export default function Terms() {
 
         <Text style={styles.sectionTitle}>14. Disclaimers</Text>
         <Text style={styles.contentText}>
-          THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE." TO THE MAXIMUM EXTENT PERMITTED BY LAW, POTENTIJAL DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABILITY, AND NON-INFRINGEMENT.
+          THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE." TO THE MAXIMUM EXTENT PERMITTED BY LAW, ATHLETECRAFT DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABILITY, AND NON-INFRINGEMENT.
         </Text>
 
         <Text style={styles.sectionTitle}>15. Limitation of Liability</Text>
         <Text style={styles.contentText}>
-          TO THE MAXIMUM EXTENT PERMITTED BY LAW, POTENTIJAL WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR REVENUE, ARISING FROM OR RELATED TO YOUR USE OF THE SERVICE.
+          TO THE MAXIMUM EXTENT PERMITTED BY LAW, ATHLETECRAFT WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR REVENUE, ARISING FROM OR RELATED TO YOUR USE OF THE SERVICE.
         </Text>
         <Text style={styles.contentText}>
-          TOTAL LIABILITY FOR ANY CLAIM WILL NOT EXCEED THE AMOUNT YOU PAID TO POTENTIJAL FOR THE SERVICE IN THE 12 MONTHS BEFORE THE CLAIM, OR $100 IF YOU PAID NOTHING.
+          TOTAL LIABILITY FOR ANY CLAIM WILL NOT EXCEED THE AMOUNT YOU PAID TO ATHLETECRAFT FOR THE SERVICE IN THE 12 MONTHS BEFORE THE CLAIM, OR $100 IF YOU PAID NOTHING.
         </Text>
 
         <Text style={styles.sectionTitle}>16. Governing Law</Text>

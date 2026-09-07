@@ -12,8 +12,6 @@ export default function SettingsLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="account/email-password" />
       <Stack.Screen name="account/delete-account" />
-      <Stack.Screen name="sports-training/my-sports" />
-      <Stack.Screen name="sports-training/add-sports" />
       <Stack.Screen name="ai-trainer/index" />
       <Stack.Screen name="notifications/index" />
       <Stack.Screen name="privacy-security/index" />

@@ -10,21 +10,26 @@ import {
   Platform,
   Alert,
   Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../providers/AuthProvider';
 import { theme } from '../../constants/theme';
-import { updateOnboardingStep } from '../../lib/api/onboarding';
+import { updateOnboardingStep, updateProfileFromOnboarding } from '../../lib/api/onboarding';
+import { saveCompleteWorkout } from '../../lib/api/workouts';
+import { useOnboardingData } from '../../providers/OnboardingDataContext';
 
-const TOTAL_STEPS = 10; // Total number of onboarding steps
-const CURRENT_STEP = 3; // This is step 3
+const TOTAL_STEPS = 5;
+const CURRENT_STEP = 4;
 
 export default function EmailVerificationScreen() {
   const insets = useSafeAreaInsets();
   const { user, signInWithOtp, verifyOtp } = useAuth();
+  const { data: onboardingData, clearOnboardingData } = useOnboardingData();
   const params = useLocalSearchParams();
   const [email, setEmail] = useState<string>('');
   // Supabase OTP codes are 6 digits by default
@@ -32,6 +37,7 @@ export default function EmailVerificationScreen() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const inputRefs = useRef<(TextInput | null)[]>([]);
+  const oneTimeCodeInputRef = useRef<TextInput>(null);
 
   // Get email from params
   useEffect(() => {
@@ -41,21 +47,9 @@ export default function EmailVerificationScreen() {
     }
   }, [params]);
 
-  // Auto-focus first input on mount
-  useEffect(() => {
-    setTimeout(() => {
-      inputRefs.current[0]?.focus();
-    }, 100);
-  }, []);
+  // No auto-focus: user taps a line to focus and bring up the keyboard
 
-  // Monitor auth state - when user becomes authenticated, navigate to next screen
-  useEffect(() => {
-    if (user) {
-      // User is authenticated - navigate to account basics screen
-      // Use push instead of replace to ensure proper navigation
-      router.push('/onboarding/account-basics');
-    }
-  }, [user]);
+  const isCodeComplete = code.join('').length === 6;
 
   const handleCodeChange = (value: string, index: number) => {
     // Only allow digits
@@ -71,34 +65,20 @@ export default function EmailVerificationScreen() {
         }
       });
       setCode(newCode);
-      
       // Focus next empty input or last input
       const nextIndex = Math.min(index + digits.length, 5);
       inputRefs.current[nextIndex]?.focus();
-      
-      // Auto-submit when full 6-digit code is entered
-      const fullCode = newCode.join('').substring(0, 6);
-      if (fullCode.length === 6) {
-        handleVerify(fullCode);
-      }
+      // No auto-submit: user taps Continue to verify
     } else {
       // Single digit input
       const newCode = [...code];
       newCode[index] = digit;
       setCode(newCode);
-      
       // Auto-advance to next input
       if (digit && index < 5) {
         inputRefs.current[index + 1]?.focus();
       }
-      
-      // Auto-submit when 6 digits are entered (Supabase default is 6 digits)
-      if (digit && index === 5) {
-        const fullCode = newCode.join('');
-        if (fullCode.length === 6) {
-          handleVerify(fullCode);
-        }
-      }
+      // No auto-submit: user taps Continue to verify
     }
   };
 
@@ -107,6 +87,19 @@ export default function EmailVerificationScreen() {
     if (key === 'Backspace' && !code[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
+  };
+
+  // When keyboard/OS suggests the OTP (e.g. "From Gmail: 123456"), it often fills
+  // an input with textContentType="oneTimeCode". This hidden input captures that.
+  const handleOneTimeCode = (value: string) => {
+    const digits = value.replace(/[^0-9]/g, '').substring(0, 6).split('');
+    if (digits.length === 0) return;
+    const newCode = [...code];
+    digits.forEach((d, i) => {
+      if (i < 6) newCode[i] = d;
+    });
+    setCode(newCode);
+    // User taps Continue to verify (no auto-submit)
   };
 
   const handleVerify = async (verificationCode?: string) => {
@@ -170,13 +163,35 @@ export default function EmailVerificationScreen() {
         setLoading(false);
         return;
       } else if (data?.session) {
-        // Save progress: mark email_entry and email_verification steps as completed
-        // User is now authenticated, so we can save progress
+        // Sync pre-auth onboarding data to Supabase now that user is authenticated
         try {
-          const { error: progressError } = await updateOnboardingStep('email_verification');
-          if (progressError) {
-            // Don't block navigation on progress save failure
+          if (onboardingData.selectedSports.length > 0) {
+            await updateProfileFromOnboarding({
+              sports: onboardingData.selectedSports,
+              primary_sport: onboardingData.primarySport || onboardingData.selectedSports[0],
+            });
           }
+
+          if (onboardingData.firstExercise) {
+            const ex = onboardingData.firstExercise;
+            await saveCompleteWorkout({
+              mode: ex.mode,
+              name: 'First Session',
+              items: [{
+                kind: ex.kind,
+                name: ex.name,
+                sets: [{ [ex.field1]: String(ex.value1), [ex.field2]: String(ex.value2) }],
+              }],
+            });
+          }
+
+          await clearOnboardingData();
+        } catch {
+          // Don't block navigation on sync failure
+        }
+
+        try {
+          await updateOnboardingStep('email_verification');
         } catch {
           // Don't block navigation on progress save failure
         }
@@ -233,26 +248,12 @@ export default function EmailVerificationScreen() {
   const progressPercentage = (CURRENT_STEP / TOTAL_STEPS) * 100;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Layer A: Base gradient - EXACT same as workout tab */}
-      <LinearGradient
-        colors={['#0B1513', '#0F2A22', '#0F3B2E', '#070B0A']}
-        locations={[0, 0.3, 0.6, 1]}
-        style={styles.baseGradient}
-      />
-      
-      {/* Layer B: Vignette overlay - EXACT same as workout tab */}
-      <LinearGradient
-        colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent', 'rgba(0,0,0,0.5)']}
-        locations={[0, 0.15, 0.85, 1]}
-        style={styles.vignetteGradient}
-        pointerEvents="none"
-      />
-      
-      {/* Layer C: Subtle grain - EXACT same as workout tab */}
-      <View style={styles.grainOverlay} pointerEvents="none" />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Same background as previous onboarding screens */}
+        <View style={styles.background} />
 
-      {/* Header with Back Button and Progress Bar */}
+      {/* Header - same as previous screens */}
       <View style={[styles.header, { zIndex: 10 }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -261,8 +262,6 @@ export default function EmailVerificationScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={theme.colors.textHi} />
         </TouchableOpacity>
-
-        {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBarBackground}>
             <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
@@ -271,36 +270,47 @@ export default function EmailVerificationScreen() {
         </View>
       </View>
 
-      {/* Content */}
+      {/* Content - same heading style as previous screens */}
       <View style={[styles.content, { zIndex: 10 }]}>
-        {/* Hero Text */}
-        <Text style={styles.heroText}>Check your email</Text>
-
-        {/* Description Text */}
-        <Text style={styles.descriptionText}>
+        <Text style={styles.title}>Check your email</Text>
+        <Text style={styles.subtitle}>
           We sent a verification code to {email || 'your email'}. Enter it below to verify your account.
         </Text>
 
-        {/* Code Input Fields - 6 digits for OTP */}
+        {/* Hidden input to receive OTP from keyboard/OS suggestion (oneTimeCode) */}
+        <TextInput
+          ref={oneTimeCodeInputRef}
+          style={styles.oneTimeCodeInput}
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          keyboardType="number-pad"
+          onChangeText={handleOneTimeCode}
+          maxLength={6}
+          editable={!loading}
+        />
+
+        {/* Code Input - 6 horizontal white lines, one per digit */}
         <View style={styles.codeContainer}>
           {code.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(ref) => (inputRefs.current[index] = ref)}
-              style={[
-                styles.codeInput,
-                digit && styles.codeInputFilled,
-                loading && styles.codeInputDisabled,
-              ]}
-              value={digit}
-              onChangeText={(value) => handleCodeChange(value, index)}
-              onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
-              keyboardType="number-pad"
-              maxLength={1}
-              selectTextOnFocus
-              editable={!loading}
-              autoFocus={index === 0}
-            />
+            <View key={index} style={styles.codeInputCell}>
+              <TextInput
+                ref={(ref) => (inputRefs.current[index] = ref)}
+                style={[
+                  styles.codeInput,
+                  loading && styles.codeInputDisabled,
+                ]}
+                value={digit}
+                onChangeText={(value) => handleCodeChange(value, index)}
+                onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
+                keyboardType="number-pad"
+                maxLength={index === 0 ? 6 : 1}
+                textContentType={index === 0 ? 'oneTimeCode' : undefined}
+                autoComplete={index === 0 ? 'one-time-code' : undefined}
+                selectTextOnFocus
+                editable={!loading}
+              />
+              <View style={[styles.codeInputLine, digit && styles.codeInputLineFilled]} />
+            </View>
           ))}
         </View>
 
@@ -314,68 +324,71 @@ export default function EmailVerificationScreen() {
             {resending ? 'Sending...' : 'Resend Code'}
           </Text>
         </TouchableOpacity>
-
-        {/* Verify Button (optional - auto-submits on 6 digits) */}
-        {code.join('').length === 6 && (
-          <TouchableOpacity
-            style={[styles.verifyButton, loading && styles.verifyButtonDisabled]}
-            onPress={() => handleVerify()}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <Text style={styles.verifyButtonText}>Verifying...</Text>
-            ) : (
-              <Text style={styles.verifyButtonText}>Verify</Text>
-            )}
-          </TouchableOpacity>
-        )}
       </View>
-    </View>
+
+      {/* Continue button - same style as other Next buttons, enabled only when 6 digits entered */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 20, zIndex: 10 }]}>
+        <TouchableOpacity
+          style={[
+            styles.continueButton,
+            isCodeComplete && !loading && styles.continueButtonEnabled,
+            (!isCodeComplete || loading) && styles.continueButtonDisabled,
+          ]}
+          onPress={() => handleVerify()}
+          disabled={!isCodeComplete || loading}
+          activeOpacity={0.85}
+        >
+          {(!isCodeComplete || loading) && (
+            <>
+              <BlurView intensity={Platform.OS === 'ios' ? 32 : 24} tint="dark" style={StyleSheet.absoluteFill} />
+              <LinearGradient
+                colors={['rgba(255,255,255,0.12)', 'rgba(255,255,255,0.06)']}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+            </>
+          )}
+          <Text
+            style={[
+              styles.continueButtonText,
+              (!isCodeComplete || loading) && styles.continueButtonTextDisabled,
+            ]}
+          >
+            {loading ? 'Verifying...' : 'Continue'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg0,
     position: 'relative',
   },
-  baseGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  vignetteGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  grainOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    opacity: 0.06,
+  background: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#1C1C1E',
   },
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   backButton: {
-    marginBottom: 16,
+    padding: 8,
   },
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    marginLeft: 20,
   },
   progressBarBackground: {
     flex: 1,
@@ -398,68 +411,63 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 24,
+    paddingBottom: 100,
   },
-  heroText: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: theme.colors.textHi,
-    marginBottom: 16,
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.5,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 32,
+    marginBottom: 12,
+    letterSpacing: -0.3,
   },
-  descriptionText: {
-    fontSize: 16,
+  subtitle: {
+    fontSize: 14,
     fontWeight: '500',
+    fontStyle: 'italic',
     color: theme.colors.textLo,
-    lineHeight: 24,
+    lineHeight: 20,
     marginBottom: 40,
+  },
+  oneTimeCodeInput: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 1,
+    height: 1,
+    opacity: 0,
+    zIndex: 1,
   },
   codeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 32,
-    gap: 12,
+    gap: 8,
+  },
+  codeInputCell: {
+    flex: 1,
+    alignItems: 'center',
   },
   codeInput: {
-    flex: 1,
-    height: 64,
-    backgroundColor: theme.colors.surface1,
-    borderRadius: theme.radii.md,
-    borderWidth: 2,
-    borderColor: theme.colors.strokeSoft,
+    width: '100%',
+    height: 44,
+    backgroundColor: 'transparent',
     textAlign: 'center',
     fontSize: 24,
     fontWeight: '700',
     color: theme.colors.textHi,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
+    paddingVertical: 0,
+    paddingHorizontal: 4,
   },
-  codeInputFilled: {
-    borderColor: theme.colors.primary600,
-    backgroundColor: theme.colors.surface1,
+  codeInputLine: {
+    width: '100%',
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    marginTop: 4,
+  },
+  codeInputLineFilled: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   codeInputDisabled: {
     opacity: 0.5,
@@ -472,38 +480,54 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: theme.colors.primary600,
-    textDecorationLine: 'underline',
   },
   resendTextDisabled: {
     opacity: 0.5,
   },
-  verifyButton: {
-    backgroundColor: theme.colors.primary600,
-    borderRadius: theme.radii.pill,
-    paddingVertical: 18,
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 24,
+    paddingTop: 16,
+  },
+  continueButton: {
+    width: '100%',
+    paddingVertical: 18,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: 'transparent',
     ...Platform.select({
       ios: {
-        shadowColor: theme.colors.primary600,
-        shadowOpacity: 0.4,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 8 },
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
       },
-      android: {
-        elevation: 8,
-      },
+      android: { elevation: 3 },
     }),
   },
-  verifyButtonDisabled: {
-    opacity: 0.5,
+  continueButtonEnabled: {
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: { shadowOpacity: 0.2, shadowRadius: 8 },
+      android: { elevation: 4 },
+    }),
   },
-  verifyButtonText: {
-    fontSize: 16,
+  continueButtonDisabled: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  continueButtonText: {
+    color: '#1C1C1E',
+    fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
+  },
+  continueButtonTextDisabled: {
+    color: 'rgba(255,255,255,0.6)',
   },
 });

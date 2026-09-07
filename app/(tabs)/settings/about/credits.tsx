@@ -1,5 +1,5 @@
 // app/(tabs)/settings/about/credits.tsx
-// Credits Screen — third-party and open-source attribution for Potentijal
+// Credits Screen — third-party and open-source attribution for AthleteCraft
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -54,7 +54,7 @@ export default function Credits() {
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}>
         <Text style={styles.introText}>
-          Potentijal is a multi-sport athlete development app that helps you track training, games, practices, and progress. It is built with third-party tools and open-source software. We are grateful to the developers and communities that make this possible.
+          AthleteCraft is a multi-sport athlete development app that helps you track training, games, practices, and progress. It is built with third-party tools and open-source software. We are grateful to the developers and communities that make this possible.
         </Text>
 
         <Text style={styles.sectionTitle}>Core Technologies</Text>
@@ -67,7 +67,7 @@ export default function Credits() {
 
         <Text style={styles.sectionTitle}>Progress Tab & Charts</Text>
         <Text style={styles.contentText}>
-          The Progress tab (Progress Graphs, Skill Map, Consistency Score, Training Statistics) uses:{"\n"}
+          The Progress tab (Progress Graphs, Consistency Score, Training Statistics) uses:{"\n"}
           • react-native-svg (charts and graph rendering){"\n"}
           • react-native-reanimated (animations){"\n"}
           • react-native-gesture-handler (interactions)
@@ -83,7 +83,7 @@ export default function Credits() {
 
         <Text style={styles.sectionTitle}>Subscriptions</Text>
         <Text style={styles.contentText}>
-          • RevenueCat (react-native-purchases) — in-app subscriptions and Premium entitlement management
+          • RevenueCat (react-native-purchases) — in-app subscriptions and Pro entitlement management
         </Text>
 
         <Text style={styles.sectionTitle}>AI Trainer</Text>
@@ -98,7 +98,7 @@ export default function Credits() {
 
         <Text style={styles.sectionTitle}>Open-Source Licenses</Text>
         <Text style={styles.contentText}>
-          Where required by open-source licenses, Potentijal provides attribution and complies with applicable terms. Full license texts for dependencies are available from the respective projects (e.g. npm, GitHub) or in the app repository.
+          Where required by open-source licenses, AthleteCraft provides attribution and complies with applicable terms. Full license texts for dependencies are available from the respective projects (e.g. npm, GitHub) or in the app repository.
         </Text>
       </ScrollView>
     </View>

@@ -134,7 +134,7 @@ cd my-first-app
 eas build --platform ios --profile production
 ```
 
-- Uses your **production** profile (App Store–compatible; version from `app.json` is 1.0.0 → matches "1.0" in App Store Connect).
+- Uses your **production** profile (App Store–compatible; version from `app.json` should match the version in App Store Connect, e.g. **1.1**).
 - You must be logged in: `eas login` if needed.
 - Build runs on EAS servers; you get a link when it’s done. Wait for it to finish.
 
@@ -162,26 +162,26 @@ You’ll get an email from Apple when the build is **processed** and visible in 
 
 ---
 
-## 4. Select the build for version 1.0
+## 4. Select the build for your App Store version (e.g. 1.1)
 
 1. Open [App Store Connect](https://appstoreconnect.apple.com) → your app **Potentijal**.
-2. Go to the **version** that has the IAP (e.g. **1.0** / **Prepare for Submission**).
+2. Go to the **version** you’re submitting (e.g. **1.1** / **Prepare for Submission**).
 3. Find the **Build** section (e.g. “iOS Build” or “Build”).
-4. Click **“+”** or **“Select a build”** and choose the build you just uploaded (e.g. 1.0.0 (123)).
+4. Click **“+”** or **“Select a build”** and choose the build you just uploaded (e.g. **1.1** (build number)).
 5. **Save** the version.
 
-After this, the version 1.0 has a build and your IAP are linked to it. Wait 15–30 minutes if needed, then test IAP again on a **physical device** with a **Sandbox** Apple ID.
+After this, that version has a build and your IAP are linked to it. Wait 15–30 minutes if needed, then test IAP again on a **physical device** with a **Sandbox** Apple ID.
 
 ---
 
 ## Optional: Install via TestFlight
 
-After the build is processed and selected for 1.0:
+After the build is processed and selected for your version (e.g. 1.1):
 
 1. In App Store Connect, open **TestFlight** for your app.
 2. Add yourself (or the tester) as an internal tester if needed.
 3. Install the **TestFlight** app on your iPhone, then install **Potentijal** from TestFlight.
-4. Test IAP on that build (same Sandbox Apple ID). This guarantees you’re running the build that’s linked to version 1.0.
+4. Test IAP on that build (same Sandbox Apple ID). This guarantees you’re running the build that’s linked to that App Store version.
 
 ---
 
@@ -192,6 +192,6 @@ After the build is processed and selected for 1.0:
 | 1. Build | `eas build --platform ios --profile production` |
 | 2. Submit | `eas submit --platform ios --latest` |
 | 3. Wait | For Apple’s “build processed” email |
-| 4. Select build | App Store Connect → app → version 1.0 → Build → select the new build → Save |
+| 4. Select build | App Store Connect → app → your version (e.g. 1.1) → Build → select the new build → Save |
 
-Your `app.json` already has `version: "1.0.0"` and `bundleIdentifier: "com.lukedepue.myfirstapp"`, so the build will match your app and version in App Store Connect.
+Your `app.json` should have `version` matching the App Store version (e.g. `"1.1"`) and `bundleIdentifier: "com.lukedepue.myfirstapp"`. With `appVersionSource: "remote"` in `eas.json`, also run `eas build:version:set --platform ios` so EAS matches.

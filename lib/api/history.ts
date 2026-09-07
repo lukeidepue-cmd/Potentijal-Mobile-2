@@ -11,6 +11,39 @@ export interface HistoryWorkout {
   name: string;
   mode: string;
   performed_at: string;
+  /** Color key of the first preset used in this workout. Drives the date
+   *  kicker tint on the History card. Null when the workout has no preset-
+   *  linked exercises (legacy workouts, or all-legacy exercise kinds). */
+  presetColor?: string | null;
+}
+
+/** Fetch the preset color for each workout id. Uses a single join through
+ *  workout_exercises → exercise_presets. Returns a Map keyed by workout id;
+ *  workouts with multiple presets get the FIRST preset color encountered.
+ *  Workouts with no preset-linked exercises are absent from the Map. */
+async function fetchWorkoutPresetColors(workoutIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (workoutIds.length === 0) return out;
+  try {
+    const { data, error } = await supabase
+      .from('workout_exercises')
+      .select('workout_id, preset:exercise_presets(color)')
+      .in('workout_id', workoutIds)
+      .not('preset_id', 'is', null);
+    if (error || !data) return out;
+    for (const row of data as Array<{ workout_id: string; preset: any }>) {
+      // PostgREST nested join returns either an object or an array (legacy);
+      // coerce defensively.
+      const preset = Array.isArray(row.preset) ? row.preset[0] : row.preset;
+      const color = preset?.color;
+      if (color && !out.has(row.workout_id)) {
+        out.set(row.workout_id, color);
+      }
+    }
+  } catch {
+    // Swallow — color is cosmetic, never block the history list because of it.
+  }
+  return out;
 }
 
 export interface HistoryPractice {
@@ -88,7 +121,15 @@ export async function listWorkouts(params: {
       return { data: null, error };
     }
 
-    return { data: data || [], error: null };
+    const workouts = data || [];
+    // Decorate with the first preset color per workout (used by the History
+    // card's date kicker). Cosmetic — failure here is silently ignored.
+    const colors = await fetchWorkoutPresetColors(workouts.map(w => w.id));
+    const decorated: HistoryWorkout[] = workouts.map(w => ({
+      ...w,
+      presetColor: colors.get(w.id) ?? null,
+    }));
+    return { data: decorated, error: null };
   } catch (error: any) {
     return { data: null, error };
   }
@@ -128,7 +169,13 @@ export async function listWorkoutsForProfile(params: {
       return { data: null, error };
     }
 
-    return { data: data || [], error: null };
+    const workouts = data || [];
+    const colors = await fetchWorkoutPresetColors(workouts.map(w => w.id));
+    const decorated: HistoryWorkout[] = workouts.map(w => ({
+      ...w,
+      presetColor: colors.get(w.id) ?? null,
+    }));
+    return { data: decorated, error: null };
   } catch (error: any) {
     return { data: null, error };
   }

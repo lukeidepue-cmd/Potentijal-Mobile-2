@@ -3,8 +3,6 @@
     "strict": true,
     "jsx": "react-native",
     "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -24,7 +22,9 @@
     "expo-env.d.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "supabase/functions/**",
+    "_disabled-features/**"
   ],
   "extends": "expo/tsconfig.base"
 }

@@ -1,6 +1,6 @@
 // app/(tabs)/settings/index.tsx
 // Main Settings Screen - Lists all settings sections
-import React, { useEffect } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -19,7 +19,10 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/providers/AuthProvider";
 import Constants from "expo-constants";
 import { PROFILE_FEATURES_ENABLED } from "@/constants/features";
+import { useTutorial } from "@/providers/TutorialContext";
+import { FIRST_TUTORIAL_STEP } from "@/lib/tutorial";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import { PremiumShimmerCTASurface } from "@/components/PremiumShimmerCTASurface";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -42,8 +45,9 @@ const FONT = {
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
-  const { canAddMoreSports, isPremium, isCreator } = useFeatures();
+  const { isPremium, isCreator } = useFeatures();
   const { user, signOut } = useAuth();
+  const { setStep: setTutorialStep } = useTutorial();
   const [geistLoaded] = useGeist({
     Geist_400Regular,
     Geist_500Medium,
@@ -79,7 +83,7 @@ export default function Settings() {
     return null;
   }
 
-  const appVersion = Constants.expoConfig?.version || "1.0.0";
+  const appVersion = Constants.expoConfig?.version || "1.3";
 
   return (
     <Animated.View style={[styles.container, animatedStyle]}>
@@ -114,43 +118,6 @@ export default function Settings() {
           <View style={styles.groupCard}>
             <Pressable
               style={[styles.settingRow, styles.settingRowFirst]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push("/(tabs)/settings/sports-training/my-sports");
-              }}
-            >
-              <Ionicons name="basketball-outline" size={20} color={theme.colors.textHi} />
-              <Text style={styles.settingRowText}>My Sports</Text>
-              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-            </Pressable>
-
-            <View style={styles.settingRowSeparator} />
-            <Pressable
-              style={styles.settingRow}
-              onPress={() => {
-                if (canAddMoreSports) {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push("/(tabs)/settings/sports-training/add-sports");
-                }
-              }}
-              disabled={!canAddMoreSports}
-            >
-              <Ionicons name="add-circle-outline" size={20} color={theme.colors.textHi} />
-              <Text style={styles.settingRowText}>Add Sports</Text>
-              <View style={styles.settingRowRight}>
-                {!canAddMoreSports && (
-                  <View style={styles.lockPill}>
-                    <Ionicons name="lock-closed" size={12} color={theme.colors.textLo} />
-                    <Text style={styles.lockPillText}>Locked</Text>
-                  </View>
-                )}
-                <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
-              </View>
-            </Pressable>
-
-            <View style={styles.settingRowSeparator} />
-            <Pressable
-              style={styles.settingRow}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push("/(tabs)/settings/notifications");
@@ -191,7 +158,7 @@ export default function Settings() {
 
         {/* Premium Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PREMIUM</Text>
+          <Text style={styles.sectionTitle}>PRO</Text>
           <View style={styles.groupCard}>
             {(isPremium || isCreator) && (
               <>
@@ -216,26 +183,30 @@ export default function Settings() {
                 <Ionicons name="star-outline" size={20} color={theme.colors.textHi} />
                 <View style={styles.planCardInfo}>
                   <Text style={styles.planCardTitle}>
-                    {isPremium || isCreator ? "Premium Active" : "Free Plan"}
+                    {isPremium || isCreator ? "Pro Active" : "Free Plan"}
                   </Text>
                   {isCreator && (
                     <Text style={styles.planCardSubtitle}>Creator Account</Text>
                   )}
                   {!isPremium && !isCreator && (
-                    <Text style={styles.planCardSubtitle}>Unlock advanced analytics + premium tools</Text>
+                    <Text style={styles.planCardSubtitle}>Unlock advanced analytics + Pro tools</Text>
                   )}
                 </View>
               </View>
               {!isPremium && !isCreator && (
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    router.push("/(tabs)/purchase-premium");
-                  }}
-                  style={styles.upgradeButtonNew}
-                >
-                  <Text style={styles.upgradeButtonTextNew}>Upgrade</Text>
-                </Pressable>
+                <View style={styles.upgradeButtonWrap}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      router.push("/(tabs)/purchase-premium");
+                    }}
+                    style={({ pressed }) => [pressed && { opacity: 0.92 }]}
+                  >
+                    <PremiumShimmerCTASurface>
+                      <Text style={styles.upgradeButtonTextNew}>Upgrade</Text>
+                    </PremiumShimmerCTASurface>
+                  </Pressable>
+                </View>
               )}
             </View>
 
@@ -285,6 +256,24 @@ export default function Settings() {
             >
               <Ionicons name="help-circle-outline" size={20} color={theme.colors.textHi} />
               <Text style={styles.settingRowText}>Help</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
+            </Pressable>
+
+            {/* Replay the tutorial on demand. The automatic first-run arming in
+                onboarding/name-entry.tsx is unchanged — this is an extra way in,
+                not a replacement, so the tutorial is recoverable after it's been
+                skipped or completed. Home is where step 1 (build_preset) lives. */}
+            <View style={styles.settingRowSeparator} />
+            <Pressable
+              style={styles.settingRow}
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                await setTutorialStep(FIRST_TUTORIAL_STEP);
+                router.replace("/(tabs)/(home)");
+              }}
+            >
+              <Ionicons name="school-outline" size={20} color={theme.colors.textHi} />
+              <Text style={styles.settingRowText}>Replay Tutorial</Text>
               <Ionicons name="chevron-forward" size={20} color={theme.colors.textLo} />
             </Pressable>
 
@@ -522,23 +511,23 @@ const styles = StyleSheet.create({
     color: theme.colors.textLo,
     fontFamily: FONT.uiRegular,
   },
-  upgradeButtonNew: {
-    alignSelf: "flex-end",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-    backgroundColor: theme.colors.primary600,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+  upgradeButtonWrap: {
+    width: "100%",
+    alignItems: "center",
   },
   upgradeButtonTextNew: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#06160D",
-    fontFamily: FONT.uiBold,
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#000000",
+    fontFamily: FONT.uiSemi,
+    zIndex: 1,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+    paddingRight: 3,
+    letterSpacing: 0.15,
+    textShadowColor: "rgba(0, 0, 0, 0.25)",
+    textShadowOffset: { width: 0, height: 1.2 },
+    textShadowRadius: 2.5,
   },
 });
 

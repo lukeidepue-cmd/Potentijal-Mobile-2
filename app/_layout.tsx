@@ -23,11 +23,13 @@ import { ProfileRefreshProvider, useProfileRefresh } from '../providers/ProfileR
 import { FeaturesProvider } from '../providers/FeaturesContext';
 import { SettingsProvider } from '../providers/SettingsContext';
 import { PostHogProvider } from '../providers/PostHogProvider';
+import { OnboardingDataProvider } from '../providers/OnboardingDataContext';
+import { TutorialProvider } from '../providers/TutorialContext';
 import { usePostHogUserTracking } from '../lib/posthog/user-tracking';
 import { usePostHog } from 'posthog-react-native';
 import { setupDeepLinkListener } from '../lib/deep-links';
-import { getOnboardingState } from '../lib/api/onboarding';
 import { scheduleAllWorkoutNotifications, scheduleConsistencyScoreNotification } from '../lib/notifications/notifications';
+import { isExpoGo } from '../lib/expo-env';
 import Constants from 'expo-constants';
 
 // Keep splash screen visible while we check auth/onboarding status
@@ -44,7 +46,9 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
   // Steps 18–19: RevenueCat — configure at launch (extra or .env so dev builds work).
+  // Skipped in Expo Go: the native module isn't bundled, so any Purchases.* call throws.
   useEffect(() => {
+    if (isExpoGo()) return;
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
     const apiKey = (extra?.revenueCatPublicApiKey ?? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) as string | undefined;
     if (!apiKey?.trim()) return;
@@ -55,13 +59,16 @@ function RootLayoutNav() {
   }, []);
 
   useEffect(() => {
+    if (isExpoGo()) return;
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
     const apiKey = (extra?.revenueCatPublicApiKey ?? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) as string | undefined;
     if (!apiKey?.trim()) return;
     try {
       const Purchases = require('react-native-purchases').default;
-      if (user?.id) Purchases.logIn(user.id);
-      else Purchases.logOut();
+      // .catch on the returned promise: without it a rejection bubbles up as
+      // "Uncaught (in promise)" even though we're wrapped in try/catch.
+      if (user?.id) Purchases.logIn(user.id).catch(() => {});
+      else Purchases.logOut().catch(() => {});
     } catch (_e) {}
   }, [user?.id]);
 
@@ -156,6 +163,12 @@ function RootLayoutNav() {
     };
   }, []);
 
+  // The post-onboarding tutorial is armed exactly once, the moment onboarding
+  // completes (see app/onboarding/name-entry.tsx, which sets the 'build_preset'
+  // step before routing into the tabs). We deliberately do NOT re-arm it on
+  // subsequent logins or app launches — a returning, already-onboarded user
+  // should never see the tutorial again.
+
   useEffect(() => {
     // Wait for auth and onboarding status to load
     if (authLoading || onboardingLoading) {
@@ -172,43 +185,15 @@ function RootLayoutNav() {
 
     if (!user) {
       if (!inOnboardingGroup) {
-        router.replace('/onboarding/welcome');
+        router.replace('/onboarding/identity');
       }
     } else if (needsOnboarding === true) {
-      // Authenticated but needs onboarding - resume from last step
+      // Authenticated but needs onboarding — only post-auth step is name-entry
       if (!inOnboardingGroup) {
-        getOnboardingState().then(({ data, error }) => {
-          if (error) {
-            router.replace('/onboarding/account-basics');
-            return;
-          }
-
-          const currentStep = data?.current_step;
-
-          let targetRoute = '/onboarding/account-basics';
-
-          if (currentStep) {
-            const stepToRoute: Record<string, string> = {
-              'email_entry': '/onboarding/email-entry',
-              'email_verification': '/onboarding/email-verification',
-              'account_basics': '/onboarding/account-basics',
-              'sport_selection': '/onboarding/sport-selection',
-              'training_intent': '/onboarding/training-intent',
-              'app_intro': '/onboarding/app-intro',
-              'notifications': '/onboarding/notifications',
-              'premium_offer': '/onboarding/premium-offer',
-              'completion': '/onboarding/completion',
-            };
-
-            if (user && (currentStep === 'email_entry' || currentStep === 'email_verification')) {
-              targetRoute = '/onboarding/account-basics';
-            } else {
-              targetRoute = stepToRoute[currentStep] || '/onboarding/account-basics';
-            }
-          }
-
-          router.replace(targetRoute as any);
-        });
+        router.replace('/onboarding/name-entry' as any);
+      } else if (segments[1] === 'email-verification') {
+        // User just verified OTP; navigate to name-entry from root to avoid "PUSH not handled" / brief tabs flash
+        router.replace('/onboarding/name-entry' as any);
       }
     } else if (needsOnboarding === false) {
       if (!inTabsGroup) {
@@ -216,11 +201,9 @@ function RootLayoutNav() {
       }
       scheduleAllWorkoutNotifications().catch(() => {});
       scheduleConsistencyScoreNotification().catch(() => {});
-    } else {
-      if (user && !inTabsGroup && !inOnboardingGroup) {
-        router.replace('/(tabs)' as import('expo-router').Href);
-      }
     }
+    // When needsOnboarding is null (unknown), do NOT navigate to tabs — prevents brief home-tab flash
+    // while onboarding status is being fetched after OTP verification.
   }, [user, authLoading, needsOnboarding, onboardingLoading, segments]);
 
   // Shared loading screen UI: background image fills screen + centered spinning star (same size/position/speed on both)
@@ -274,17 +257,21 @@ export default function RootLayout() {
   // Wrap with GestureHandlerRootView for swipe gestures
   const appContent = (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <SettingsProvider>
-          <ProfileRefreshProvider>
-            <FeaturesProvider>
-              <ModeProvider>
-                <RootLayoutNav />
-              </ModeProvider>
-            </FeaturesProvider>
-          </ProfileRefreshProvider>
-        </SettingsProvider>
-      </AuthProvider>
+      <OnboardingDataProvider>
+        <AuthProvider>
+          <SettingsProvider>
+            <ProfileRefreshProvider>
+              <FeaturesProvider>
+                <ModeProvider>
+                  <TutorialProvider>
+                    <RootLayoutNav />
+                  </TutorialProvider>
+                </ModeProvider>
+              </FeaturesProvider>
+            </ProfileRefreshProvider>
+          </SettingsProvider>
+        </AuthProvider>
+      </OnboardingDataProvider>
     </GestureHandlerRootView>
   );
 
@@ -301,7 +288,7 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   loadingScreenWrapper: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#0B1513',
   },
   loadingBackground: {

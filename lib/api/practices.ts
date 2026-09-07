@@ -17,7 +17,7 @@ export interface PracticeData {
  * Create a practice entry
  */
 export async function createPractice(params: {
-  mode: SportMode | string;
+  mode?: SportMode | string;
   practicedAt: string; // ISO date string
   title?: string;
   drill: string;
@@ -29,9 +29,10 @@ export async function createPractice(params: {
       return { data: null, error: { message: 'User not authenticated' } };
     }
 
-    const sportMode = typeof params.mode === 'string' 
-      ? mapModeKeyToSportMode(params.mode) 
-      : params.mode;
+    // mode kept for DB compatibility (NOT NULL column); defaults to 'workout'.
+    const sportMode = params.mode
+      ? (typeof params.mode === 'string' ? mapModeKeyToSportMode(params.mode) : params.mode)
+      : 'workout';
 
     const { data, error } = await supabase
       .from('practices')

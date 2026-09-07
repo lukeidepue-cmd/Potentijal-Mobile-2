@@ -234,58 +234,22 @@ export default function TrainingStatisticsScreen() {
   const { availableModes } = useAvailableModes();
   const { mode: currentMode } = useMode();
 
-  // Spinning star animation for search loading
+  // Spinning star animations. The shared values + styles are declared here;
+  // the effects that drive them live below the data hooks, because they depend
+  // on the loading flags those hooks return.
   const searchStarRotation = useSharedValue(0);
-  
-  useEffect(() => {
-    if (exercisesLoading) {
-      searchStarRotation.value = withRepeat(
-        withTiming(360, { duration: 2000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      searchStarRotation.value = 0;
-    }
-  }, [exercisesLoading]);
 
   const searchLoadingStarAnimated = useAnimatedStyle(() => ({
     transform: [{ rotate: `${searchStarRotation.value}deg` }],
   }));
 
-  // Spinning star animation for exercise frequency loading
   const exercisesStarRotation = useSharedValue(0);
-  
-  useEffect(() => {
-    if (exercisesLoading) {
-      exercisesStarRotation.value = withRepeat(
-        withTiming(360, { duration: 2000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      exercisesStarRotation.value = 0;
-    }
-  }, [exercisesLoading]);
 
   const exercisesStarAnimated = useAnimatedStyle(() => ({
     transform: [{ rotate: `${exercisesStarRotation.value}deg` }],
   }));
 
-  // Spinning star animation for records loading
   const recordsStarRotation = useSharedValue(0);
-  
-  useEffect(() => {
-    if (recordsLoading) {
-      recordsStarRotation.value = withRepeat(
-        withTiming(360, { duration: 2000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      recordsStarRotation.value = 0;
-    }
-  }, [recordsLoading]);
 
   const recordsStarAnimated = useAnimatedStyle(() => ({
     transform: [{ rotate: `${recordsStarRotation.value}deg` }],
@@ -324,6 +288,46 @@ export default function TrainingStatisticsScreen() {
     initialTimeInterval: 30,
     initialMode: initialMode,
   });
+
+  // Drive the spinning-star loaders declared above. These must sit below the
+  // data hooks: the dependency arrays are evaluated during render, so reading
+  // exercisesLoading/recordsLoading before their declarations threw a
+  // ReferenceError and crashed the screen on mount.
+  useEffect(() => {
+    if (exercisesLoading) {
+      searchStarRotation.value = withRepeat(
+        withTiming(360, { duration: 2000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      searchStarRotation.value = 0;
+    }
+  }, [exercisesLoading]);
+
+  useEffect(() => {
+    if (exercisesLoading) {
+      exercisesStarRotation.value = withRepeat(
+        withTiming(360, { duration: 2000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      exercisesStarRotation.value = 0;
+    }
+  }, [exercisesLoading]);
+
+  useEffect(() => {
+    if (recordsLoading) {
+      recordsStarRotation.value = withRepeat(
+        withTiming(360, { duration: 2000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      recordsStarRotation.value = 0;
+    }
+  }, [recordsLoading]);
 
   // Track height of exercises list for dashed line
   const [exercisesListHeight, setExercisesListHeight] = useState(0);
@@ -426,7 +430,7 @@ export default function TrainingStatisticsScreen() {
       >
         {/* Personal Records Section */}
         <View style={styles.section}>
-          {/* Sport Mode Dropdown - Centered heading like skill map/progress graph */}
+          {/* Sport Mode Dropdown - Centered heading like progress graph */}
           <View style={styles.topSection}>
             <Pressable
               style={styles.floatingModeButton}
@@ -507,7 +511,7 @@ export default function TrainingStatisticsScreen() {
               </View>
             )}
 
-            {/* Exercise Search Bar - Same as skill map/progress graph */}
+            {/* Exercise Search Bar - Same as progress graph */}
             <View style={styles.searchBarContainer}>
               <BlurView
                 intensity={20}
@@ -736,7 +740,7 @@ export default function TrainingStatisticsScreen() {
           {/* Centered heading */}
           <Text style={styles.exerciseFrequencyHeading}>Exercise Frequency</Text>
 
-          {/* Time Interval Bar - Same as skill map */}
+          {/* Time Interval Bar */}
           <View style={styles.timeIntervalBarContainer}>
             <View 
               style={styles.timeIntervalBar}

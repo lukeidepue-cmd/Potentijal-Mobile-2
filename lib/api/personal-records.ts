@@ -310,6 +310,15 @@ export async function getPersonalRecords(
     const records: PersonalRecord['records'] = {};
     let overallDate: string | null = null;
 
+    /** Keep the most recent date seen across every record category. Written as
+     *  a helper so the null-check reads against the declared type rather than
+     *  the narrowed flow type at each call site. */
+    const trackLatestDate = (date: string | null | undefined) => {
+      if (date && (!overallDate || date > overallDate)) {
+        overallDate = date;
+      }
+    };
+
     if (exerciseType === 'exercise') {
       // Exercise type: Highest reps × weight, highest reps, highest weight
       // Note: Allow 0 weight for bodyweight exercises, but require reps > 0
@@ -343,9 +352,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.repsXWeight = repsXWeight.value;
-      if (repsXWeight.date && (!overallDate || repsXWeight.date > overallDate)) {
-        overallDate = repsXWeight.date;
-      }
+      trackLatestDate(repsXWeight.date);
 
       const reps = findHighestValueAndDate(
         sets,
@@ -357,9 +364,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.reps = reps.value;
-      if (reps.date && (!overallDate || reps.date > overallDate)) {
-        overallDate = reps.date;
-      }
+      trackLatestDate(reps.date);
 
       const weight = findHighestValueAndDate(
         sets,
@@ -371,9 +376,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.weight = weight.value;
-      if (weight.date && (!overallDate || weight.date > overallDate)) {
-        overallDate = weight.date;
-      }
+      trackLatestDate(weight.date);
 
     } else if (exerciseType === 'shooting') {
       if (sportMode === 'basketball') {
@@ -400,9 +403,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.shootingPercentage = percentage.value;
-        if (percentage.date && (!overallDate || percentage.date > overallDate)) {
-          overallDate = percentage.date;
-        }
+        trackLatestDate(percentage.date);
 
         const attempted = findHighestValueAndDate(
           sets,
@@ -414,9 +415,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.attempted = attempted.value;
-        if (attempted.date && (!overallDate || attempted.date > overallDate)) {
-          overallDate = attempted.date;
-        }
+        trackLatestDate(attempted.date);
 
         const made = findHighestValueAndDate(
           sets,
@@ -428,9 +427,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.made = made.value;
-        if (made.date && (!overallDate || made.date > overallDate)) {
-          overallDate = made.date;
-        }
+        trackLatestDate(made.date);
       } else {
         // Soccer/Hockey shooting: Highest distance, highest reps
         const distance = findHighestValueAndDate(
@@ -443,9 +440,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.distance = distance.value;
-        if (distance.date && (!overallDate || distance.date > overallDate)) {
-          overallDate = distance.date;
-        }
+        trackLatestDate(distance.date);
 
         const shotsReps = findHighestValueAndDate(
           sets,
@@ -457,9 +452,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.shotsReps = shotsReps.value;
-        if (shotsReps.date && (!overallDate || shotsReps.date > overallDate)) {
-          overallDate = shotsReps.date;
-        }
+        trackLatestDate(shotsReps.date);
       }
 
     } else if (exerciseType === 'drill') {
@@ -475,9 +468,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.drillReps = drillReps.value;
-        if (drillReps.date && (!overallDate || drillReps.date > overallDate)) {
-          overallDate = drillReps.date;
-        }
+        trackLatestDate(drillReps.date);
 
         const completionPercentage = findHighestValueAndDate(
           sets,
@@ -503,9 +494,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.completionPercentage = completionPercentage.value;
-        if (completionPercentage.date && (!overallDate || completionPercentage.date > overallDate)) {
-          overallDate = completionPercentage.date;
-        }
+        trackLatestDate(completionPercentage.date);
 
         // Calculate reps/min for football drills (if time is available)
         const repsPerMinute = findHighestValueAndDate(
@@ -526,9 +515,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.repsPerMinute = repsPerMinute.value;
-        if (repsPerMinute.date && (!overallDate || repsPerMinute.date > overallDate)) {
-          overallDate = repsPerMinute.date;
-        }
+        trackLatestDate(repsPerMinute.date);
       } else {
         // Basketball/Soccer/Hockey/Tennis drill: Highest reps, highest time
         const drillReps = findHighestValueAndDate(
@@ -541,9 +528,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.drillReps = drillReps.value;
-        if (drillReps.date && (!overallDate || drillReps.date > overallDate)) {
-          overallDate = drillReps.date;
-        }
+        trackLatestDate(drillReps.date);
 
         const time = findHighestValueAndDate(
           sets,
@@ -555,9 +540,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.time = time.value;
-        if (time.date && (!overallDate || time.date > overallDate)) {
-          overallDate = time.date;
-        }
+        trackLatestDate(time.date);
 
         // Calculate reps/min for basketball/soccer/hockey/tennis drills
         const repsPerMinute = findHighestValueAndDate(
@@ -578,9 +561,7 @@ export async function getPersonalRecords(
           getSetDate
         );
         records.repsPerMinute = repsPerMinute.value;
-        if (repsPerMinute.date && (!overallDate || repsPerMinute.date > overallDate)) {
-          overallDate = repsPerMinute.date;
-        }
+        trackLatestDate(repsPerMinute.date);
       }
 
     } else if (exerciseType === 'sprints') {
@@ -595,9 +576,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.sprintDistance = sprintDistance.value;
-      if (sprintDistance.date && (!overallDate || sprintDistance.date > overallDate)) {
-        overallDate = sprintDistance.date;
-      }
+      trackLatestDate(sprintDistance.date);
 
       const speed = findHighestValueAndDate(
         sets,
@@ -617,9 +596,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.speed = speed.value;
-      if (speed.date && (!overallDate || speed.date > overallDate)) {
-        overallDate = speed.date;
-      }
+      trackLatestDate(speed.date);
 
       const sprintReps = findHighestValueAndDate(
         sets,
@@ -631,9 +608,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.sprintReps = sprintReps.value;
-      if (sprintReps.date && (!overallDate || sprintReps.date > overallDate)) {
-        overallDate = sprintReps.date;
-      }
+      trackLatestDate(sprintReps.date);
 
     } else if (exerciseType === 'hitting') {
       // Baseball hitting: Highest reps, highest avg_distance (stored as distance in DB)
@@ -647,9 +622,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.hittingReps = hittingReps.value;
-      if (hittingReps.date && (!overallDate || hittingReps.date > overallDate)) {
-        overallDate = hittingReps.date;
-      }
+      trackLatestDate(hittingReps.date);
 
       const avgDistance = findHighestValueAndDate(
         sets,
@@ -661,9 +634,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.avgDistance = avgDistance.value;
-      if (avgDistance.date && (!overallDate || avgDistance.date > overallDate)) {
-        overallDate = avgDistance.date;
-      }
+      trackLatestDate(avgDistance.date);
 
     } else if (exerciseType === 'fielding') {
       // Baseball fielding: Highest (reps × distance), highest reps, highest distance
@@ -681,9 +652,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.fieldingRepsXDistance = fieldingRepsXDistance.value;
-      if (fieldingRepsXDistance.date && (!overallDate || fieldingRepsXDistance.date > overallDate)) {
-        overallDate = fieldingRepsXDistance.date;
-      }
+      trackLatestDate(fieldingRepsXDistance.date);
 
       const fieldingReps = findHighestValueAndDate(
         sets,
@@ -695,9 +664,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.fieldingReps = fieldingReps.value;
-      if (fieldingReps.date && (!overallDate || fieldingReps.date > overallDate)) {
-        overallDate = fieldingReps.date;
-      }
+      trackLatestDate(fieldingReps.date);
 
       const fieldingDistance = findHighestValueAndDate(
         sets,
@@ -709,9 +676,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.fieldingDistance = fieldingDistance.value;
-      if (fieldingDistance.date && (!overallDate || fieldingDistance.date > overallDate)) {
-        overallDate = fieldingDistance.date;
-      }
+      trackLatestDate(fieldingDistance.date);
 
     } else if (exerciseType === 'rally') {
       // Tennis rally: Highest points, highest time
@@ -725,9 +690,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.points = points.value;
-      if (points.date && (!overallDate || points.date > overallDate)) {
-        overallDate = points.date;
-      }
+      trackLatestDate(points.date);
 
       const rallyTime = findHighestValueAndDate(
         sets,
@@ -739,9 +702,7 @@ export async function getPersonalRecords(
         getSetDate
       );
       records.rallyTime = rallyTime.value;
-      if (rallyTime.date && (!overallDate || rallyTime.date > overallDate)) {
-        overallDate = rallyTime.date;
-      }
+      trackLatestDate(rallyTime.date);
     }
 
     const result: PersonalRecord = {

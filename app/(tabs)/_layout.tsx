@@ -1,13 +1,84 @@
 // app/(tabs)/_layout.tsx
-import { Tabs } from "expo-router";
+import { Tabs, router, usePathname, type Href } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { PROFILE_FEATURES_ENABLED } from "../../constants/features";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
+import { useEffect } from "react";
 import TabBarBackground from "../../components/ui/TabBarBackground";
 import AnimatedTabBarIcon from "../../components/ui/AnimatedTabBarIcon";
+import { useTutorial } from "../../providers/TutorialContext";
+import { BuildPresetTutorialOverlay } from "../../components/BuildPresetTutorialOverlay";
+import { SpotlightTutorialOverlay } from "../../components/SpotlightTutorialOverlay";
+import { TutorialSkipButton } from "../../components/TutorialSkipButton";
+import type { TutorialStep } from "../../lib/tutorial";
+
+// Steps whose spotlight targets a piece of screen content (as opposed to a tab
+// button or a full-screen intro). These only work while their owning screen is
+// mounted to publish a contentRect via TutorialContext.
+//
+// `href` is where to send the user; `match` is what usePathname() reports when
+// they're already there (expo-router strips group segments like (tabs)/(home)).
+const CONTENT_STEP_SCREEN: Partial<
+  Record<TutorialStep, { href: Href; match: string }>
+> = {
+  workouts_preset: { href: "/(tabs)/workouts", match: "/workouts" },
+  workouts_exercise_box: { href: "/(tabs)/workouts", match: "/workouts" },
+  workouts_progress_tab: { href: "/(tabs)/workouts", match: "/workouts" },
+  progress_graph_button: { href: "/(tabs)/meals", match: "/meals" },
+  progress_build_view_button: {
+    href: "/(tabs)/meals/progress-graphs",
+    match: "/meals/progress-graphs",
+  },
+};
 
 export default function TabsLayout() {
+  const { step, setStep, setContentRect, contentRect } = useTutorial();
+  const pathname = usePathname();
+  const tutorialActive = step !== "done";
+
+  // Resume the tutorial on the screen its current step belongs to.
+  //
+  // Without this, relaunching the app mid-tutorial restores the step but lands
+  // the user on Home, where nothing publishes a contentRect. The spotlight then
+  // has no hole to draw and every tab is blocked by the gating below — the user
+  // is stuck with no route forward. Debounced so it can't fire during the normal
+  // gap between mount and measureInWindow() resolving.
+  useEffect(() => {
+    const target = CONTENT_STEP_SCREEN[step];
+    if (!target) return;
+    if (contentRect) return; // the owning screen is mounted and measured
+    if (pathname === target.match) return; // already there, just still measuring
+    const t = setTimeout(() => router.replace(target.href), 600);
+    return () => clearTimeout(t);
+  }, [step, contentRect, pathname]);
+
+  // The Home dim overlay only shows for step 1.
+  const showHomeOverlay = step === "build_preset";
+  // The spotlight overlay (content + tab holes, or a full-screen intro) covers
+  // the Home→Workouts, in-Workouts, and Progress/View tutorial steps.
+  const showSpotlight =
+    step === "home_workout_tab" ||
+    step === "workouts_preset" ||
+    step === "workouts_exercise_box" ||
+    step === "workouts_progress_tab" ||
+    step === "progress_graph_button" ||
+    step === "progress_graph_intro" ||
+    step === "progress_build_view_button" ||
+    step === "view_intro";
+
+  // Per-tab press gating: during the tutorial, block every tab EXCEPT the one
+  // the current step wants the user to move to. `allowStep` is the step during
+  // which this tab is the intended destination (null = never the target).
+  const tabListeners = (allowStep: TutorialStep | null) => ({
+    tabPress: (e: { preventDefault: () => void }) => {
+      if (step === "done") return; // tutorial inactive — normal behavior
+      if (allowStep && step === allowStep) return; // this tab is the target — allow
+      e.preventDefault(); // otherwise block
+    },
+  });
+
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -41,14 +112,15 @@ export default function TabsLayout() {
       {/* Home tab is the (home) group */}
       <Tabs.Screen
         name="(home)"
+        listeners={tabListeners(null)}
         options={{
           title: "Home",
           tabBarIcon: ({ color, focused, size }) => (
             <AnimatedTabBarIcon focused={focused}>
-              <Ionicons 
-                name={focused ? "home" : "home-outline"} 
-                color={color} 
-                size={size} 
+              <Ionicons
+                name={focused ? "home" : "home-outline"}
+                color={color}
+                size={size}
               />
             </AnimatedTabBarIcon>
           ),
@@ -57,14 +129,15 @@ export default function TabsLayout() {
 
       <Tabs.Screen
         name="workouts"
+        listeners={tabListeners("home_workout_tab")}
         options={{
           title: "Workouts",
           tabBarIcon: ({ color, focused, size }) => (
             <AnimatedTabBarIcon focused={focused}>
-              <MaterialCommunityIcons 
-                name="dumbbell" 
-                color={color} 
-                size={size} 
+              <MaterialCommunityIcons
+                name="dumbbell"
+                color={color}
+                size={size}
               />
             </AnimatedTabBarIcon>
           ),
@@ -80,6 +153,7 @@ export default function TabsLayout() {
 
       <Tabs.Screen
         name="meals"
+        listeners={tabListeners("workouts_progress_tab")}
         options={{
           title: "Progress",
           tabBarIcon: ({ color, focused, size }) => (
@@ -120,6 +194,7 @@ export default function TabsLayout() {
 
       <Tabs.Screen
         name="history"
+        listeners={tabListeners(null)}
         options={{
           title: "History",
           tabBarIcon: ({ color, focused, size }) => (
@@ -134,19 +209,7 @@ export default function TabsLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null, // Hide from tab bar (testing tab - removed from frontend)
-        }}
-      />
-
-      <Tabs.Screen
-        name="scan"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
+      {/* profile/ now lives in _disabled-features/ — see that folder's README. */}
 
       <Tabs.Screen
         name="purchase-premium"
@@ -180,14 +243,6 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="settings/account/delete-account"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="settings/sports-training/my-sports"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="settings/sports-training/add-sports"
         options={{ href: null }}
       />
       <Tabs.Screen
@@ -231,6 +286,47 @@ export default function TabsLayout() {
         options={{ href: null }}
       />
     </Tabs>
+
+    {/* Tutorial step 1 overlay — sits above the tab bar so the user can ONLY tap
+        Build New Preset. Tapping it advances the tutorial to the New Preset
+        screen's intro step and opens the builder. */}
+    {showHomeOverlay && (
+      <BuildPresetTutorialOverlay
+        onPressBuildPreset={async () => {
+          await setStep("preset_intro");
+          router.push("/(tabs)/(home)/build-preset");
+        }}
+      />
+    )}
+
+    {/* Spotlight overlay for the Home→Workouts hop and the in-Workouts steps.
+        It dims everything except the relevant screen content (reported by the
+        active screen via context) and/or the real tab button (computed by step). */}
+    {showSpotlight && (
+      <SpotlightTutorialOverlay
+        step={step}
+        contentRect={contentRect}
+        onIntroAdvance={() => {
+          if (step === "progress_graph_intro") setStep("progress_build_view_button");
+          else if (step === "view_intro") setStep("view_build");
+        }}
+      />
+    )}
+
+    {/* Escape hatch. Rendered last and at a higher zIndex than the overlays, so
+        it stays tappable on every step — including ones that dim the screen and
+        block all four tabs. Shown for the whole tutorial, not just the dimmed
+        steps, so steps like preset_build (no dim, but the user is held on the
+        screen until they create a preset) are escapable too. */}
+    {tutorialActive && (
+      <TutorialSkipButton
+        onSkip={async () => {
+          setContentRect(null);
+          await setStep("done");
+        }}
+      />
+    )}
+    </View>
   );
 }
 

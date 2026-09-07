@@ -135,10 +135,10 @@ export default function AITrainerSettings() {
         </View>
         <View style={styles.lockedContainer}>
           <Ionicons name="lock-closed" size={64} color={theme.colors.textLo} />
-          <Text style={styles.lockedText}>Premium Feature</Text>
+          <Text style={styles.lockedText}>Pro Feature</Text>
           <Text style={styles.lockedSubtext}>Upgrade to access AI Trainer settings</Text>
           <Pressable style={styles.upgradeButton} onPress={() => setShowUpgrade(true)}>
-            <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+            <Text style={styles.upgradeButtonText}>Upgrade to Pro</Text>
           </Pressable>
         </View>
         <UpgradeModal visible={showUpgrade} onClose={() => setShowUpgrade(false)} />

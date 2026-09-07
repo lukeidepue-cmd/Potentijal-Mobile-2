@@ -70,23 +70,26 @@ export function Skeleton({ width = '100%', height = 20, borderRadius = 8, style 
   );
 }
 
-// Pre-built skeleton components for common use cases
+// Pre-built skeleton components for common use cases.
+// Dimensions match the real workout card in History (cardBody.minHeight: 76,
+// theme.radius.lg: 16, theme.space.px8: 8) so the skeleton doesn't visually
+// "shrink" when the real cards load in.
 export function SkeletonCard({ style }: { style?: ViewStyle }) {
   return (
     <View
       style={[
         {
           width: '100%',
-          height: 140,
-          borderRadius: 20,
+          height: 76,
+          borderRadius: 16,
           backgroundColor: 'rgba(255, 255, 255, 0.05)',
           overflow: 'hidden',
-          marginBottom: 12,
+          marginBottom: 8,
         },
         style,
       ]}
     >
-      <Skeleton width="100%" height="100%" borderRadius={20} />
+      <Skeleton width="100%" height="100%" borderRadius={16} />
     </View>
   );
 }

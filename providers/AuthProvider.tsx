@@ -19,6 +19,7 @@ type AuthContextType = {
   signInWithOtp: (email: string) => Promise<{ error: any }>;
   verifyOtp: (email: string, token: string) => Promise<{ data: any; error: any }>;
   refreshOnboardingStatus: () => Promise<void>;
+  setOnboardingComplete: () => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -196,6 +197,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await checkOnboardingStatus();
   };
 
+  const setOnboardingComplete = useCallback(() => {
+    setNeedsOnboardingStatus(false);
+    setOnboardingLoading(false);
+  }, []);
+
   const value = {
     user,
     session,
@@ -209,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithOtp,
     verifyOtp,
     refreshOnboardingStatus,
+    setOnboardingComplete,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

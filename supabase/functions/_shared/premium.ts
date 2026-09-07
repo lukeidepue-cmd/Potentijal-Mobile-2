@@ -59,7 +59,7 @@ export async function checkPremiumOrCreator(
       isCreator: false,
       errorResponse: new Response(
         JSON.stringify({
-          error: `Premium or creator subscription required to use ${featureName}`,
+          error: `Pro or creator subscription required to use ${featureName}`,
         }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       ),

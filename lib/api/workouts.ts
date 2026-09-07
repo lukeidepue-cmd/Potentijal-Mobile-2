@@ -14,6 +14,9 @@ export interface AddExerciseParams {
   workoutId: string;
   exerciseType: ExerciseType | string; // Accept string for frontend item kinds
   name: string;
+  /** When the exercise was added from a user preset, the preset's id. Used by
+   *  Views (progress graph) to find sets by preset rather than by name. */
+  presetId?: string;
 }
 
 export interface SetData {
@@ -25,13 +28,21 @@ export interface SetData {
   distance?: number;
   timeMin?: number;
   avgTimeSec?: number;
-  completed?: boolean;
+  /** Numeric since migration 025 (number of completed reps). Booleans are still
+   *  accepted and coerced for rows logged before that migration. */
+  completed?: number | boolean;
   points?: number;
 }
 
 export interface UpsertSetsParams {
   exerciseId: string;
   sets: SetData[];
+}
+
+/** A single user-defined stat value on a preset-kind set. Ordered by stat_index. */
+export interface CustomSetStat {
+  name: string;
+  value: number;
 }
 
 export interface WorkoutDetails {
@@ -43,9 +54,24 @@ export interface WorkoutDetails {
     id: string;
     name: string;
     type: ExerciseType;
+    /**
+     * Set when the exercise was logged via a user-defined preset (rather than a
+     * legacy fixed-shape kind). The stat names live in each set's customStats
+     * in display order; this top-level field is the canonical ordering taken
+     * from the first set.
+     */
+    presetStatNames?: string[];
+    /** The preset this exercise was logged from. Populated when the workout_exercises
+     *  row had a preset_id (i.e. logged after migration 047). */
+    presetId?: string;
+    /** Color key (red/orange/yellow/green/blue/purple/pink) of the preset this
+     *  exercise was logged from. Tints the exercise box in history. Null when the
+     *  exercise has no linked preset (legacy fixed-kind exercises). */
+    presetColor?: string | null;
     sets: Array<{
       id: string;
       setIndex: number;
+      // Legacy fixed-column data — only populated for non-preset exercises.
       reps?: number;
       weight?: number;
       attempted?: number;
@@ -53,8 +79,11 @@ export interface WorkoutDetails {
       distance?: number;
       timeMin?: number;
       avgTimeSec?: number;
-      completed?: boolean;
+      /** Numeric since migration 025 (number of completed reps). */
+      completed?: number | boolean;
       points?: number;
+      // Preset stat values for this set, in display order.
+      customStats?: CustomSetStat[];
     }>;
   }>;
 }
@@ -123,13 +152,19 @@ export async function addExercise(params: AddExerciseParams): Promise<{ data: st
       ? mapItemKindToExerciseType(params.exerciseType)
       : params.exerciseType;
 
+    const insertPayload: Record<string, unknown> = {
+      workout_id: params.workoutId,
+      exercise_type: exerciseType,
+      name: params.name.trim(),
+    };
+    // Only send preset_id when provided (column was added in migration 047;
+    // sending the field on older DBs without the column would still work via
+    // PostgREST ignoring unknown columns, but being explicit is safer).
+    if (params.presetId) insertPayload.preset_id = params.presetId;
+
     const { data, error } = await supabase
       .from('workout_exercises')
-      .insert({
-        workout_id: params.workoutId,
-        exercise_type: exerciseType,
-        name: params.name.trim(),
-      })
+      .insert(insertPayload)
       .select('id')
       .single();
 
@@ -268,7 +303,7 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
     // Fetch exercises
     const { data: exercises, error: exercisesError } = await supabase
       .from('workout_exercises')
-      .select('id, name, exercise_type')
+      .select('id, name, exercise_type, preset_id, preset:exercise_presets(color)')
       .eq('workout_id', workoutId)
       .order('created_at');
 
@@ -276,39 +311,69 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
       return { data: null, error: exercisesError };
     }
 
-    // Fetch sets for each exercise
-    const exercisesWithSets = await Promise.all(
+    // Fetch sets per exercise.
+    const setsByExercise = await Promise.all(
       (exercises || []).map(async (exercise) => {
-        const { data: sets, error: setsError } = await supabase
+        const { data: sets } = await supabase
           .from('workout_sets')
           .select('id, set_index, reps, weight, attempted, made, distance, time_min, avg_time_sec, completed, points')
           .eq('workout_exercise_id', exercise.id)
           .order('set_index');
-
-        if (setsError) {
-          // continue with empty sets for this exercise
-        }
-
-        return {
-          id: exercise.id,
-          name: exercise.name || '',
-          type: (exercise.exercise_type || 'exercise') as ExerciseType,
-          sets: (sets || []).map(set => ({
-            id: set.id,
-            setIndex: set.set_index,
-            reps: set.reps ? Number(set.reps) : undefined,
-            weight: set.weight ? Number(set.weight) : undefined,
-            attempted: set.attempted ? Number(set.attempted) : undefined,
-            made: set.made ? Number(set.made) : undefined,
-            distance: set.distance ? Number(set.distance) : undefined,
-            timeMin: set.time_min ? Number(set.time_min) : undefined,
-            avgTimeSec: set.avg_time_sec ? Number(set.avg_time_sec) : undefined,
-            completed: set.completed != null ? (typeof set.completed === 'number' ? set.completed : Number(set.completed)) : undefined,
-            points: set.points ? Number(set.points) : undefined,
-          })),
-        };
+        return { exercise, sets: sets || [] };
       })
     );
+
+    // Batch-fetch custom stats for all sets in the workout in one round-trip.
+    // Orders by set_index then stat_index so we can group + preserve display order.
+    const allSetIds = setsByExercise.flatMap(({ sets }) => sets.map((s: any) => s.id));
+    let statsBySetId = new Map<string, CustomSetStat[]>();
+    if (allSetIds.length > 0) {
+      const { data: statRows } = await supabase
+        .from('workout_set_stats')
+        .select('workout_set_id, stat_name, value, stat_index')
+        .in('workout_set_id', allSetIds)
+        .order('stat_index');
+      for (const row of statRows || []) {
+        const list = statsBySetId.get(row.workout_set_id) || [];
+        list.push({ name: row.stat_name, value: Number(row.value) });
+        statsBySetId.set(row.workout_set_id, list);
+      }
+    }
+
+    const exercisesWithSets = setsByExercise.map(({ exercise, sets }) => {
+      const mappedSets = sets.map((set: any) => {
+        const customStats = statsBySetId.get(set.id);
+        return {
+          id: set.id,
+          setIndex: set.set_index,
+          reps: set.reps ? Number(set.reps) : undefined,
+          weight: set.weight ? Number(set.weight) : undefined,
+          attempted: set.attempted ? Number(set.attempted) : undefined,
+          made: set.made ? Number(set.made) : undefined,
+          distance: set.distance ? Number(set.distance) : undefined,
+          timeMin: set.time_min ? Number(set.time_min) : undefined,
+          avgTimeSec: set.avg_time_sec ? Number(set.avg_time_sec) : undefined,
+          completed: set.completed != null ? (typeof set.completed === 'number' ? set.completed : Number(set.completed)) : undefined,
+          points: set.points ? Number(set.points) : undefined,
+          customStats: customStats && customStats.length > 0 ? customStats : undefined,
+        };
+      });
+
+      // An exercise is preset-kind if any set carries custom stats. The stat
+      // names + order are taken from the first set that has them.
+      const firstWithStats = mappedSets.find(s => s.customStats);
+      const presetStatNames = firstWithStats?.customStats?.map(s => s.name);
+
+      return {
+        id: exercise.id,
+        name: exercise.name || '',
+        type: (exercise.exercise_type || 'exercise') as ExerciseType,
+        presetStatNames,
+        presetId: (exercise as any).preset_id ?? undefined,
+        presetColor: (exercise as any).preset?.color ?? null,
+        sets: mappedSets,
+      };
+    });
 
     const result = {
       data: {
@@ -335,22 +400,34 @@ export async function getWorkoutWithDetails(workoutId: string): Promise<{ data: 
 }
 
 /**
- * Save a complete workout (creates workout, exercises, and sets in one transaction-like flow)
+ * Save a complete workout (creates workout, exercises, and sets in one transaction-like flow).
+ *
+ * Items can be:
+ *  - Legacy `kind` values (`exercise`, `bb_shot`, ...) — write to the fixed
+ *    columns on `workout_sets`.
+ *  - `kind: 'preset'` with `statNames` — write to `workout_sets` (one row per set,
+ *    no fixed-column data) and then per-stat values to `workout_set_stats`.
  */
 export async function saveCompleteWorkout(params: {
-  mode: SportMode | string;
+  mode?: SportMode | string;
   name: string;
   performedAt?: string;
   items: Array<{
     kind: string;
     name: string;
     sets: Array<Record<string, string>>;
+    /** Required when kind === 'preset'. Display order of stat-name labels. */
+    statNames?: string[];
+    /** Optional when kind === 'preset'. The preset row this exercise was
+     *  logged from — written to workout_exercises.preset_id so Views can
+     *  query by preset rather than by name. */
+    presetId?: string;
   }>;
 }): Promise<{ data: string | null; error: any }> {
   try {
-    // 1. Create workout
+    // 1. Create workout. mode kept for DB compatibility (NOT NULL); defaults to 'workout'.
     const { data: workoutId, error: workoutError } = await createWorkout({
-      mode: params.mode,
+      mode: params.mode ?? 'workout',
       name: params.name,
       performedAt: params.performedAt,
     });
@@ -363,66 +440,143 @@ export async function saveCompleteWorkout(params: {
     for (const item of params.items) {
       if (!item.name.trim()) continue; // Skip exercises without names
 
-      // Add exercise
+      // Presets go to workout_set_stats (arbitrary stat names). For the
+      // `exercise_type` enum column on workout_exercises we still need a valid
+      // enum value, so we tag preset entries as 'exercise' — the most generic.
+      const isPreset = item.kind === 'preset';
+      const exerciseTypeForDb = isPreset ? 'exercise' : item.kind;
+
       const { data: exerciseId, error: exerciseError } = await addExercise({
         workoutId,
-        exerciseType: item.kind,
+        exerciseType: exerciseTypeForDb,
         name: item.name,
+        // Only meaningful for preset items; addExercise no-ops the column when undefined.
+        presetId: isPreset ? item.presetId : undefined,
       });
 
       if (exerciseError || !exerciseId) {
         continue;
       }
 
-      // Add sets
-      const sets: SetData[] = item.sets
-        .map((set, index) => {
-          const setData: SetData = { setIndex: index + 1 };
-          
-          // Parse all possible fields
-          if (set.reps) setData.reps = parseFloat(set.reps);
-          if (set.weight) setData.weight = parseFloat(set.weight);
-          if (set.attempted) setData.attempted = parseFloat(set.attempted);
-          if (set.made) setData.made = parseFloat(set.made);
-          // Handle both "distance" and "avgDistance" (hitting exercises use avgDistance in UI)
-          // Prioritize avgDistance if it exists, otherwise use distance
-          if (set.avgDistance) {
-            setData.distance = parseFloat(set.avgDistance);
-          } else if (set.distance) {
-            setData.distance = parseFloat(set.distance);
-          }
-          if (set.time) setData.timeMin = parseFloat(set.time);
-          if (set.avgTime) setData.avgTimeSec = parseFloat(set.avgTime);
-          // Parse completed as a number (number of completed reps)
-          if (set.completed !== undefined && set.completed !== '' && set.completed !== null) {
-            const completedStr = String(set.completed).trim();
-            if (completedStr !== '') {
-              const completedNum = parseFloat(completedStr);
-              if (!isNaN(completedNum) && isFinite(completedNum)) {
-                setData.completed = completedNum; // Store as number
-              } else {
-                // Fallback: treat boolean/string as 1 (true) or 0 (false)
-                setData.completed = (set.completed === 'true' || set.completed === true) ? 1 : 0;
+      if (isPreset && item.statNames && item.statNames.length > 0) {
+        await savePresetSets({
+          exerciseId,
+          statNames: item.statNames,
+          sets: item.sets,
+        });
+      } else {
+        // Legacy fixed-column path.
+        const sets: SetData[] = item.sets
+          .map((set, index) => {
+            const setData: SetData = { setIndex: index + 1 };
+
+            if (set.reps) setData.reps = parseFloat(set.reps);
+            if (set.weight) setData.weight = parseFloat(set.weight);
+            if (set.attempted) setData.attempted = parseFloat(set.attempted);
+            if (set.made) setData.made = parseFloat(set.made);
+            if (set.avgDistance) {
+              setData.distance = parseFloat(set.avgDistance);
+            } else if (set.distance) {
+              setData.distance = parseFloat(set.distance);
+            }
+            if (set.time) setData.timeMin = parseFloat(set.time);
+            if (set.avgTime) setData.avgTimeSec = parseFloat(set.avgTime);
+            if (set.completed !== undefined && set.completed !== '' && set.completed !== null) {
+              const completedStr = String(set.completed).trim();
+              if (completedStr !== '') {
+                const completedNum = parseFloat(completedStr);
+                if (!isNaN(completedNum) && isFinite(completedNum)) {
+                  setData.completed = completedNum;
+                } else {
+                  // sets is Array<Record<string, string>>, so the legacy boolean
+                  // only ever arrives here as the string 'true'.
+                  setData.completed = set.completed === 'true' ? 1 : 0;
+                }
               }
             }
-          }
-          if (set.points) setData.points = parseFloat(set.points);
+            if (set.points) setData.points = parseFloat(set.points);
 
-          return setData;
-        })
-        .filter(set => {
-          // Only include sets with at least one value
-          return Object.values(set).some((v, i) => i > 0 && v !== undefined && v !== null);
-        });
+            return setData;
+          })
+          .filter(set => Object.values(set).some((v, i) => i > 0 && v !== undefined && v !== null));
 
-      if (sets.length > 0) {
-        await upsertSets({ exerciseId, sets });
+        if (sets.length > 0) {
+          await upsertSets({ exerciseId, sets });
+        }
       }
     }
 
     return { data: workoutId, error: null };
   } catch (error: any) {
     return { data: null, error };
+  }
+}
+
+/**
+ * Write preset-kind sets: one workout_sets row per non-empty set, plus a
+ * workout_set_stats row per (set, stat_name, numeric_value).
+ *
+ * UI fields are keyed `stat_0` / `stat_1` / ... by index; we map them back to
+ * the user's typed stat names via `statNames`.
+ */
+async function savePresetSets(params: {
+  exerciseId: string;
+  statNames: string[];
+  sets: Array<Record<string, string>>;
+}): Promise<void> {
+  // Strip empty sets (every stat blank).
+  const nonEmptySets = params.sets
+    .map((set, index) => ({ index, set }))
+    .filter(({ set }) => params.statNames.some((_, i) => {
+      const raw = set[`stat_${i}`];
+      return raw != null && String(raw).trim() !== '';
+    }));
+
+  if (nonEmptySets.length === 0) return;
+
+  // Replace any existing sets for this exercise. workout_set_stats rows cascade
+  // via the FK on workout_set_id.
+  await supabase.from('workout_sets').delete().eq('workout_exercise_id', params.exerciseId);
+
+  const rowsToInsert = nonEmptySets.map(({ index }) => ({
+    workout_exercise_id: params.exerciseId,
+    set_index: index + 1,
+  }));
+
+  const { data: insertedSets, error: insertErr } = await supabase
+    .from('workout_sets')
+    .insert(rowsToInsert)
+    .select('id, set_index');
+
+  if (insertErr || !insertedSets) return;
+
+  // Match each inserted set back to its source row by set_index.
+  // stat_index preserves the user's chosen display order across read/edit cycles.
+  const statsToInsert: Array<{
+    workout_set_id: string;
+    stat_name: string;
+    value: number;
+    stat_index: number;
+  }> = [];
+  for (const { index, set } of nonEmptySets) {
+    const inserted = insertedSets.find((s: any) => s.set_index === index + 1);
+    if (!inserted) continue;
+    params.statNames.forEach((name, i) => {
+      const raw = set[`stat_${i}`];
+      if (raw == null || String(raw).trim() === '') return;
+      const num = parseFloat(String(raw));
+      if (!isFinite(num)) return;
+      statsToInsert.push({
+        workout_set_id: inserted.id,
+        stat_name: name,
+        value: num,
+        stat_index: i,
+      });
+    });
+  }
+
+  if (statsToInsert.length > 0) {
+    await supabase.from('workout_set_stats').insert(statsToInsert);
   }
 }
 
