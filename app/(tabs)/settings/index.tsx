@@ -83,7 +83,7 @@ export default function Settings() {
     return null;
   }
 
-  const appVersion = Constants.expoConfig?.version || "1.2";
+  const appVersion = Constants.expoConfig?.version || "1.3";
 
   return (
     <Animated.View style={[styles.container, animatedStyle]}>
